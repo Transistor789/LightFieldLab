@@ -1,49 +1,46 @@
-#include <QtCore/qobject.h>
-#include <QtCore/qstring.h>
-#include <QtCore/qthread.h>
-#include <QtWidgets/qpushbutton.h>
+#include "lfdata.h"
+#include "lfload.h"
+#include "window_base.h"
 
 #include <QApplication>
 #include <QFutureWatcher>
 #include <QMainWindow>
+#include <QObject>
 #include <QString>
+#include <QThread>
+#include <QtWidgets/qpushbutton.h>
 #include <cstring>
-#include <iostream>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/opencv.hpp>
 #include <ostream>
-
-#include "lfdata.h"
-#include "lfloader.h"
-#include "window_base.h"
 int test_signals(int argc, char* argv[]) {
 	QApplication app(argc, argv);
 	WindowBase	 window;
 
-	std::cout << "test LFLoader with Qt signals!" << std::endl;
+	std::cout << "test LFLoad with Qt signals!" << std::endl;
 	std::cout << "Main thread: " << QThread::currentThreadId() << std::endl;
 
-	LFLoader::Worker* lfloader = new LFLoader::Worker();
-	QString			  path(argv[1]);
+	LFLoad::Worker* lfloader = new LFLoad::Worker();
+	QString			path(argv[1]);
 	// std::string		  path(argv[1]);
 	bool isRGB = strcmp(argv[2], "1") == 0 ? true : false;
 
 	lfloader->moveToThread(window.thread);
 	QObject::connect(window.thread, &QThread::finished, lfloader,
-					 &LFLoader::Worker::deleteLater, Qt::QueuedConnection);
+					 &LFLoad::Worker::deleteLater, Qt::QueuedConnection);
 	QObject::connect(
 		window.thread, &QThread::started, lfloader,
 		[&]() { lfloader->load(QString(path), isRGB); }, Qt::QueuedConnection);
 	window.thread->start();
 
 	QObject::connect(window.button, &QPushButton::clicked, lfloader,
-					 &LFLoader::Worker::getLF, Qt::QueuedConnection);
+					 &LFLoad::Worker::getLF, Qt::QueuedConnection);
 	QObject::connect(
 		window.button, &QPushButton::clicked, lfloader,
 		[&]() { lfloader->getLF(); }, Qt::QueuedConnection);
 	QObject::connect(
-		lfloader, &LFLoader::Worker::lfUpdated, &window,
+		lfloader, &LFLoad::Worker::lfUpdated, &window,
 		[&](const LightFieldPtr& ptr) {
 			cv::imshow("image", ptr->getCenter());
 			cv::waitKey();
@@ -64,10 +61,10 @@ int test_signals(int argc, char* argv[]) {
 // int test_template(int argc, char* argv[]) {
 // 	QApplication app(argc, argv);
 // 	WindowBase	 window;
-// 	std::cout << "test LFLoader with template!" << std::endl;
+// 	std::cout << "test LFLoad with template!" << std::endl;
 // 	std::cout << "Main thread: " << QThread::currentThreadId() << std::endl;
 
-// 	LFLoader::Worker* lfloader = new LFLoader::Worker(); // 不指定父对象
+// 	LFLoad::Worker* lfloader = new LFLoad::Worker(); // 不指定父对象
 // 	std::string		  path(argv[1]);
 // 	bool			  isRGB = strcmp(argv[2], "1") == 0 ? true : false;
 
@@ -75,7 +72,7 @@ int test_signals(int argc, char* argv[]) {
 
 // 	QObject::connect(
 // 		window.thread, &QThread::started, lfloader,
-// 		[&]() { lfloader->invoke(&LFLoader::Core::load, path, isRGB); },
+// 		[&]() { lfloader->invoke(&LFLoad::Core::load, path, isRGB); },
 // 		Qt::QueuedConnection);
 // 	window.thread->start();
 
@@ -93,12 +90,12 @@ int test_signals(int argc, char* argv[]) {
 // 	// 按钮点击处理
 // 	QObject::connect(window.button, &QPushButton::clicked, &window,
 // 					 [lfloader, &futureWatcher]() {
-// 						 auto future = lfloader->invoke(&LFLoader::Core::getLF);
+// 						 auto future = lfloader->invoke(&LFLoad::Core::getLF);
 // 						 futureWatcher.setFuture(future);
 // 					 });
 
 // 	QObject::connect(window.thread, &QThread::finished, lfloader,
-// 					 &LFLoader::Worker_signals::deleteLater,
+// 					 &LFLoad::Worker_signals::deleteLater,
 // 					 Qt::QueuedConnection);
 // 	QObject::connect(
 // 		&window, &WindowBase::destroyed, &window,

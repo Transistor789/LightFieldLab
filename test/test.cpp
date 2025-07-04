@@ -1,10 +1,9 @@
-#include <iostream>
 #include <memory>
 #include <ostream>
 #include <tuple>
 #include <type_traits>
 class Test {
-   public:
+public:
 	void		inClassMethod() { std::cout << "inClassMethod called!\n"; }
 	static void staticMethod() { std::cout << "staticMethod called!\n"; }
 	int			add(int a, int b) { return a + b; }

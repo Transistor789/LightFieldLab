@@ -1,31 +1,20 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include <QtCore/qthread.h>
-#include <QtCore/qtmetamacros.h>
-
-#include <QGroupBox>
-#include <QLabel>
-#include <QMainWindow>
-#include <QPushButton>
-#include <QRadioButton>
-#include <QStackedWidget>
-#include <opencv2/opencv.hpp>
-
 #include "lfdata.h"
 #include "lfprocessor.h"
 #include "ui.h"
 
 class MainWindow : public QMainWindow {
 	Q_OBJECT
-   public:
+public:
 	MainWindow(QWidget* parent = nullptr);
 	~MainWindow();
 
-   signals:
+signals:
 	void requestUpdateSAI(const cv::Mat& image);
 
-   public slots:
+public slots:
 	void updateSAI(const cv::Mat& cvImg);
 	void onLensletBrowseBtn();
 	void viewValueUpdated(const LightFieldPtr& ptr);
@@ -34,9 +23,9 @@ class MainWindow : public QMainWindow {
 	void onRefocusAlphaChanged(int value);
 	void onRefocusCropChanged(int value);
 
-   private:
+private:
 	Ui::MainWindow* ui;
-	LFProcessor*	lfp;
-	QThread*		lfp_thread;
+	LFProcessor* lfp;
+	QThread* lfp_thread;
 };
 #endif // MAINWINDOW_H

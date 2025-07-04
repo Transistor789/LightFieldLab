@@ -1,12 +1,10 @@
-#include <QtCore/qdebug.h>
 #include <QtCore/qlogging.h>
 #include <QtCore/qnamespace.h>
-#include <QtCore/qobject.h>
 #include <QtCore/qobjectdefs.h>
-#include <QtCore/qthread.h>
 #include <QtWidgets/qmainwindow.h>
 
 #include <QApplication>
+#include <QDebug>
 #include <QMetaMethod>
 #include <QMetaObject>
 #include <QObject>
@@ -14,7 +12,7 @@
 #include <QThread>
 #include <string>
 
-#include "lfloader.h"
+#include "lfload.h"
 #include "lfprocessor.h"
 #include "window_base.h"
 
@@ -35,7 +33,7 @@ int main(int argc, char *argv[]) {
 
 	// qDebug() << "Main thread:" << window.thread;
 	// qDebug() << "LFProcessor thread:" << window.worker->thread();
-	// qDebug() << "LFLoader thread:" << window.worker->loader->thread();
+	// qDebug() << "LFLoad thread:" << window.worker->loader->thread();
 
 	// qDebug() << "Main threadId:" << QThread::currentThreadId();
 	// QObject::connect(
@@ -51,7 +49,7 @@ int main(int argc, char *argv[]) {
 	// 	[&]() {
 	// 		std::cout << "LFProcessor thread: " << QThread::currentThreadId()
 	// 				  << std::endl;
-	// 		window.worker->loader->invoke(&LFLoader::Core::load, path, isRGB);
+	// 		window.worker->loader->invoke(&LFLoad::Core::load, path, isRGB);
 	// 	},
 	// 	Qt::QueuedConnection);
 	// qDebug() << "当前线程：" << QThread::currentThread();
@@ -59,8 +57,6 @@ int main(int argc, char *argv[]) {
 	// if (lfp->loader->thread()) {
 	// 	qDebug() << "lfp->loader 所在线程：" << lfp->loader->thread();
 	// }
-
-	// TODO: 解决信号槽lfp与lfloader同线程
 
 	window.show();
 	return app.exec();

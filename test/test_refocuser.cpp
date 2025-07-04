@@ -1,29 +1,26 @@
-#include <QtCore/qstring.h>
-#include <QtCore/qthread.h>
+#include "lfload.h"
+#include "lfrefocus.h"
+
+#include <QApplication>
+#include <QLabel>
+#include <QMainWindow>
+#include <QString>
+#include <QThread>
+#include <QTimer>
+#include <QVBoxLayout>
 #include <QtCore/qtimer.h>
-#include <QtCore/qtmetamacros.h>
 #include <QtCore/qvariant.h>
 #include <QtWidgets/qapplication.h>
 #include <QtWidgets/qboxlayout.h>
 #include <QtWidgets/qlabel.h>
 #include <QtWidgets/qpushbutton.h>
-#include <opencv2/core/hal/interface.h>
-
-#include <QApplication>
-#include <QLabel>
-#include <QMainWindow>
-#include <QTimer>
-#include <QVBoxLayout>
 #include <chrono>
 #include <cstring>
-#include <iostream>
+#include <opencv2/core/hal/interface.h>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/opencv.hpp>
 #include <vector>
-
-#include "lfloader.h"
-#include "lfrefocuser.h"
 // class Window : public QMainWindow {
 // 	// Q_OBJECT
 //    public:
@@ -31,7 +28,7 @@
 // 		: QMainWindow(parent), counter(0) {
 // 		std::string path  = std::string(argv[1]);
 // 		bool		isRGB = strcmp(argv[2], "1") == 0 ? true : false;
-// 		LFLoader	loader;
+// 		LFLoad	loader;
 // 		loader.loadSAI(path, isRGB);
 // 		std::vector<cv::Mat> LF_float32 = loader.getLF_float32();
 

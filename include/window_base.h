@@ -1,7 +1,6 @@
 #ifndef WINDOW_BASE_H
 #define WINDOW_BASE_H
-#include <QtCore/qthread.h>
-#include <QtCore/qtmetamacros.h>
+#include "lfprocessor.h"
 
 #include <QCloseEvent>
 #include <QMainWindow>
@@ -9,18 +8,15 @@
 #include <QPushButton>
 #include <QThread>
 #include <QVBoxLayout>
-#include <cstddef>
-
-#include "lfprocessor.h"
 
 // template <typename Worker>
 class WindowBase : public QMainWindow {
 	Q_OBJECT
-   public:
+public:
 	WindowBase(QWidget* parent = nullptr) : QMainWindow(parent) {
-		QWidget*	 centralWidget = new QWidget(this);
-		QVBoxLayout* layout		   = new QVBoxLayout(centralWidget);
-		button					   = new QPushButton("execute", this);
+		QWidget* centralWidget = new QWidget(this);
+		QVBoxLayout* layout = new QVBoxLayout(centralWidget);
+		button = new QPushButton("execute", this);
 
 		layout->addWidget(button);
 		centralWidget->setLayout(layout);
@@ -37,7 +33,7 @@ class WindowBase : public QMainWindow {
 		}
 		delete worker;
 	}
-	QThread*	 thread;
+	QThread* thread;
 	LFProcessor* worker;
 	QPushButton* button;
 };

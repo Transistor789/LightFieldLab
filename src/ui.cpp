@@ -1,27 +1,5 @@
 #include "ui.h"
 
-#include <QtCore/qnamespace.h>
-#include <QtWidgets/qboxlayout.h>
-#include <QtWidgets/qlabel.h>
-#include <QtWidgets/qslider.h>
-
-#include <QButtonGroup>
-#include <QDoubleSpinBox>
-#include <QFileDialog>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QLineEdit>
-#include <QPushButton>
-#include <QRadioButton>
-#include <QScrollArea>
-#include <QSlider>
-#include <QSpinBox>
-#include <QStackedLayout>
-#include <QStackedWidget>
-#include <QVBoxLayout>
-#include <QWidget>
-
 namespace Ui {
 void MainWindow::setupUi(QMainWindow *mainWindow) {
 	QWidget *centralWidget = new QWidget(mainWindow);
@@ -30,7 +8,7 @@ void MainWindow::setupUi(QMainWindow *mainWindow) {
 	QHBoxLayout *mainLayout = new QHBoxLayout(centralWidget);
 
 	// === 左侧功能区 ===
-	QWidget		*leftPanel	= new QWidget();
+	QWidget *leftPanel = new QWidget();
 	QVBoxLayout *leftLayout = new QVBoxLayout(leftPanel);
 	leftPanel->setMinimumWidth(300); // 关键修改点2：设置最小宽度
 
@@ -60,13 +38,13 @@ void MainWindow::setupUi(QMainWindow *mainWindow) {
 }
 // 1. 数据模式组
 QGroupBox *MainWindow::setupModeGroup() {
-	QGroupBox	*group	= new QGroupBox("数据模式");
+	QGroupBox *group = new QGroupBox("数据模式");
 	QVBoxLayout *layout = new QVBoxLayout();
 
 	// 1. static/dynamic
-	QVBoxLayout *captureLayout		= new QVBoxLayout();
-	QLabel		*staticLabel		= new QLabel("static");
-	QLabel		*dynamicLabel		= new QLabel("dynamic");
+	QVBoxLayout *captureLayout = new QVBoxLayout();
+	QLabel *staticLabel = new QLabel("静态");
+	QLabel *dynamicLabel = new QLabel("动态");
 	QHBoxLayout *captureLabelLayout = new QHBoxLayout();
 	captureLabelLayout->addWidget(staticLabel);
 	captureLabelLayout->addWidget(dynamicLabel);
@@ -77,22 +55,22 @@ QGroupBox *MainWindow::setupModeGroup() {
 	captureLayout->addWidget(captureSlider);
 
 	// 2. gray/rgb
-	QVBoxLayout *colorLayout	  = new QVBoxLayout();
-	QLabel		*grayLabel		  = new QLabel("gray");
-	QLabel		*rgbLabel		  = new QLabel("rgb");
+	QVBoxLayout *colorLayout = new QVBoxLayout();
+	QLabel *grayLabel = new QLabel("gray");
+	QLabel *rgbLabel = new QLabel("rgb");
 	QHBoxLayout *colorLabelLayout = new QHBoxLayout();
 	colorLabelLayout->addWidget(grayLabel);
 	colorLabelLayout->addWidget(rgbLabel);
 	colorSlider = new QSlider(Qt::Horizontal);
 	colorSlider->setRange(0, 1);
-	colorSlider->setValue(0);
+	colorSlider->setValue(1);
 	colorLayout->addLayout(colorLabelLayout);
 	colorLayout->addWidget(colorSlider);
 
 	// 3. cpu/gpu
-	QVBoxLayout *gpuLayout		= new QVBoxLayout();
-	QLabel		*cpuLabel		= new QLabel("cpu");
-	QLabel		*gpuLabel		= new QLabel("gpu");
+	QVBoxLayout *gpuLayout = new QVBoxLayout();
+	QLabel *cpuLabel = new QLabel("cpu");
+	QLabel *gpuLabel = new QLabel("gpu");
 	QHBoxLayout *gpuLabelLayout = new QHBoxLayout();
 	gpuLabelLayout->addWidget(cpuLabel);
 	gpuLabelLayout->addWidget(gpuLabel);
@@ -115,11 +93,11 @@ QGroupBox *MainWindow::setupModeGroup() {
 	QStackedWidget *inputStack = new QStackedWidget(group);
 
 	// --- 静态模式页面 ---
-	QWidget		*staticPage	  = new QWidget();
+	QWidget *staticPage = new QWidget();
 	QVBoxLayout *staticLayout = new QVBoxLayout(staticPage);
 
 	QHBoxLayout *whiteLayout = new QHBoxLayout();
-	whitePathEdit			 = new QLineEdit();
+	whitePathEdit = new QLineEdit();
 	whitePathEdit->setPlaceholderText("白图像路径");
 	whiteBrowseBtn = new QPushButton("...");
 	whiteBrowseBtn->setFixedWidth(30); // 固定按钮宽度
@@ -127,7 +105,7 @@ QGroupBox *MainWindow::setupModeGroup() {
 	whiteLayout->addWidget(whiteBrowseBtn);
 
 	QHBoxLayout *lensletLayout = new QHBoxLayout();
-	lensletPathEdit			   = new QLineEdit();
+	lensletPathEdit = new QLineEdit("input/toy");
 	lensletPathEdit->setPlaceholderText("微透镜图像路径");
 	lensletBrowseBtn = new QPushButton("...");
 	lensletBrowseBtn->setFixedWidth(30);
@@ -139,10 +117,10 @@ QGroupBox *MainWindow::setupModeGroup() {
 	inputStack->addWidget(staticPage);
 
 	// --- 动态模式页面 ---
-	QWidget		*dynamicPage   = new QWidget();
+	QWidget *dynamicPage = new QWidget();
 	QHBoxLayout *dynamicLayout = new QHBoxLayout(dynamicPage);
-	QPushButton *btnCapture	   = new QPushButton("采集");
-	QPushButton *btnDecode	   = new QPushButton("解码");
+	QPushButton *btnCapture = new QPushButton("采集");
+	QPushButton *btnDecode = new QPushButton("解码");
 	dynamicLayout->addWidget(btnCapture);
 	dynamicLayout->addWidget(btnDecode);
 	inputStack->addWidget(dynamicPage);
@@ -176,13 +154,13 @@ QGroupBox *MainWindow::setupModeGroup() {
 }
 
 QGroupBox *MainWindow::setupViewsGroup() {
-	QGroupBox	*group	= new QGroupBox("视角变换");
+	QGroupBox *group = new QGroupBox("视角变换");
 	QVBoxLayout *layout = new QVBoxLayout();
 
-	QLabel		*verticalLabel	 = new QLabel("垂直");
-	QLabel		*horizontalLabel = new QLabel("水平");
-	QHBoxLayout *verticalLayout	 = new QHBoxLayout();
-	verticalSlider				 = new QSlider(Qt::Horizontal);
+	QLabel *verticalLabel = new QLabel("垂直");
+	QLabel *horizontalLabel = new QLabel("水平");
+	QHBoxLayout *verticalLayout = new QHBoxLayout();
+	verticalSlider = new QSlider(Qt::Horizontal);
 	verticalSlider->setRange(1, 15);
 	verticalSlider->setValue(8);
 	verticalSpinBox = new QSpinBox();
@@ -193,7 +171,7 @@ QGroupBox *MainWindow::setupViewsGroup() {
 	verticalLayout->addWidget(verticalSpinBox);
 
 	QHBoxLayout *horizontalLayout = new QHBoxLayout();
-	horizontalSlider			  = new QSlider(Qt::Horizontal);
+	horizontalSlider = new QSlider(Qt::Horizontal);
 	horizontalSlider->setRange(1, 15);
 	horizontalSlider->setValue(8);
 	horizontalSpinBox = new QSpinBox();
@@ -208,7 +186,6 @@ QGroupBox *MainWindow::setupViewsGroup() {
 	layout->addWidget(horizontalLabel);
 	layout->addLayout(horizontalLayout);
 	group->setLayout(layout);
-	// TODO: 值传递给LFP
 	connect(verticalSlider, &QSlider::valueChanged, verticalSpinBox,
 			[=](int value) { verticalSpinBox->setValue(value); });
 	connect(verticalSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
@@ -225,13 +202,13 @@ QGroupBox *MainWindow::setupViewsGroup() {
 
 // 3. 重聚焦组
 QGroupBox *MainWindow::setupRefocusGroup() {
-	QGroupBox	*group	= new QGroupBox("重聚焦");
+	QGroupBox *group = new QGroupBox("重聚焦");
 	QVBoxLayout *layout = new QVBoxLayout();
 
 	QHBoxLayout *cropLayout = new QHBoxLayout();
-	QLabel		*cropLabel	= new QLabel("crop");
-	QLabel		*alphaLabel = new QLabel("alpha");
-	cropSlider				= new QSlider(Qt::Horizontal);
+	QLabel *cropLabel = new QLabel("crop");
+	QLabel *alphaLabel = new QLabel("alpha");
+	cropSlider = new QSlider(Qt::Horizontal);
 	cropSlider->setRange(0, 7);
 	cropSlider->setValue(0);
 	cropSpinBox = new QSpinBox();
@@ -242,7 +219,7 @@ QGroupBox *MainWindow::setupRefocusGroup() {
 	cropLayout->addWidget(cropSpinBox);
 
 	QHBoxLayout *alphaLayout = new QHBoxLayout();
-	alphaSlider				 = new QSlider(Qt::Horizontal);
+	alphaSlider = new QSlider(Qt::Horizontal);
 	alphaSlider->setRange(0, 300); // 0.00~3.00 映射为 0~300
 	alphaSlider->setValue(100);	   // 默认值 1.50
 	alphaSpinBox = new QDoubleSpinBox();
@@ -276,16 +253,35 @@ QGroupBox *MainWindow::setupRefocusGroup() {
 
 // 4. 超分辨组
 QGroupBox *MainWindow::setupSRGroup() {
-	QGroupBox	*group	= new QGroupBox("超分辨");
-	QVBoxLayout *layout = new QVBoxLayout();
+	QGroupBox *group = new QGroupBox("超分辨");
+	QHBoxLayout *layout = new QHBoxLayout();
 	group->setLayout(layout);
+
+	typeComboBox = new QComboBox(group);
+	typeComboBox->addItem("Nearest", 0);
+	typeComboBox->addItem("Linear", 1);
+	typeComboBox->addItem("Cubic", 2);
+	typeComboBox->addItem("Lanczos", 3);
+	typeComboBox->addItem("EDSR", 4);
+	typeComboBox->addItem("ESPCN", 5);
+	typeComboBox->addItem("FSRCNN", 6);
+	layout->addWidget(typeComboBox);
+
+	scaleComboBox = new QComboBox(group);
+	scaleComboBox->addItem("2x", 2);
+	scaleComboBox->addItem("3x", 3);
+	scaleComboBox->addItem("4x", 4);
+	layout->addWidget(scaleComboBox);
+
+	SRButton = new QPushButton("设置", group);
+	layout->addWidget(SRButton);
 
 	return group;
 }
 
 // 5. 深度估计组
 QGroupBox *MainWindow::setupDEGroup() {
-	QGroupBox	*group	= new QGroupBox("深度估计");
+	QGroupBox *group = new QGroupBox("深度估计");
 	QVBoxLayout *layout = new QVBoxLayout();
 	group->setLayout(layout);
 

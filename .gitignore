@@ -4,4 +4,9 @@ CMakeLists.txt.user
 .cache
 .DS_Store
 .vscode
+.idea
+.venv
+__pycache__
 mainwindow.ui
+cmake-build-debug
+cmake-build-release

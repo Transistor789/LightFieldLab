@@ -1,6 +1,3 @@
-#include <QtCore/qobject.h>
-#include <QtCore/qthread.h>
-#include <QtCore/qtmetamacros.h>
 #include <QtWidgets/qapplication.h>
 #include <QtWidgets/qpushbutton.h>
 
