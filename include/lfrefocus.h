@@ -3,29 +3,31 @@
 
 #include "lfdata.h"
 
-class LFRefocus : public QObject {
-	Q_OBJECT
+#include <memory>
+
+class LFRefocus {
 public:
-	explicit LFRefocus(QObject* parent = nullptr);
+	LFRefocus() = default;
+	~LFRefocus();
+
 	void init(const LightFieldPtr& ptr);
 	bool getGpu() const { return _isGpu; }
-
-	LightFieldPtr lf;
-public slots:
-	void printThreadId();
 	void setGpu(bool isGPU);
-	void refocus(float alpha, int crop);
+	int refocus(cv::Mat& img, float alpha, int crop);
+	int refocus_cpu(cv::Mat& img, float alpha, int crop);
+	int refocus_gpu(cv::Mat& img, float alpha, int crop);
 	void onUpdateLF(const LightFieldPtr& ptr);
 
-signals:
-	void finished(const cv::Mat& image);
+	LightFieldPtr lf;
 
 private:
+	// struct metaData {};
 	bool _isGpu = false;
 	int _views, _len, _center, _type;
-	cv::Mat _xmap, _ymap, _refocusedImage;
-	cv::UMat _xmap_gpu, _ymap_gpu;
+
 	cv::Size _size;
+	cv::Mat _xmap, _ymap;
+	cv::UMat _xmap_gpu, _ymap_gpu;
 };
 
 #endif

@@ -1,17 +1,24 @@
 #ifndef LFDATA_H
 #define LFDATA_H
 
-class LightField {
+#include <opencv2/opencv.hpp>
+
+enum { GRAY = 0, RGB = 1 };
+enum { CPU = 0, GPU = 1 };
+enum { RAW8 = 8, RAW10 = 10, RAW12 = 12, RAW16 = 16 };
+class LightFieldData {
 public:
-	explicit LightField() = default;
-	explicit LightField(const std::vector<cv::Mat>& src) {
+	explicit LightFieldData() = default;
+	explicit LightFieldData(const std::vector<cv::Mat>& src) {
 		data.reserve(src.size());
-		for (const auto& mat : src) {
-			data.emplace_back(mat.clone()); // 深拷贝每个 cv::Mat
-		}
+		for (const auto& mat : src) data.push_back(mat.clone());
 		setParam();
 	}
-	LightField(const LightField& src) {
+	explicit LightFieldData(std::vector<cv::Mat>&& src) {
+		data = std::move(src);
+		setParam();
+	}
+	LightFieldData(const LightFieldData& src) {
 		data.reserve(src.data.size());
 		for (const auto& mat : src.data) {
 			data.emplace_back(mat.clone()); // 深拷贝每个 cv::Mat
@@ -19,7 +26,7 @@ public:
 		data_gpu.clear();
 		setParam();
 	}
-	~LightField() {
+	~LightFieldData() {
 		if (!data_gpu.empty()) {
 			for (int i = 0; i < size; i++) {
 				data_gpu[i].release();
@@ -43,7 +50,14 @@ public:
 			data[i].convertTo(data[i], CV_8UC(channels));
 		}
 	}
-	cv::Mat getSAI(int row, int col) const { return data[row * rows + col]; }
+	cv::Mat getSAI(int row, int col, bool isUINT = false) {
+		if (isUINT) {
+			return data[row * rows + col].clone();
+		}
+		cv::Mat mat;
+		data[row * rows + col].convertTo(mat, CV_8UC(channels), 255.0);
+		return mat;
+	}
 	cv::Mat getCenter() const { return data[(1 + size) / 2 - 1]; }
 	bool empty() const { return data.empty(); }
 	void clear() {
@@ -52,18 +66,18 @@ public:
 	}
 	void toGpu() {
 		if (data.empty()) {
-			qDebug() << "Data in cpu is empty!\n";
+			std::cout << "Data in cpu is empty!\n";
 			return;
 		}
 		if (!data_gpu.empty()) {
-			qDebug() << "Data in gpu is not empty!\n";
+			std::cout << "Data in gpu is not empty!\n";
 			return;
 		}
 
 		data_gpu.resize(size); // 必须 resize，不要只 reserve！
 		for (int i = 0; i < size; i++) {
 			if (data[i].empty()) {
-				qDebug() << "Warning: data[" << i << "] is empty!";
+				std::cout << "Warning: data[" << i << "] is empty!";
 				continue;
 			}
 			data_gpu[i] = data[i].getUMat(cv::ACCESS_READ);
@@ -117,6 +131,6 @@ public:
 	std::vector<cv::Mat> data;
 	std::vector<cv::UMat> data_gpu;
 };
-using LightFieldPtr = std::shared_ptr<LightField>;
+using LightFieldPtr = std::shared_ptr<LightFieldData>;
 
 #endif

@@ -1,6 +1,6 @@
 #ifndef WINDOW_BASE_H
 #define WINDOW_BASE_H
-#include "lfprocessor.h"
+#include "qlfprocessor.h"
 
 #include <QCloseEvent>
 #include <QMainWindow>

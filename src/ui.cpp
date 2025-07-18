@@ -1,5 +1,11 @@
 #include "ui.h"
 
+#include <QFileDialog>
+#include <QHBoxLayout>
+#include <QScrollArea>
+#include <QStackedWidget>
+#include <QVBoxLayout>
+
 namespace Ui {
 void MainWindow::setupUi(QMainWindow *mainWindow) {
 	QWidget *centralWidget = new QWidget(mainWindow);

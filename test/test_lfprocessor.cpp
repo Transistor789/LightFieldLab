@@ -1,7 +1,6 @@
-#include <QtCore/qlogging.h>
-#include <QtCore/qnamespace.h>
-#include <QtCore/qobjectdefs.h>
-#include <QtWidgets/qmainwindow.h>
+#include "lfload.h"
+#include "lfprocessor.h"
+#include "window_base.h"
 
 #include <QApplication>
 #include <QDebug>
@@ -10,15 +9,15 @@
 #include <QObject>
 #include <QPushButton>
 #include <QThread>
+#include <QtCore/qlogging.h>
+#include <QtCore/qnamespace.h>
+#include <QtCore/qobjectdefs.h>
+#include <QtWidgets/qmainwindow.h>
 #include <string>
-
-#include "lfload.h"
-#include "lfprocessor.h"
-#include "window_base.h"
 
 int main(int argc, char *argv[]) {
 	QApplication app(argc, argv);
-	WindowBase	 window;
+	WindowBase window;
 
 	// std::string path(argv[1]);
 	// bool		isRGB = strcmp(argv[2], "1") == 0 ? true : false;

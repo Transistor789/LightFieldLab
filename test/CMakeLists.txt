@@ -46,16 +46,16 @@ target_link_libraries(test_superres PRIVATE
     opencv_dnn_superres
 )
 
-# test_lfloader
-# add_executable(test_lfloader
+# test_lf_loader
+# add_executable(test_lf_loader
 #     test_lfload.cpp
 #     ${CMAKE_SOURCE_DIR}/src/lfload.cpp
 #     ${CMAKE_SOURCE_DIR}/include/lfdata.h
 #     ${CMAKE_SOURCE_DIR}/include/lfload.h
 #     ${CMAKE_SOURCE_DIR}/include/window_base.h
 # )
-# target_include_directories(test_lfloader PRIVATE ${CMAKE_SOURCE_DIR}/include)
-# target_link_libraries(test_lfloader PRIVATE Qt${QT_VERSION_MAJOR}::Widgets ${OpenCV_LIBS})
+# target_include_directories(test_lf_loader PRIVATE ${CMAKE_SOURCE_DIR}/include)
+# target_link_libraries(test_lf_loader PRIVATE Qt${QT_VERSION_MAJOR}::Widgets ${OpenCV_LIBS})
 
 # test_lfprocessor
 # add_executable(test_lfprocessor
@@ -82,5 +82,27 @@ target_link_libraries(test_superres PRIVATE
 # )
 # target_include_directories(test_refocuser PRIVATE ${CMAKE_SOURCE_DIR}/include)
 # target_link_libraries(test_refocuser PRIVATE Qt${QT_VERSION_MAJOR}::Widgets ${OpenCV_LIBS})
+
+add_executable(test_future test_future.cpp)
+
+add_executable(test_readraw test_readraw.cpp)
+target_link_libraries(test_readraw PRIVATE ${OpenCV_LIBS})
+# message(STATUS "OpenCV LIBS: ${OpenCV_LIBS}")
+
+add_executable(test_libraw test_libraw.cpp)
+set(LibRaw_INCLUDE_DIR "/usr/local/libraw")
+target_include_directories(test_libraw PRIVATE "${LibRaw_INCLUDE_DIR}/include")
+target_link_directories(test_libraw PRIVATE "${LibRaw_INCLUDE_DIR}/lib")
+target_link_libraries(test_libraw PRIVATE raw ${OpenCV_LIBS})
+
+add_executable(test_openssl test_openssl.cpp ../src/lfload.cpp)
+find_package(OpenSSL REQUIRED)
+target_include_directories(test_openssl PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    "/opt/homebrew/opt/openssl@3/include"
+    "/usr/local/opencv/Release/include"
+)
+target_link_directories(test_openssl PRIVATE /opt/homebrew/opt/openssl@3/lib)
+target_link_libraries(test_openssl PRIVATE OpenSSL::SSL OpenSSL::Crypto ${OpenCV_LIBS})
 
 

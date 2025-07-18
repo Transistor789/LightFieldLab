@@ -16,13 +16,13 @@
 #include <ostream>
 int test_signals(int argc, char* argv[]) {
 	QApplication app(argc, argv);
-	WindowBase	 window;
+	WindowBase window;
 
 	std::cout << "test LFLoad with Qt signals!" << std::endl;
 	std::cout << "Main thread: " << QThread::currentThreadId() << std::endl;
 
 	LFLoad::Worker* lfloader = new LFLoad::Worker();
-	QString			path(argv[1]);
+	QString path(argv[1]);
 	// std::string		  path(argv[1]);
 	bool isRGB = strcmp(argv[2], "1") == 0 ? true : false;
 

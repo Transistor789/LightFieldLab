@@ -32,6 +32,7 @@
 #include <cctype>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <future> // std::async, std::future
 #include <iostream>
 #include <memory>

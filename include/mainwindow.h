@@ -2,7 +2,7 @@
 #define MAINWINDOW_H
 
 #include "lfdata.h"
-#include "lfprocessor.h"
+#include "qlfprocessor.h"
 #include "ui.h"
 
 class MainWindow : public QMainWindow {
@@ -12,7 +12,7 @@ public:
 	~MainWindow();
 
 signals:
-	void requestUpdateSAI(const cv::Mat& image);
+	void requestUpdateSAI(cv::Mat);
 
 public slots:
 	void updateSAI(const cv::Mat& cvImg);
@@ -24,6 +24,8 @@ public slots:
 	void onRefocusCropChanged(int value);
 
 private:
+	void connect_init();
+
 	Ui::MainWindow* ui;
 	LFProcessor* lfp;
 	QThread* lfp_thread;

@@ -1,6 +1,17 @@
 #ifndef UI_H
 #define UI_H
 
+#include <QComboBox>
+#include <QDoubleSpinBox>
+#include <QGroupBox>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMainWindow>
+#include <QPushButton>
+#include <QRadioButton>
+#include <QSlider>
+#include <QSpinBox>
+
 namespace Ui {
 class MainWindow : public QMainWindow {
 	Q_OBJECT

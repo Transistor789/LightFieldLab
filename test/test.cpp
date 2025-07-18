@@ -1,14 +1,15 @@
+#include <future>
+#include <iostream>
 #include <memory>
-#include <ostream>
 #include <tuple>
 #include <type_traits>
 class Test {
 public:
-	void		inClassMethod() { std::cout << "inClassMethod called!\n"; }
+	void inClassMethod() { std::cout << "inClassMethod called!\n"; }
 	static void staticMethod() { std::cout << "staticMethod called!\n"; }
-	int			add(int a, int b) { return a + b; }
+	int add(int a, int b) { return a + b; }
 };
-void		outOfClassMethod() { std::cout << "outOfClassMethod called!\n"; }
+void outOfClassMethod() { std::cout << "outOfClassMethod called!\n"; }
 static void staticOutOfClassMethod() {
 	std::cout << "staticOutOfClassMethod called!\n";
 }
@@ -25,12 +26,12 @@ void test_func_ptr() {
 	void (*pfunc1)() = &outOfClassMethod;
 	void (*pfunc2)() = &Test::staticMethod;
 
-	Test				  test;
-	Test*				  pclass  = new Test();
+	Test test;
+	Test* pclass = new Test();
 	std::unique_ptr<Test> puclass = std::make_unique<Test>();
-	void (Test::*pfunc3)()		  = &Test::inClassMethod;
-	void (*pfunc4)()			  = &Test::staticMethod;
-	void (*pfunc5)()			  = &staticOutOfClassMethod;
+	void (Test::*pfunc3)() = &Test::inClassMethod;
+	void (*pfunc4)() = &Test::staticMethod;
+	void (*pfunc5)() = &staticOutOfClassMethod;
 
 	pfunc1();
 	pfunc2();
@@ -46,7 +47,7 @@ void test_func_ptr() {
 }
 void test_decltype() {
 	std::cout << "test_decltype called!\n";
-	int			  num  = 10;
+	int num = 10;
 	decltype(num) num2 = 20;
 	// auto n; // auto 必须初始化 decltype不用
 	auto sum = num + num2;
@@ -74,13 +75,13 @@ void test_tuple_apply() {
 
 	auto args = std::make_tuple(1, 2);
 
-	int (*addPtr)(int, int)					= &add<int, int>;
-	int (Test::*addPtrInClass)(int, int)	= &Test::add;
+	int (*addPtr)(int, int) = &add<int, int>;
+	int (Test::*addPtrInClass)(int, int) = &Test::add;
 	void (Test::*inClassMethodPtrInClass)() = &Test::inClassMethod;
-	void (*staticMethodInClass)()			= &Test::staticMethod;
+	void (*staticMethodInClass)() = &Test::staticMethod;
 
-	Test				  test;
-	Test*				  testPtr		= new Test();
+	Test test;
+	Test* testPtr = new Test();
 	std::unique_ptr<Test> testUniquePtr = std::make_unique<Test>();
 
 	std::cout << std::apply(addPtr, args) << std::endl;
@@ -105,10 +106,34 @@ void test_tuple_apply() {
 	std::apply([]() { Test::staticMethod(); }, std::make_tuple());
 	std::apply([&]() { staticMethodInClass(); }, std::make_tuple());
 }
+void test_async() {
+	class Worker {
+	public:
+		using Callback = std::function<void(int)>;
+		std::future<void> run(int num, Callback callback) {
+			return std::async(std::launch::async, [&]() {
+				for (int i = 0; i < 1000; i++) {
+					num++;
+				}
+				callback(num); // 在子线程中调用回调
+			});
+		}
+	} worker;
+
+	auto future = worker.run(
+		24, [](int num) { std::cout << "Result: " << num << std::endl; });
+
+	for (int i = 0; i < 10; i++) {
+		std::cout << i << " ";
+	}
+
+	future.wait(); // 等待异步任务完成（可选）
+}
 int main(int argc, char* argv[]) {
 	// std::cout << "Hello, world!\n";
 	// test_func_ptr();
 	// test_decltype();
-	test_tuple_apply();
+	// test_tuple_apply();
+	test_async();
 	return 0;
 }
