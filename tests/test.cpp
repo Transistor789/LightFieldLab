@@ -1,4 +1,4 @@
-#include <future>
+﻿#include <future>
 #include <iostream>
 #include <memory>
 #include <tuple>
@@ -27,7 +27,7 @@ void test_func_ptr() {
 	void (*pfunc2)() = &Test::staticMethod;
 
 	Test test;
-	Test* pclass = new Test();
+	Test *pclass = new Test();
 	std::unique_ptr<Test> puclass = std::make_unique<Test>();
 	void (Test::*pfunc3)() = &Test::inClassMethod;
 	void (*pfunc4)() = &Test::staticMethod;
@@ -63,7 +63,7 @@ void test_decltype() {
 
 	// std::cout << typeid().name() << std::endl;
 }
-void printPersonInfo(const std::string& name, int age, double height) {
+void printPersonInfo(const std::string &name, int age, double height) {
 	std::cout << "Name: " << name << ", Age: " << age << ", Height: " << height
 			  << "m\n";
 }
@@ -81,7 +81,7 @@ void test_tuple_apply() {
 	void (*staticMethodInClass)() = &Test::staticMethod;
 
 	Test test;
-	Test* testPtr = new Test();
+	Test *testPtr = new Test();
 	std::unique_ptr<Test> testUniquePtr = std::make_unique<Test>();
 
 	std::cout << std::apply(addPtr, args) << std::endl;
@@ -129,7 +129,7 @@ void test_async() {
 
 	future.wait(); // 等待异步任务完成（可选）
 }
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
 	// std::cout << "Hello, world!\n";
 	// test_func_ptr();
 	// test_decltype();

@@ -14,14 +14,14 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/opencv.hpp>
 #include <ostream>
-int test_signals(int argc, char* argv[]) {
+int test_signals(int argc, char *argv[]) {
 	QApplication app(argc, argv);
 	WindowBase window;
 
 	std::cout << "test LFLoad with Qt signals!" << std::endl;
 	std::cout << "Main thread: " << QThread::currentThreadId() << std::endl;
 
-	LFLoad::Worker* lfloader = new LFLoad::Worker();
+	LFLoad::Worker *lfloader = new LFLoad::Worker();
 	QString path(argv[1]);
 	// std::string		  path(argv[1]);
 	bool isRGB = strcmp(argv[2], "1") == 0 ? true : false;
@@ -41,7 +41,7 @@ int test_signals(int argc, char* argv[]) {
 		[&]() { lfloader->getLF(); }, Qt::QueuedConnection);
 	QObject::connect(
 		lfloader, &LFLoad::Worker::lfUpdated, &window,
-		[&](const LightFieldPtr& ptr) {
+		[&](const LightFieldPtr &ptr) {
 			cv::imshow("image", ptr->getCenter());
 			cv::waitKey();
 		},
@@ -108,7 +108,7 @@ int test_signals(int argc, char* argv[]) {
 // 	return app.exec();
 // }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
 	int value;
 	if (strcmp(argv[3], "0") == 0) {
 		value = test_signals(argc, argv);

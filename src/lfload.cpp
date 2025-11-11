@@ -1,4 +1,4 @@
-#include "lfload.h"
+﻿#include "lfload.h"
 
 #include <filesystem>
 #include <fstream>
@@ -7,7 +7,7 @@
 #include <openssl/sha.h>
 #include <string>
 
-std::vector<uint8_t> LFLoad::readRawFile(const std::string& filename) {
+std::vector<uint8_t> LFLoad::readRawFile(const std::string &filename) {
 	std::ifstream file(filename, std::ios::binary | std::ios::ate);
 	if (!file) {
 		throw std::runtime_error("readRawFile: file not exist!");
@@ -16,12 +16,12 @@ std::vector<uint8_t> LFLoad::readRawFile(const std::string& filename) {
 	file.seekg(0, std::ios::beg);
 
 	std::vector<uint8_t> buffer(size);
-	if (!file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+	if (!file.read(reinterpret_cast<char *>(buffer.data()), size)) {
 		throw std::runtime_error("readRawFile: read error!");
 	}
 	return buffer;
 }
-cv::Mat LFLoad::convertRaw8ToMat(uint8_t* src, int width, int height,
+cv::Mat LFLoad::convertRaw8ToMat(uint8_t *src, int width, int height,
 								 bool isFloat) {
 	if (src == nullptr) {
 		throw std::runtime_error("convertRaw8ToMat: src is nullptr!");
@@ -32,13 +32,13 @@ cv::Mat LFLoad::convertRaw8ToMat(uint8_t* src, int width, int height,
 	}
 	return result;
 }
-cv::Mat LFLoad::convertRaw10ToMat(const uint8_t* src, int width, int height,
+cv::Mat LFLoad::convertRaw10ToMat(const uint8_t *src, int width, int height,
 								  bool isFloat) {
 	if (src == nullptr) {
 		throw std::runtime_error("convertRaw10ToMat: src is nullptr!");
 	}
 	auto mat16 = cv::Mat(height, width, CV_16UC1);
-	auto* pTemp = mat16.ptr<uint16_t>();
+	auto *pTemp = mat16.ptr<uint16_t>();
 	int dataSize = width * height * 5 / 4;
 	for (int i = 0, index = 0; i < dataSize; i += 5, index += 4) {
 		const uint8_t low_bits = src[i + 4];
@@ -55,7 +55,7 @@ cv::Mat LFLoad::convertRaw10ToMat(const uint8_t* src, int width, int height,
 	}
 	return result;
 }
-cv::Mat LFLoad::gammaConvert(const cv::Mat& src, bool inverse) {
+cv::Mat LFLoad::gammaConvert(const cv::Mat &src, bool inverse) {
 	if (src.empty()) {
 		throw std::runtime_error("gammaConvert: src is empty!");
 	}
@@ -69,12 +69,12 @@ cv::Mat LFLoad::gammaConvert(const cv::Mat& src, bool inverse) {
 	}
 
 	std::vector<cv::Mat> channels;
-	cv::split(srcFloat, channels);  // 拆分通道
+	cv::split(srcFloat, channels); // 拆分通道
 
 	constexpr float A = 0.055f;
 	constexpr float ALPHA = 1.055f;
 
-	for (auto& ch : channels) {
+	for (auto &ch : channels) {
 		if (!inverse) {
 			// 线性 -> sRGB
 			constexpr float BETA = 0.0031308f;
@@ -85,8 +85,8 @@ cv::Mat LFLoad::gammaConvert(const cv::Mat& src, bool inverse) {
 			gammaPart = ALPHA * gammaPart - A;
 
 			linearPart = ch * 12.92f;
-			gammaPart.copyTo(ch, mask);           // 用 gamma 区覆盖
-			linearPart.copyTo(ch, ~mask);         // 用线性区覆盖其余部分
+			gammaPart.copyTo(ch, mask);	  // 用 gamma 区覆盖
+			linearPart.copyTo(ch, ~mask); // 用线性区覆盖其余部分
 		} else {
 			// sRGB -> 线性
 			constexpr float THRESHOLD = 0.04045f;
@@ -103,11 +103,11 @@ cv::Mat LFLoad::gammaConvert(const cv::Mat& src, bool inverse) {
 	}
 
 	cv::Mat result;
-	cv::merge(channels, result);  // 合并通道
+	cv::merge(channels, result); // 合并通道
 	return result;
 }
 
-LightFieldPtr LFLoad::loadSAI(const std::string& path, bool isRGB) {
+LightFieldPtr LFLoad::loadSAI(const std::string &path, bool isRGB) {
 	if (!std::filesystem::exists(path)) {
 		throw std::runtime_error("loadSAI: file not exist! Path: " + path);
 	}
@@ -116,7 +116,7 @@ LightFieldPtr LFLoad::loadSAI(const std::string& path, bool isRGB) {
 
 	// 获取所有文件名
 	std::vector<std::string> filenames;
-	for (const auto& entry : std::filesystem::directory_iterator(path)) {
+	for (const auto &entry : std::filesystem::directory_iterator(path)) {
 		if (entry.is_regular_file()) {
 			filenames.push_back(entry.path().filename().string());
 		}
@@ -126,7 +126,7 @@ LightFieldPtr LFLoad::loadSAI(const std::string& path, bool isRGB) {
 	std::vector<cv::Mat> temp(filenames.size());
 	std::vector<std::future<cv::Mat>> futures;
 
-	for (const auto& i : filenames) {
+	for (const auto &i : filenames) {
 		std::string filename = path + "/" + i;
 		futures.push_back(
 			std::async(std::launch::async, [&, isRGB, filename]() {
@@ -149,7 +149,7 @@ LightFieldPtr LFLoad::loadSAI(const std::string& path, bool isRGB) {
 
 	return std::make_shared<LightFieldData>(std::move(temp));
 }
-int LFLoad::loadRaw(const std::string& path, cv::Mat& dst, int width,
+int LFLoad::loadRaw(const std::string &path, cv::Mat &dst, int width,
 					int height, int bitDepth) {
 	std::vector<uint8_t> raw = readRawFile(path);
 	cv::Mat mat;
@@ -165,7 +165,7 @@ int LFLoad::loadRaw(const std::string& path, cv::Mat& dst, int width,
 
 	return 0;
 }
-std::string LFLoad::readSection(std::ifstream& file) {
+std::string LFLoad::readSection(std::ifstream &file) {
 	std::string section;
 	constexpr unsigned char LFM_HEADER[] = {0x89, 'L',	'F',  'M',	0x0d, 0x0a,
 											0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00};
@@ -184,7 +184,7 @@ std::string LFLoad::readSection(std::ifstream& file) {
 		throw std::runtime_error("readSection: Invalid section header format");
 
 	uint8_t len_bytes[4];
-	file.read(reinterpret_cast<char*>(len_bytes), 4);
+	file.read(reinterpret_cast<char *>(len_bytes), 4);
 	if (file.gcount() != 4)
 		throw std::runtime_error("readSection: Failed to read section length");
 
@@ -211,8 +211,8 @@ std::string LFLoad::readSection(std::ifstream& file) {
 		throw std::runtime_error("readSection: Failed to read section payload");
 
 	unsigned char hash[SHA_DIGEST_LENGTH];
-	SHA1(reinterpret_cast<const unsigned char*>(section.data()), section.size(),
-		 hash);
+	SHA1(reinterpret_cast<const unsigned char *>(section.data()),
+		 section.size(), hash);
 
 	std::ostringstream computed;
 	for (unsigned char i : hash) {
@@ -238,7 +238,7 @@ std::string LFLoad::readSection(std::ifstream& file) {
 
 	return section;
 }
-std::vector<std::string> LFLoad::readLytroFile(const std::string& path) {
+std::vector<std::string> LFLoad::readLytroFile(const std::string &path) {
 	std::vector<std::string> sections;
 	constexpr unsigned char LFP_HEADER[] = {0x89, 'L',	'F',  'P',	0x0d, 0x0a,
 											0x1a, 0x0a, 0x00, 0x00, 0x00, 0x01};
@@ -253,7 +253,7 @@ std::vector<std::string> LFLoad::readLytroFile(const std::string& path) {
 		throw std::runtime_error("readLytroFile: Invalid file header: " + path);
 
 	uint8_t len_bytes[4];
-	file.read(reinterpret_cast<char*>(len_bytes), 4);
+	file.read(reinterpret_cast<char *>(len_bytes), 4);
 	if (file.gcount() != 4)
 		throw std::runtime_error(
 			"readLytroFile: Failed to read LFP header length");
@@ -275,7 +275,7 @@ std::vector<std::string> LFLoad::readLytroFile(const std::string& path) {
 		try {
 			std::string section = readSection(file);
 			sections.push_back(std::move(section));
-		} catch (const std::exception& e) {
+		} catch (const std::exception &e) {
 			throw std::runtime_error(
 				std::string("readLytroFile: Failed to read section: ")
 				+ e.what());
@@ -285,9 +285,9 @@ std::vector<std::string> LFLoad::readLytroFile(const std::string& path) {
 	file.close();
 	return sections;
 }
-json LFLoad::readJson(const std::vector<std::string>& sections) {
+json LFLoad::readJson(const std::vector<std::string> &sections) {
 	json json_dict;
-	for (const auto& section : sections) {
+	for (const auto &section : sections) {
 		try {
 			json parsed = json::parse(section);
 			json_dict.update(parsed);
@@ -297,14 +297,14 @@ json LFLoad::readJson(const std::vector<std::string>& sections) {
 	}
 	return json_dict;
 }
-bool LFLoad::hasExtension(const std::string& filename, const std::string& ext) {
+bool LFLoad::hasExtension(const std::string &filename, const std::string &ext) {
 	size_t pos = filename.rfind('.');
 	if (pos == std::string::npos)
 		return false;
 	std::string file_ext = filename.substr(pos + 1);
 	return file_ext == ext;
 }
-cv::Mat LFLoad::loadImageFile(const std::string& filename, int width,
+cv::Mat LFLoad::loadImageFile(const std::string &filename, int width,
 							  int height) {
 	std::filesystem::path path(filename);
 	std::string ext = path.extension().string();
@@ -322,7 +322,7 @@ cv::Mat LFLoad::loadImageFile(const std::string& filename, int width,
 		auto buffer = sections[LYTRO_BUFFER_INDEX];
 		// json js = LFLoad::readJson(sections);
 		cv::Mat lytro_bayer_image = LFLoad::convertRaw10ToMat(
-			reinterpret_cast<uint8_t*>(buffer.data()), 7728, 5368, false);
+			reinterpret_cast<uint8_t *>(buffer.data()), 7728, 5368, false);
 		return lytro_bayer_image;
 	} else {
 		throw std::runtime_error("loadImageFile: Unsupported file extension: "

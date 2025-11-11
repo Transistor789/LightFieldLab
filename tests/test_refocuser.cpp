@@ -86,7 +86,7 @@
 //    private:
 // 	float counter = 0; // 计数器变量
 // };
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
 	std::cout << "Testing Refocus class" << std::endl;
 
 	QApplication app(argc, argv);

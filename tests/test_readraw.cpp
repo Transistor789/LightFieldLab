@@ -1,4 +1,4 @@
-#include <chrono>
+﻿#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <opencv2/core/hal/interface.h>
@@ -11,7 +11,7 @@
 constexpr int LYTRO_WIDTH = 7728;
 constexpr int LYTRO_HEIGHT = 5368;
 
-cv::Mat readRawFile(const std::string& filename, int width, int height) {
+cv::Mat readRawFile(const std::string &filename, int width, int height) {
 	std::ifstream file(filename, std::ios::binary | std::ios::ate);
 	if (!file)
 		throw std::runtime_error("Failed to open file");
@@ -20,13 +20,13 @@ cv::Mat readRawFile(const std::string& filename, int width, int height) {
 	file.seekg(0, std::ios::beg);
 
 	std::vector<unsigned char> raw10bit(size);
-	if (!file.read(reinterpret_cast<char*>(raw10bit.data()), size)) {
+	if (!file.read(reinterpret_cast<char *>(raw10bit.data()), size)) {
 		throw std::runtime_error("Failed to read file");
 	}
 
 	// 正确创建16-bit矩阵
 	cv::Mat raw16bit(LYTRO_HEIGHT, LYTRO_WIDTH, CV_16UC1);
-	uint16_t* raw16Ptr = raw16bit.ptr<uint16_t>(); // 使用正确的指针类型
+	uint16_t *raw16Ptr = raw16bit.ptr<uint16_t>(); // 使用正确的指针类型
 
 	// 10-bit -> 16-bit转换
 	for (int i = 0, index = 0; i < raw10bit.size(); i += 5, index += 4) {

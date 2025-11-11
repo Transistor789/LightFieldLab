@@ -13,9 +13,9 @@
 class WindowBase : public QMainWindow {
 	Q_OBJECT
 public:
-	WindowBase(QWidget* parent = nullptr) : QMainWindow(parent) {
-		QWidget* centralWidget = new QWidget(this);
-		QVBoxLayout* layout = new QVBoxLayout(centralWidget);
+	WindowBase(QWidget *parent = nullptr) : QMainWindow(parent) {
+		QWidget *centralWidget = new QWidget(this);
+		QVBoxLayout *layout = new QVBoxLayout(centralWidget);
 		button = new QPushButton("execute", this);
 
 		layout->addWidget(button);
@@ -33,9 +33,9 @@ public:
 		}
 		delete worker;
 	}
-	QThread* thread;
-	LFProcessor* worker;
-	QPushButton* button;
+	QThread *thread;
+	LFProcessor *worker;
+	QPushButton *button;
 };
 
 #endif

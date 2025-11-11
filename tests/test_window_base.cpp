@@ -7,7 +7,7 @@
 #include <QtWidgets/qpushbutton.h>
 #include <iostream>
 
-int main(int agrc, char* argv[]) {
+int main(int agrc, char *argv[]) {
 	QApplication app(agrc, argv);
 	WindowBase window;
 	std::cout << "Main in thread: " << QThread::currentThread() << std::endl;

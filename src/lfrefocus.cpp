@@ -6,7 +6,7 @@ LFRefocus::~LFRefocus() {
 	_ymap_gpu.release();
 }
 
-void LFRefocus::init(const LightFieldPtr& ptr) {
+void LFRefocus::init(const LightFieldPtr &ptr) {
 	if (ptr->data[0].size() == _size && ptr->data[0].type() == _type) {
 		return;
 	}
@@ -26,7 +26,7 @@ void LFRefocus::init(const LightFieldPtr& ptr) {
 	_ymap = cv::repeat(_ymap, ptr->height, 1);
 }
 
-void LFRefocus::onUpdateLF(const LightFieldPtr& ptr) {
+void LFRefocus::onUpdateLF(const LightFieldPtr &ptr) {
 	lf = ptr;
 	init(lf);
 }
@@ -41,7 +41,7 @@ void LFRefocus::setGpu(bool isGPU) {
 		_ymap_gpu.release();
 	}
 }
-int LFRefocus::refocus(cv::Mat& img, float alpha, int crop) {
+int LFRefocus::refocus(cv::Mat &img, float alpha, int crop) {
 	if (lf == nullptr) {
 		qDebug() << "lf is nullptr!\n";
 		return -1;
@@ -69,7 +69,7 @@ int LFRefocus::refocus(cv::Mat& img, float alpha, int crop) {
 
 	return 0;
 }
-int LFRefocus::refocus_cpu(cv::Mat& result, float alpha, int crop) {
+int LFRefocus::refocus_cpu(cv::Mat &result, float alpha, int crop) {
 	float factor = 1.0f - 1.0f / alpha;
 	int divisor = (lf->rows - 2 * crop) * (lf->cols - 2 * crop);
 	cv::Mat xq, yq, temp, sum;
@@ -90,7 +90,7 @@ int LFRefocus::refocus_cpu(cv::Mat& result, float alpha, int crop) {
 	result = sum / divisor;
 	return 0;
 }
-int LFRefocus::refocus_gpu(cv::Mat& result, float alpha, int crop) {
+int LFRefocus::refocus_gpu(cv::Mat &result, float alpha, int crop) {
 	float factor = 1.0f - 1.0f / alpha;
 	int divisor = (lf->rows - 2 * crop) * (lf->cols - 2 * crop);
 	cv::UMat yq_gpu, xq_gpu, temp_gpu, result_gpu;

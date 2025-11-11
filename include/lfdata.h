@@ -1,4 +1,4 @@
-#ifndef LFDATA_H
+﻿#ifndef LFDATA_H
 #define LFDATA_H
 
 #include <opencv2/opencv.hpp>
@@ -9,18 +9,18 @@ enum { RAW8 = 8, RAW10 = 10, RAW12 = 12, RAW16 = 16 };
 class LightFieldData {
 public:
 	explicit LightFieldData() = default;
-	explicit LightFieldData(const std::vector<cv::Mat>& src) {
+	explicit LightFieldData(const std::vector<cv::Mat> &src) {
 		data.reserve(src.size());
-		for (const auto& mat : src) data.push_back(mat.clone());
+		for (const auto &mat : src) data.push_back(mat.clone());
 		setParam();
 	}
-	explicit LightFieldData(std::vector<cv::Mat>&& src) {
+	explicit LightFieldData(std::vector<cv::Mat> &&src) {
 		data = std::move(src);
 		setParam();
 	}
-	LightFieldData(const LightFieldData& src) {
+	LightFieldData(const LightFieldData &src) {
 		data.reserve(src.data.size());
-		for (const auto& mat : src.data) {
+		for (const auto &mat : src.data) {
 			data.emplace_back(mat.clone()); // 深拷贝每个 cv::Mat
 		}
 		data_gpu.clear();
@@ -94,7 +94,7 @@ public:
 	}
 
 private:
-	void validate(const std::vector<cv::Mat>& src) {
+	void validate(const std::vector<cv::Mat> &src) {
 		if (src.empty()) {
 			throw std::invalid_argument(
 				"LightField requires a non-empty vector");
@@ -109,7 +109,7 @@ private:
 			throw std::invalid_argument("Input images must not be empty");
 		}
 	}
-	void setParam(const std::vector<cv::Mat>& src) {
+	void setParam(const std::vector<cv::Mat> &src) {
 		size = src.size();
 		rows = static_cast<int>(std::sqrt(src.size()));
 		cols = rows;

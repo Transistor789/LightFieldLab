@@ -83,26 +83,46 @@ target_link_libraries(test_superres PRIVATE
 # target_include_directories(test_refocuser PRIVATE ${CMAKE_SOURCE_DIR}/include)
 # target_link_libraries(test_refocuser PRIVATE Qt${QT_VERSION_MAJOR}::Widgets ${OpenCV_LIBS})
 
-add_executable(test_future test_future.cpp)
+# add_executable(test_future test_future.cpp)
 
 add_executable(test_readraw test_readraw.cpp)
 target_link_libraries(test_readraw PRIVATE ${OpenCV_LIBS})
 # message(STATUS "OpenCV LIBS: ${OpenCV_LIBS}")
 
-add_executable(test_libraw test_libraw.cpp)
-set(LibRaw_INCLUDE_DIR "/usr/local/libraw")
-target_include_directories(test_libraw PRIVATE "${LibRaw_INCLUDE_DIR}/include")
-target_link_directories(test_libraw PRIVATE "${LibRaw_INCLUDE_DIR}/lib")
-target_link_libraries(test_libraw PRIVATE raw ${OpenCV_LIBS})
+# add_executable(test_libraw test_libraw.cpp)
+# set(LibRaw_INCLUDE_DIR "/usr/local/libraw")
+# target_include_directories(test_libraw PRIVATE "${LibRaw_INCLUDE_DIR}/include")
+# target_link_directories(test_libraw PRIVATE "${LibRaw_INCLUDE_DIR}/lib")
+# target_link_libraries(test_libraw PRIVATE raw ${OpenCV_LIBS})
 
-add_executable(test_openssl test_openssl.cpp ../src/lfload.cpp)
+add_executable(test_openssl test_openssl.cpp ${SOURCE_DIR}/lfload.cpp)
 find_package(OpenSSL REQUIRED)
-target_include_directories(test_openssl PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    "/opt/homebrew/opt/openssl@3/include"
-    "/usr/local/opencv/Release/include"
-)
-target_link_directories(test_openssl PRIVATE /opt/homebrew/opt/openssl@3/lib)
+target_include_directories(test_openssl PRIVATE ${INCLUDE_DIR} ${OPENSSL_INCLUDE_DIR})
+target_link_directories(test_openssl PRIVATE "${OPENSSL_ROOT_DIR}/lib")
 target_link_libraries(test_openssl PRIVATE OpenSSL::SSL OpenSSL::Crypto ${OpenCV_LIBS})
+# ===== Copy OpenSSL DLLs to output directory =====
+set(OPENSSL_BIN_DIR "${OPENSSL_ROOT_DIR}/bin")
+if(EXISTS "${OPENSSL_BIN_DIR}")
+    set(OPENSSL_DLLS
+        "${OPENSSL_BIN_DIR}/libssl-3-x64.dll"
+        "${OPENSSL_BIN_DIR}/libcrypto-3-x64.dll"
+    )
 
+    # 检查文件是否存在，避免静默失败
+    foreach(dll IN LISTS OPENSSL_DLLS)
+        if(NOT EXISTS "${dll}")
+            message(WARNING "OpenSSL DLL not found: ${dll}")
+        endif()
+    endforeach()
+
+    add_custom_command(TARGET test_openssl POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${OPENSSL_DLLS}
+        "$<TARGET_FILE_DIR:test_openssl>/"
+        COMMENT "Copying OpenSSL DLLs to $<CONFIG> output directory..."
+        VERBATIM
+    )
+else()
+    message(WARNING "OpenSSL bin directory not found: ${OPENSSL_BIN_DIR}")
+endif()
 

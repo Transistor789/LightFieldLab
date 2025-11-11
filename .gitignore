@@ -6,6 +6,10 @@ CMakeLists.txt.user
 .vscode
 .idea
 .venv
+.out
+.vs
+.qtcreator
+CMakeSettings.json
 __pycache__
 mainwindow.ui
 cmake-build-debug

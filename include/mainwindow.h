@@ -8,16 +8,16 @@
 class MainWindow : public QMainWindow {
 	Q_OBJECT
 public:
-	MainWindow(QWidget* parent = nullptr);
+	MainWindow(QWidget *parent = nullptr);
 	~MainWindow();
 
 signals:
 	void requestUpdateSAI(cv::Mat);
 
 public slots:
-	void updateSAI(const cv::Mat& cvImg);
+	void updateSAI(const cv::Mat &cvImg);
 	void onLensletBrowseBtn();
-	void viewValueUpdated(const LightFieldPtr& ptr);
+	void viewValueUpdated(const LightFieldPtr &ptr);
 	void onViewVerticalSliderUpdated(int value);
 	void onViewHorizontalSliderUpdated(int value);
 	void onRefocusAlphaChanged(int value);
@@ -26,8 +26,8 @@ public slots:
 private:
 	void connect_init();
 
-	Ui::MainWindow* ui;
-	LFProcessor* lfp;
-	QThread* lfp_thread;
+	Ui::MainWindow *ui;
+	LFProcessor *lfp;
+	QThread *lfp_thread;
 };
 #endif // MAINWINDOW_H

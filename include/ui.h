@@ -16,45 +16,45 @@ namespace Ui {
 class MainWindow : public QMainWindow {
 	Q_OBJECT
 public:
-	void setupUi(QMainWindow* mainWindow);
+	void setupUi(QMainWindow *mainWindow);
 
 	// 1
 	QSlider *captureSlider, *colorSlider, *gpuSlider;
 
-	QRadioButton* staticMode;
-	QRadioButton* dynamicMode;
-	QRadioButton* grayMode;
-	QRadioButton* rgbMode;
-	QPushButton* lensletBrowseBtn;
-	QPushButton* whiteBrowseBtn;
-	QLineEdit* lensletPathEdit;
-	QLineEdit* whitePathEdit;
+	QRadioButton *staticMode;
+	QRadioButton *dynamicMode;
+	QRadioButton *grayMode;
+	QRadioButton *rgbMode;
+	QPushButton *lensletBrowseBtn;
+	QPushButton *whiteBrowseBtn;
+	QLineEdit *lensletPathEdit;
+	QLineEdit *whitePathEdit;
 
 	// views
-	QSlider* verticalSlider;
-	QSlider* horizontalSlider;
-	QSpinBox* verticalSpinBox;
-	QSpinBox* horizontalSpinBox;
+	QSlider *verticalSlider;
+	QSlider *horizontalSlider;
+	QSpinBox *verticalSpinBox;
+	QSpinBox *horizontalSpinBox;
 
 	// refocus
-	QSlider* cropSlider;
-	QSpinBox* cropSpinBox;
-	QSlider* alphaSlider;
-	QDoubleSpinBox* alphaSpinBox;
+	QSlider *cropSlider;
+	QSpinBox *cropSpinBox;
+	QSlider *alphaSlider;
+	QDoubleSpinBox *alphaSpinBox;
 
 	// super_resolution
-	QComboBox* typeComboBox;
-	QComboBox* scaleComboBox;
-	QPushButton* SRButton;
+	QComboBox *typeComboBox;
+	QComboBox *scaleComboBox;
+	QPushButton *SRButton;
 
-	QLabel* rightPanel;
+	QLabel *rightPanel;
 
 private:
-	QGroupBox* setupModeGroup();
-	QGroupBox* setupViewsGroup();
-	QGroupBox* setupRefocusGroup();
-	QGroupBox* setupSRGroup();
-	QGroupBox* setupDEGroup();
+	QGroupBox *setupModeGroup();
+	QGroupBox *setupViewsGroup();
+	QGroupBox *setupRefocusGroup();
+	QGroupBox *setupSRGroup();
+	QGroupBox *setupDEGroup();
 };
 }; // namespace Ui
 

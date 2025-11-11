@@ -7,7 +7,7 @@
 
 #include <QMetaObject>
 
-LFProcessor::LFProcessor(QObject* parent) : QObject(parent) {
+LFProcessor::LFProcessor(QObject *parent) : QObject(parent) {
 	memset(threads, 0, sizeof(threads));
 
 	qload = initWorker<QLFLoad>(LOAD);
@@ -43,8 +43,8 @@ void LFProcessor::printThreadId() {
 			  << std::endl;
 }
 template <typename T>
-T* LFProcessor::initWorker(int type) {
-	T* worker = new T();
+T *LFProcessor::initWorker(int type) {
+	T *worker = new T();
 	threads[type] = new QThread(this);
 
 	worker->moveToThread(threads[type]);
@@ -65,7 +65,7 @@ T* LFProcessor::initWorker(int type) {
 	threads[type]->start();
 	return worker;
 }
-void LFProcessor::onLFUpdated(const LightFieldPtr& ptr) {
+void LFProcessor::onLFUpdated(const LightFieldPtr &ptr) {
 	lf = ptr;
 
 	sai_row = (1 + ptr->rows) / 2 - 1;

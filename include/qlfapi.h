@@ -11,12 +11,13 @@
 
 #include <QObject>
 #include <QThread>
+#include <QDebug>
 #include <memory>
 
 class QLFLoad : public QObject {
 	Q_OBJECT
 public:
-	explicit QLFLoad(QObject* parent = nullptr)
+	explicit QLFLoad(QObject *parent = nullptr)
 		: QObject(parent), backend(std::make_unique<LFLoad>()) {}
 
 	std::unique_ptr<LFLoad> backend;
@@ -26,10 +27,10 @@ public slots:
 		std::cout << "LFLoad threadId: " << QThread::currentThreadId()
 				  << std::endl;
 	}
-	void loadSAI(const QString& path, bool isRGB) {
+	void loadSAI(const QString &path, bool isRGB) {
 		emit sendLfPtr(backend->loadSAI(path.toStdString(), isRGB));
 	}
-	void loadRaw(const QString& path, int width, int height, int bitDepth) {
+	void loadRaw(const QString &path, int width, int height, int bitDepth) {
 		cv::Mat mat;
 		int ret = backend->loadRaw(path.toStdString(), mat, LYTRO_WIDTH,
 								   LYTRO_HEIGHT, bitDepth);
@@ -37,14 +38,14 @@ public slots:
 	}
 
 signals:
-	void sendLfPtr(const LightFieldPtr&);
+	void sendLfPtr(const LightFieldPtr &);
 	void sendMat(cv::Mat);
 };
 
 class QLFRefocus : public QObject {
 	Q_OBJECT
 public:
-	explicit QLFRefocus(QObject* parent = nullptr)
+	explicit QLFRefocus(QObject *parent = nullptr)
 		: QObject(parent), backend(std::make_unique<LFRefocus>()) {}
 
 	std::unique_ptr<LFRefocus> backend;
@@ -63,18 +64,18 @@ public slots:
 		}
 		emit sendMat(result);
 	}
-	void onUpdateLF(const LightFieldPtr& ptr) const {
+	void onUpdateLF(const LightFieldPtr &ptr) const {
 		backend->onUpdateLF(ptr);
 	}
 
 signals:
-	void sendMat(const cv::Mat&);
+	void sendMat(const cv::Mat &);
 };
 
 class QLFSuperRes : public QObject {
 	Q_OBJECT
 public:
-	explicit QLFSuperRes(QObject* parent = nullptr)
+	explicit QLFSuperRes(QObject *parent = nullptr)
 		: QObject(parent), backend(std::make_unique<LFSuperRes>()) {}
 
 	int type() const { return backend->type(); }
@@ -90,18 +91,18 @@ public slots:
 	}
 	void setType(int index) const { backend->setType(index); }
 	void setScale(int index) const { backend->setScale(index); }
-	void onUpdateLF(const LightFieldPtr& ptr) const {
+	void onUpdateLF(const LightFieldPtr &ptr) const {
 		backend->onUpdateLF(ptr);
 	}
 	void loadModel() const { backend->loadModel(); }
-	void upsample(const cv::Mat& src) {
+	void upsample(const cv::Mat &src) {
 		cv::Mat result;
 		backend->upsample(src, result);
 		emit finished(result);
 	}
 
 signals:
-	void finished(const cv::Mat&);
+	void finished(const cv::Mat &);
 };
 
 #endif // QLFLOAD_H

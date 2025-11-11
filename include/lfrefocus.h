@@ -10,13 +10,13 @@ public:
 	LFRefocus() = default;
 	~LFRefocus();
 
-	void init(const LightFieldPtr& ptr);
+	void init(const LightFieldPtr &ptr);
 	bool getGpu() const { return _isGpu; }
 	void setGpu(bool isGPU);
-	int refocus(cv::Mat& img, float alpha, int crop);
-	int refocus_cpu(cv::Mat& img, float alpha, int crop);
-	int refocus_gpu(cv::Mat& img, float alpha, int crop);
-	void onUpdateLF(const LightFieldPtr& ptr);
+	int refocus(cv::Mat &img, float alpha, int crop);
+	int refocus_cpu(cv::Mat &img, float alpha, int crop);
+	int refocus_gpu(cv::Mat &img, float alpha, int crop);
+	void onUpdateLF(const LightFieldPtr &ptr);
 
 	LightFieldPtr lf;
 
