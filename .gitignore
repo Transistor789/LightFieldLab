@@ -15,3 +15,5 @@ mainwindow.ui
 cmake-build-debug
 cmake-build-release
 cloc-2.06.exe
+data/toy
+data/calibration
