@@ -48,7 +48,7 @@ cv::Mat readRawFile(const std::string &filename, int width, int height) {
 int main() {
 	auto start = std::chrono::high_resolution_clock::now();
 	cv::Mat image =
-		readRawFile("../input/MOD_0015.RAW", LYTRO_WIDTH, LYTRO_HEIGHT);
+		readRawFile("../data/MOD_0015.RAW", LYTRO_WIDTH, LYTRO_HEIGHT);
 	auto end = std::chrono::high_resolution_clock::now();
 	std::cout << "Read " << image.size() << " bytes from file." << std::endl;
 

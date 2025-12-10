@@ -3,13 +3,16 @@
 #include <memory>
 #include <tuple>
 #include <type_traits>
+
 class Test {
 public:
 	void inClassMethod() { std::cout << "inClassMethod called!\n"; }
 	static void staticMethod() { std::cout << "staticMethod called!\n"; }
 	int add(int a, int b) { return a + b; }
 };
+
 void outOfClassMethod() { std::cout << "outOfClassMethod called!\n"; }
+
 static void staticOutOfClassMethod() {
 	std::cout << "staticOutOfClassMethod called!\n";
 }
@@ -17,10 +20,12 @@ static void staticOutOfClassMethod() {
 // int	   add(int a, int b);
 // float  add(float a, float b);
 // double add(double a, double b);
+
 template <typename T, typename U>
 auto add(T t, U u) -> decltype(t + u) { // 返回类型由 t + u 的结果决定
 	return t + u;
 }
+
 void test_func_ptr() {
 	std::cout << "test_func_ptr called!\n";
 	void (*pfunc1)() = &outOfClassMethod;
@@ -45,6 +50,7 @@ void test_func_ptr() {
 
 	delete pclass;
 }
+
 void test_decltype() {
 	std::cout << "test_decltype called!\n";
 	int num = 10;
@@ -63,10 +69,12 @@ void test_decltype() {
 
 	// std::cout << typeid().name() << std::endl;
 }
+
 void printPersonInfo(const std::string &name, int age, double height) {
 	std::cout << "Name: " << name << ", Age: " << age << ", Height: " << height
 			  << "m\n";
 }
+
 void test_tuple_apply() {
 	std::cout << "test_tuple_apply called!\n";
 
@@ -106,6 +114,7 @@ void test_tuple_apply() {
 	std::apply([]() { Test::staticMethod(); }, std::make_tuple());
 	std::apply([&]() { staticMethodInClass(); }, std::make_tuple());
 }
+
 void test_async() {
 	class Worker {
 	public:
@@ -129,6 +138,7 @@ void test_async() {
 
 	future.wait(); // 等待异步任务完成（可选）
 }
+
 int main(int argc, char *argv[]) {
 	// std::cout << "Hello, world!\n";
 	// test_func_ptr();

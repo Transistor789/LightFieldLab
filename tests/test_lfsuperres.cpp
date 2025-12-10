@@ -1,20 +1,26 @@
 #include <chrono>
 #include <iostream>
-#include <opencv2/core/mat.hpp>
 #include <opencv2/dnn_superres.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/imgcodecs.hpp>
 #include <opencv2/opencv.hpp>
 
 int main() {
 	std::cout << cv::getVersionString() << std::endl;
 	cv::dnn_superres::DnnSuperResImpl sr;
-	sr.readModel(
-		"/Users/jax/code/LightFieldLab/input/opencv_srmodel/FSRCNN_x2.pb");
-	sr.setModel("fsrcnn", 2);
+
+#ifdef WIN32
+	cv::Mat input =
+		cv::imread("../data/toy/input_Cam112.png", cv::IMREAD_COLOR);
+	sr.readModel("../data/opencv_srmodel/FSRCNN_x2.pb");
+#else
 	cv::Mat input =
 		cv::imread("/Users/jax/code/LightFieldLab/input/toy/input_Cam112.png",
 				   cv::IMREAD_COLOR);
+	sr.readModel(
+		"/Users/jax/code/LightFieldLab/input/opencv_srmodel/FSRCNN_x2.pb");
+#endif
+
+	sr.setModel("fsrcnn", 2);
+
 	cv::Mat output;
 
 	auto start = std::chrono::high_resolution_clock::now();

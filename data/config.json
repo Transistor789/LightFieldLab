@@ -1,0 +1,29 @@
+{
+	"cal_meta": "",
+	"cal_meth": "grid-fit",
+	"cal_path": "D:/code/plenopticam/my_tests/MOD_0015.RAW",
+	"dir_remo": false,
+	"lfp_path": "D:/code/plenopticam/my_tests/toy.lfr",
+	"opt_arti": true,
+	"opt_awb_": true,
+	"opt_cali": false,
+	"opt_colo": 1,
+	"opt_cont": false,
+	"opt_dbug": 0,
+	"opt_dpth": false,
+	"opt_lier": 0,
+	"opt_pflu": false,
+	"opt_prnt": 1,
+	"opt_refi": false,
+	"opt_refo": 1,
+	"opt_rota": 0,
+	"opt_sat_": false,
+	"opt_view": 1,
+	"opt_vign": true,
+	"ptc_leng": "7",
+	"ran_refo": [
+		0,
+		1
+	],
+	"smp_meth": "local"
+}
