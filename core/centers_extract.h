@@ -25,6 +25,7 @@ public:
 	void run(bool use_cca = false);
 	std::vector<cv::Point2f> getPoints() { return _points; }
 	std::vector<float> getPitch() { return _pitch; };
+	int getEstimatedM() const { return _estimatedM; }
 
 private:
 	// === 成员变量 ===
