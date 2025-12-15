@@ -35,7 +35,15 @@ cv::Mat draw_points(const cv::Mat &img,
 					const std::string &output_path, int radius = 1,
 					const cv::Scalar &color = cv::Scalar(0), bool save = false);
 cv::Mat draw_points(const cv::Mat &img,
+					const std::vector<cv::Point> &pts_sorted,
+					const std::string &output_path, int radius = 1,
+					const cv::Scalar &color = cv::Scalar(0), bool save = false);
+cv::Mat draw_points(const cv::Mat &img,
 					const std::vector<std::vector<cv::Point2f>> &pts_sorted,
+					const std::string &output_path, int radius = 1,
+					const cv::Scalar &color = cv::Scalar(0), bool save = false);
+cv::Mat draw_points(const cv::Mat &img,
+					const std::vector<std::vector<cv::Point>> &pts_sorted,
 					const std::string &output_path, int radius = 1,
 					const cv::Scalar &color = cv::Scalar(0), bool save = false);
 
@@ -43,6 +51,9 @@ json readJson(const std::string &path);
 void writeJson(const std::string &path, const json &j, int indent = 4);
 void saveAs8Bit(const std::string &path, const cv::Mat &img,
 				double input_max_val = 1023.0);
+
+void imshowRaw(const std::string &winname, const cv::Mat &img,
+			   float resize_factor = 0.0f);
 std::string get_base_filename(const std::string &filename);
 
 #endif

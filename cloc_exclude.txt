@@ -1,0 +1,3 @@
+core/json.hpp
+core/ft602.h
+core/USBConfiguration.h

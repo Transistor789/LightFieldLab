@@ -2,7 +2,7 @@
 #define QLFAPI_H
 
 #include "config.h"
-#include "lfload.h"
+#include "lfio.h"
 #include "lfrefocus.h"
 #include "lfsuperres.h"
 
@@ -15,13 +15,13 @@ class QLFLoad : public QObject {
 	Q_OBJECT
 public:
 	explicit QLFLoad(QObject *parent = nullptr)
-		: QObject(parent), backend(std::make_unique<LFLoad>()) {}
+		: QObject(parent), backend(std::make_unique<LFIO>()) {}
 
-	std::unique_ptr<LFLoad> backend;
+	std::unique_ptr<LFIO> backend;
 
 public slots:
 	static void printThreadId() {
-		std::cout << "LFLoad threadId: " << QThread::currentThreadId()
+		std::cout << "LFIO threadId: " << QThread::currentThreadId()
 				  << std::endl;
 	}
 	void loadSAI(const QString &path, bool isRGB) {

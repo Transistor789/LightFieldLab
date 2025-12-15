@@ -31,9 +31,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 	// connect(ui->lensletBrowseBtn, &QPushButton::clicked, this,
 	// 		&MainWindow::onLensletBrowseBtn);
 	// onLensletBrowseBtn();
-	// connect(lfp->pLoad, &LFLoad::sendLfPtr, this,
+	// connect(lfp->pLoad, &LFIO::sendLfPtr, this,
 	// &MainWindow::viewValueUpdated, 		Qt::QueuedConnection);
-	// connect(lfp->load(), &LFLoad::finished, this,
+	// connect(lfp->load(), &LFIO::finished, this,
 	// &MainWindow::viewValueUpdated, 		Qt::QueuedConnection);
 
 	// 1. view
@@ -124,7 +124,7 @@ void MainWindow::connect_init() {
 	onLensletBrowseBtn();
 	connect(lfp->qload, &QLFLoad::sendLfPtr, this,
 			&MainWindow::viewValueUpdated, Qt::QueuedConnection);
-	// connect(lfp->load(), &LFLoad::finished, this,
+	// connect(lfp->load(), &LFIO::finished, this,
 	// &MainWindow::viewValueUpdated, 		Qt::QueuedConnection);
 
 	// 1. view

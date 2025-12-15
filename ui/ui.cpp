@@ -111,7 +111,7 @@ QGroupBox *MainWindow::setupModeGroup() {
 	whiteLayout->addWidget(whiteBrowseBtn);
 
 	QHBoxLayout *lensletLayout = new QHBoxLayout();
-	lensletPathEdit = new QLineEdit("data/input/toy");
+	lensletPathEdit = new QLineEdit("data/toy_lftoolbox");
 	lensletPathEdit->setPlaceholderText("微透镜图像路径");
 	lensletBrowseBtn = new QPushButton("...");
 	lensletBrowseBtn->setFixedWidth(30);

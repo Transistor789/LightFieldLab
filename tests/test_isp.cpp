@@ -1,67 +1,169 @@
-﻿#include "isp.hpp"
-#include "lfload.h"
+﻿#include "config.h"
+#include "lfcalibrate.h"
+#include "lfio.h"
+#include "lfisp.h"
 #include "utils.h"
 
 #include <cstdint>
+#include <format>
 #include <iostream>
+#include <opencv2/core/base.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 #include <opencv2/opencv.hpp>
 #include <vector>
 
-void simple_test() {
-	cv::Mat img = cv::Mat::ones(512, 512, CV_8U) * 128;
-	img.at<uint8_t>(128, 128) = 255;
-	img.at<uint8_t>(256, 128) = 255;
-	img.at<uint8_t>(128, 256) = 255;
-	img.at<uint8_t>(256, 256) = 255;
-	cv::imshow("raw", img);
+void test_isp() {
+	LFIO load;
+	auto lf_img = load.read_image("../data/toy.lfr");
+	auto wht_img = load.read_image("../data/MOD_0015.RAW");
+	// lf_img.convertTo(lf_img, CV_8U, 255.0 / 1023.0);
+	// wht_img.convertTo(wht_img, CV_8U, 255.0 / 1023.0);
 
-	ISPPipeline<uint8_t> isp(img);
-	isp.blc({5, 5, 5, 5}, {255, 255, 255, 255});
-	cv::imshow("blc", img);
+	ISPConfig config;
+	config.bit = Config::Get().img_meta()["bit"].get<int>();
+	config.black_level = Config::Get()
+							 .img_meta()["blc"]["black"]
+							 .get<std::vector<uint16_t>>()[0];
+	config.white_level = Config::Get()
+							 .img_meta()["blc"]["white"]
+							 .get<std::vector<uint16_t>>()[0];
+	// config.bit = 8;
+	// config.black_level = 16;
+	// config.white_level = 255;
+	config.awb_gains =
+		Config::Get().img_meta()["awb"].get<std::vector<float>>();
+	config.ccm_matrix =
+		Config::Get().img_meta()["ccm"].get<std::vector<float>>();
 
-	isp.dpc();
-	cv::imshow("dpc", img);
+	LFIsp<uint16_t> isp(config, lf_img, wht_img);
+	// LFIsp<uint8_t> isp(config, lf_img, wht_img);
 
-	isp.awb();
-	cv::imshow("awb", img);
-	cv::waitKey();
+	Timer timer;
+	// isp.blc();
+	// isp.blc_fast();
+
+	// isp.dpc();
+	// isp.dpc_fast();
+
+	// isp.lsc();
+	// isp.lsc_fast();
+	// isp.lsc().demosaic();
+	// isp.lsc_fast().demosaic();
+
+	// isp.awb();
+	// isp.awb_fast();
+	// isp.awb().demosaic();
+	// isp.awb_fast().demosaic();
+
+	// isp.raw_process();
+	// isp.raw_process_fast();
+
+	// isp.blc().dpc().lsc().awb().demosaic();
+	// isp.blc_fast().dpc_fast().lsc_fast().awb_fast().demosaic();
+
+	// isp.raw_process().demosaic();
+	// isp.raw_process_fast().demosaic();
+	// isp.blc_fast().dpc_fast().lsc_awb_fused_fast().demosaic();
+
+	// isp.lsc_awb_fused_fast().demosaic();
+
+	isp.preview(1.5);
+	// isp.updateImage(lf_img).preview().getPreviewResult();
+
+	// isp.blc_fast().dpc_fast().lsc_fast().awb_fast().demosaic().ccm();
+	// isp.blc_fast().dpc_fast().lsc_fast().awb_fast().demosaic().ccm_fast();
+
+	// lf_img.convertTo(lf_img, CV_8UC(lf_img.channels()), 255.0 / 1023.0);
+	// cv::demosaicing(lf_img, lf_img, cv::COLOR_BayerGR2RGB);
+
+	timer.stop();
+	timer.print_elapsed_ms();
+	// imshowRaw("", isp.getResult());
+	// cv::waitKey();
+
+	// saveAs8Bit("../../data/fast_review.png", isp.getResult());
+	// saveAs8Bit("../../data/fast_review.png", lf_img);
+
+	cv::imwrite("../../data/preview.png", isp.getPreviewResult());
+
+	// cv::imwrite("../../data/fast_review.png", lf_img);
+	// cv::imshow("", isp.getResult());
+	// cv::waitKey();
+
+	// GpuIspPipeline<uint16_t> isp_gpu(config, lf_img, wht_img);
+	// timer.start();
+	// isp_gpu.blc().dpc().lsc().awb().demosaic();
+	// timer.stop();
+	// timer.print_elapsed_ms();
+
+	// bool save = true;
+	// if (save) {
+	// 	saveAs8Bit("../../data/toy_demosaic_cpu.png", isp.getResult());
+	// 	// cv::Mat result;
+	// 	// isp_gpu.getResult(result);
+	// 	// saveAs8Bit("../../data/toy_demosaic_gpu.png", result);
+	// }
+	// Timer timer;
+	// isp.blc();
+	// timer.stop();
+	// timer.print_elapsed_ms("blc");
+	// if (save) {
+	// 	saveAs8Bit("../../data/toy_blc.png", isp.getResult());
+	// }
+
+	// timer.start();
+	// isp.dpc();
+	// timer.stop();
+	// timer.print_elapsed_ms("dpc");
+	// if (save) {
+	// 	saveAs8Bit("../../data/toy_dpc.png", isp.getResult());
+	// }
+
+	// timer.start();
+	// isp.lsc();
+	// timer.stop();
+	// timer.print_elapsed_ms("lsc");
+	// if (save) {
+	// 	saveAs8Bit("../../data/toy_lsc.png", isp.getResult());
+	// }
+
+	// timer.start();
+	// isp.awb();
+	// timer.stop();
+	// timer.print_elapsed_ms("awb");
+	// if (save) {
+	// 	saveAs8Bit("../../data/toy_awb.png", isp.getResult());
+	// }
+
+	// timer.start();
+	// isp.demosaic();
+	// timer.stop();
+	// timer.print_elapsed_ms("demosaic");
+	// if (save) {
+	// 	saveAs8Bit("../../data/toy_demosaic.png", isp.getResult());
+	// }
+
+	// timer.start();
+	// isp.ccm();
+	// timer.stop();
+	// timer.print_elapsed_ms("ccm");
+	// if (save) {
+	// 	saveAs8Bit("../../data/toy_ccm.png", isp.getResult());
+	// }
+
+	// timer.start();
+	// isp.gc();
+	// timer.stop();
+	// timer.print_elapsed_ms("gc");
+	// if (save) {
+	// 	saveAs8Bit("../../data/toy_gc.png", isp.getResult());
+	// }
 }
 int main() {
-	LFLoad load;
-	auto lf_img = load.read_image("../data/toy.lfr");
-	writeJson("../../data/toy.json", load.json_dict);
-
-	ISPPipeline<uint16_t> isp(lf_img);
-	auto black_levels =
-		Config::Get().img_meta()["blc"]["black"].get<std::vector<uint16_t>>();
-	auto white_levels =
-		Config::Get().img_meta()["blc"]["white"].get<std::vector<uint16_t>>();
-	auto gains = Config::Get().img_meta()["awb"].get<std::vector<float>>();
-	auto ccm = Config::Get().img_meta()["ccm"].get<std::vector<float>>();
-	auto gamma = Config::Get().img_meta()["gam"].get<float>();
-
-	saveAs8Bit("../../data/toy_original.png", isp.getResult());
-
-	isp.blc(black_levels, white_levels);
-	saveAs8Bit("../../data/toy_blc.png", isp.getResult());
-
-	isp.dpc();
-	saveAs8Bit("../../data/toy_dpc.png", isp.getResult());
-
-	isp.awb(gains);
-	saveAs8Bit("../../data/toy_awb.png", isp.getResult());
-
-	isp.demosaic(true);
-	saveAs8Bit("../../data/toy_demosaic.png", isp.getResult());
-
-	isp.ccm(ccm);
-	saveAs8Bit("../../data/toy_ccm.png", isp.getResult());
-
-	isp.gamma(1.0f / gamma / 2);
-	saveAs8Bit("../../data/toy_gamma.png", isp.getResult());
+	test_isp();
 
 	return 0;
 }

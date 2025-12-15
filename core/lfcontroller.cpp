@@ -8,7 +8,7 @@
 namespace fs = std::filesystem;
 
 LFController::LFController() : exit(false) {
-	load = std::make_unique<LFLoad>();
+	load = std::make_unique<LFIO>();
 	cal = std::make_unique<LFCalibrate>();
 	ref = std::make_unique<LFRefocus>();
 	sr = std::make_unique<LFSuperRes>();

@@ -27,7 +27,7 @@ target_link_libraries(test_superres PRIVATE
 add_executable(test_lfload
     test_lfload.cpp
     ${SOURCE_DIR}/config.cpp
-    ${SOURCE_DIR}/lfload.cpp
+    ${SOURCE_DIR}/lfio.cpp
     ${SOURCE_DIR}/raw_decode.cpp
     ${SOURCE_DIR}/utils.cpp
 )
@@ -36,6 +36,7 @@ target_link_directories(test_lfload PRIVATE "${OPENSSL_ROOT_DIR}/lib")
 target_link_libraries(test_lfload PRIVATE
     OpenSSL::SSL OpenSSL::Crypto
     ${OpenCV_LIBS} opencv_cudaimgproc opencv_cudaarithm opencv_cudawarping
+    OpenMP::OpenMP_CXX
 )
 
 if(WIN32)
@@ -87,13 +88,13 @@ endif()
 add_executable(test_lfrefocus
     test_lfrefocus.cpp
     ${SOURCE_DIR}/lfrefocus.cpp
-    ${SOURCE_DIR}/lfload.cpp
+    ${SOURCE_DIR}/lfio.cpp
     ${SOURCE_DIR}/config.cpp
     ${SOURCE_DIR}/raw_decode.cpp
     ${SOURCE_DIR}/utils.cpp
 )
 target_include_directories(test_lfrefocus PRIVATE ${SOURCE_DIR} ${OPENSSL_INCLUDE_DIR})
-target_link_libraries(test_lfrefocus PRIVATE ${OpenCV_LIBS} OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(test_lfrefocus PRIVATE ${OpenCV_LIBS} OpenSSL::SSL OpenSSL::Crypto OpenMP::OpenMP_CXX)
 
 # add_executable(test_future test_future.cpp)
 
@@ -104,7 +105,7 @@ target_link_libraries(test_readraw PRIVATE ${OpenCV_LIBS})
 
 add_executable(test_openssl
     test_openssl.cpp
-    ${SOURCE_DIR}/lfload.cpp
+    ${SOURCE_DIR}/lfio.cpp
     ${SOURCE_DIR}/config.cpp
     ${SOURCE_DIR}/raw_decode.cpp
     ${SOURCE_DIR}/utils.cpp
@@ -126,12 +127,17 @@ add_executable(test_lfcalibrate
     ${SOURCE_DIR}/hexgrid_fit.cpp
     ${SOURCE_DIR}/lfcalibrate.cpp
     ${SOURCE_DIR}/utils.cpp
+    ${SOURCE_DIR}/lfio.cpp
+    ${SOURCE_DIR}/raw_decode.cpp
+    ${SOURCE_DIR}/config.cpp
+
 )
 target_include_directories(test_lfcalibrate PRIVATE ${SOURCE_DIR} ${OPENSSL_INCLUDE_DIR} ${Eigen_DIR})
 target_link_directories(test_lfcalibrate PRIVATE "${OPENSSL_ROOT_DIR}/lib")
 target_link_libraries(test_lfcalibrate PRIVATE
     OpenSSL::SSL OpenSSL::Crypto
     ${OpenCV_LIBS} opencv_cudaimgproc opencv_cudaarithm opencv_cudawarping
+    OpenMP::OpenMP_CXX
 )
 
 add_executable(test_json test_json.cpp)
@@ -142,11 +148,35 @@ add_executable(test_isp
     ${SOURCE_DIR}/utils.cpp
     ${SOURCE_DIR}/config.cpp
     ${SOURCE_DIR}/raw_decode.cpp
-    ${SOURCE_DIR}/lfload.cpp
+    ${SOURCE_DIR}/lfio.cpp
+    ${SOURCE_DIR}/lfcalibrate.cpp
+    ${SOURCE_DIR}/centers_extract.cpp
+    ${SOURCE_DIR}/centers_sort.cpp
+    ${SOURCE_DIR}/hexgrid_fit.cpp
 )
-target_include_directories(test_isp PRIVATE ${SOURCE_DIR} ${OPENSSL_INCLUDE_DIR})
+target_include_directories(test_isp PRIVATE ${SOURCE_DIR} ${OPENSSL_INCLUDE_DIR} ${Eigen_DIR})
 target_link_directories(test_isp PRIVATE "${OPENSSL_ROOT_DIR}/lib")
 target_link_libraries(test_isp PRIVATE
     OpenSSL::SSL OpenSSL::Crypto
     ${OpenCV_LIBS} opencv_cudaimgproc opencv_cudaarithm opencv_cudawarping
+    OpenMP::OpenMP_CXX
+)
+
+add_executable(test_lfresample
+    test_lfresample.cpp
+    ${SOURCE_DIR}/utils.cpp
+    ${SOURCE_DIR}/config.cpp
+    ${SOURCE_DIR}/raw_decode.cpp
+    ${SOURCE_DIR}/lfio.cpp
+    ${SOURCE_DIR}/lfcalibrate.cpp
+    ${SOURCE_DIR}/centers_extract.cpp
+    ${SOURCE_DIR}/centers_sort.cpp
+    ${SOURCE_DIR}/hexgrid_fit.cpp
+)
+target_include_directories(test_lfresample PRIVATE ${SOURCE_DIR} ${OPENSSL_INCLUDE_DIR} ${Eigen_DIR})
+target_link_directories(test_lfresample PRIVATE "${OPENSSL_ROOT_DIR}/lib")
+target_link_libraries(test_lfresample PRIVATE
+    OpenSSL::SSL OpenSSL::Crypto
+    ${OpenCV_LIBS} opencv_cudaimgproc opencv_cudaarithm
+    OpenMP::OpenMP_CXX
 )

@@ -1,9 +1,14 @@
-#include "lfload.h"
+#include "config.h"
+#include "lfio.h"
+#include "utils.h"
 
+#include <omp.h>
+#include <opencv2/highgui.hpp>
 #include <opencv2/opencv.hpp>
 
-int main(int argc, char *argv[]) {
-	LFLoad lfpreader = LFLoad();
+
+void test_read() {
+	LFIO lfpreader = LFIO();
 
 	auto white_img = lfpreader.read_image("../data/MOD_0015.RAW");
 	std::cout << white_img.at<float>(0, 0) << std::endl;
@@ -32,6 +37,27 @@ int main(int argc, char *argv[]) {
 	cv::imshow("3", center);
 	cv::imshow("4", test_img);
 	cv::waitKey();
+}
+void test_openmp() {
+	LFIO lfpreader;
+
+	Timer timer;
+	auto lf = lfpreader.read_sai("../data/toy_lftoolbox", false);
+	timer.stop();
+	timer.print_elapsed_ms();
+	// cv::imshow("", lf->getCenter());
+	// cv::waitKey();
+
+	timer.start();
+	lf = lfpreader.read_sai_openmp("../data/toy_lftoolbox", false);
+	timer.stop();
+	timer.print_elapsed_ms();
+	// cv::imshow("", lf->getCenter());
+	// cv::waitKey();
+}
+int main(int argc, char *argv[]) {
+	// test_read();
+	test_openmp();
 
 	return 0;
 }

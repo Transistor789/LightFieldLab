@@ -5,7 +5,7 @@
 #include "lfcapture.h"
 #include "lfdata.h"
 #include "lfdepth.h"
-#include "lfload.h"
+#include "lfio.h"
 #include "lfrefocus.h"
 #include "lfresample.h"
 #include "lfsuperres.h"
@@ -30,7 +30,7 @@ public:
 	bool exit;
 
 private:
-	std::unique_ptr<LFLoad> load;
+	std::unique_ptr<LFIO> load;
 	std::unique_ptr<LFCalibrate> cal;
 
 	std::unique_ptr<LFRefocus> ref;

@@ -2,8 +2,10 @@
 #include "centers_sort.h"
 #include "hexgrid_fit.h"
 #include "lfcalibrate.h"
+#include "lfio.h"
 #include "utils.h"
 
+#include <format>
 #include <iostream>
 #include <opencv2/core/types.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -13,11 +15,13 @@
 void test_module();
 void test_calibrate();
 void test_json();
+void test_lut();
 
 int main() {
 	// test_module();
 	// test_calibrate();
-	test_json();
+	// test_json();
+	test_lut();
 
 	return 0;
 }
@@ -146,4 +150,23 @@ void test_json() {
 	json cal_data = readJson("../../data/MOD_0015.TXT");
 	std::cout << cal_data.dump(4) << std::endl;
 	writeJson("../../data/MOD_0015.json", cal_data);
+}
+
+void test_lut() {
+	cv::Mat img = cv::imread("../../data/gray.png", cv::IMREAD_GRAYSCALE);
+	LFCalibrate cali(img);
+	Timer timer;
+	auto pts_cali = cali.run(false, true);
+	timer.stop();
+	timer.print_elapsed_ms();
+
+	for (int winSize = 1; winSize <= 13; winSize += 2) {
+		cali.computeSliceMaps(winSize);
+		LFIO::saveLookUpTables(
+			std::format("../../data/calibration/slice_{}.bin", winSize),
+			cali.getSliceMaps(), winSize);
+		cali.computeDehexMaps();
+		LFIO::saveLookUpTables("../../data/calibration/dehex.bin",
+							   cali.getDehexMaps(), 1);
+	}
 }

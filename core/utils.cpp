@@ -58,12 +58,39 @@ cv::Mat draw_points(const cv::Mat &img, const std::vector<cv::Point2f> &points,
 	}
 	return temp;
 }
+cv::Mat draw_points(const cv::Mat &img, const std::vector<cv::Point> &points,
+					const std::string &output_path, int radius,
+					const cv::Scalar &color, bool save) {
+	cv::Mat temp = img.clone();
+	for (const auto &pt : points) {
+		cv::circle(temp, pt, radius, color, 1);
+	}
+	if (save) {
+		cv::imwrite(output_path, temp);
+	}
+	return temp;
+}
 cv::Mat draw_points(const cv::Mat &img,
 					const std::vector<std::vector<cv::Point2f>> &points,
 					const std::string &output_path, int radius,
 					const cv::Scalar &color, bool save) {
 	cv::Mat temp = img.clone();
 	for (const std::vector<cv::Point2f> &row : points) {
+		for (const auto &pt : row) {
+			cv::circle(temp, pt, radius, color, -1);
+		}
+	}
+	if (save) {
+		cv::imwrite(output_path, temp);
+	}
+	return temp;
+}
+cv::Mat draw_points(const cv::Mat &img,
+					const std::vector<std::vector<cv::Point>> &points,
+					const std::string &output_path, int radius,
+					const cv::Scalar &color, bool save) {
+	cv::Mat temp = img.clone();
+	for (const std::vector<cv::Point> &row : points) {
 		for (const auto &pt : row) {
 			cv::circle(temp, pt, radius, color, -1);
 		}
@@ -169,6 +196,51 @@ void saveAs8Bit(const std::string &path, const cv::Mat &img,
 	if (!success) {
 		throw std::runtime_error("Failed to write image file to: " + path);
 	}
+}
+
+void imshowRaw(const std::string &winname, const cv::Mat &img,
+			   float resize_factor) {
+	// 1. 鲁棒性检查
+	if (img.empty()) {
+		std::cerr << "[Warning] imshowRaw: Image is empty!" << std::endl;
+		return;
+	}
+
+	cv::Mat display_img;
+
+	// 2. 自动类型推断与归一化
+	int depth = img.depth();
+
+	if (depth == CV_8U) {
+		// 如果已经是 8-bit，直接使用
+		display_img = img;
+	} else if (depth == CV_16U || depth == CV_16S || depth == CV_32F
+			   || depth == CV_64F) {
+		// 对于 16-bit Raw 或 浮点图，执行 MinMax 归一化
+		// 这样无论你是 10-bit (1023) 还是 12-bit (4095)，
+		// 都会被自动拉伸到 0-255，显示效果最好（对比度最高）
+		cv::normalize(img, display_img, 0, 255, cv::NORM_MINMAX, CV_8U);
+
+		// 备选方案：如果你希望保持绝对亮度（比如不想让全黑的图变亮），可以用固定缩放：
+		// double scale = 255.0 / 65535.0; // 假设占满16位
+		// img.convertTo(display_img, CV_8U, scale);
+	} else {
+		std::cerr << "[Warning] imshowRaw: Unsupported depth!" << std::endl;
+		return;
+	}
+
+	// 3. 缩放显示 (防止撑爆屏幕)
+	if (resize_factor > 0.0f && std::abs(resize_factor - 1.0f) > 1e-5) {
+		// 如果原图是 Bayer 格式 (单通道)，INTER_NEAREST
+		// 可以保留马赛克特征以便观察 如果是 RGB 图，INTER_AREA 更好
+		int interpolation =
+			(img.channels() == 1) ? cv::INTER_NEAREST : cv::INTER_AREA;
+		cv::resize(display_img, display_img, cv::Size(), resize_factor,
+				   resize_factor, interpolation);
+	}
+
+	// 4. 显示
+	cv::imshow(winname, display_img);
 }
 
 std::string get_base_filename(const std::string &filename) {

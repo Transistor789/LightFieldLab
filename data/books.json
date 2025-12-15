@@ -1,0 +1,425 @@
+{
+    "algorithms": {
+        "ae": {
+            "computed": {
+                "ev": 8.0
+            },
+            "mode": "live",
+            "roi": "followAf"
+        },
+        "af": {
+            "computed": {
+                "focusStep": 384
+            },
+            "roi": "focusRoi"
+        },
+        "awb": {
+            "computed": {
+                "cct": 6500,
+                "gain": {
+                    "b": 1.1889548301696777,
+                    "gb": 1.0,
+                    "gr": 1.0,
+                    "r": 1.5122205018997192
+                }
+            },
+            "roi": "fullFrame"
+        }
+    },
+    "annotations": [],
+    "camera": {
+        "serialNumber": "B5152102610"
+    },
+    "cameraModel": "B01",
+    "derivations": [
+        "sha1-c95770647b93485ac10d5ab1c794ad8c1af45305"
+    ],
+    "devices": {
+        "sensor": {
+            "serialNumber": "1122037C"
+        }
+    },
+    "focusStep": 383,
+    "frames": [
+        {
+            "accelerations": [],
+            "assignedProperties": {},
+            "frame": {
+                "aberrationCorrectionMetadataRef": "sha1-871535993a620bb2b326366fb6eff69b95edb420",
+                "aberrationCorrectionRef": "sha1-ccb1e3ddcc7caaf06babe5cacfec8e51a1b954df",
+                "exposureHistogramRef": "sha1-aef12c5cf8a57245bb8ece451f780a408c4ddad8",
+                "geometryCorrectionRef": "sha1-46e7929a100468c7d0a3f3179e4ffcf3bdebad55",
+                "hotPixelRef": "sha1-ae108483c6d8ea296731faf7b3563707e51d0e2b",
+                "imageRef": "sha1-ac6a95e4851fae767ee05d72ff5f4b03b0b173b2",
+                "metadataRef": "sha1-9fa42e48bf2f9a3161adba34e829e95d31f8936e",
+                "privateMetadataRef": "sha1-0e108dbfcac1c8cf91bd1c53d1dba767b289ef22",
+                "reconstructionFilterMetadataRef": "sha1-aa2186540b45ca53005b936fef6a823f0dd50464",
+                "reconstructionFilterRef": "sha1-3beb5cb9d794e4013a710354c859e32348e8f9bb"
+            }
+        }
+    ],
+    "generator": "lightning",
+    "generators": [
+        "lightning"
+    ],
+    "image": {
+        "color": {
+            "ccm": [
+                2.1902196407318115,
+                -1.0231428146362305,
+                -0.16707684099674225,
+                -0.4134329855442047,
+                1.7654914855957031,
+                -0.3520585000514984,
+                -0.18222910165786743,
+                -0.7082417607307434,
+                1.8904708623886108
+            ],
+            "whiteBalanceGain": {
+                "b": 1.1889548301696777,
+                "gb": 1.0,
+                "gr": 1.0,
+                "r": 1.5122205018997192
+            }
+        },
+        "height": 5368,
+        "iso": 1725,
+        "limitExposureBias": -1.4307846216154971,
+        "modulationExposureBias": -0.26480236649513245,
+        "mosaic": {
+            "tile": "r,gr:gb,b",
+            "upperLeftPixel": "gr"
+        },
+        "orientation": 1,
+        "originOnSensor": {
+            "x": 0,
+            "y": 0
+        },
+        "pixelFormat": {
+            "black": {
+                "b": 66,
+                "gb": 66,
+                "gr": 66,
+                "r": 66
+            },
+            "rightShift": 0,
+            "white": {
+                "b": 1023,
+                "gb": 1023,
+                "gr": 1023,
+                "r": 1023
+            }
+        },
+        "pixelPacking": {
+            "bitsPerPixel": 10,
+            "endianness": "little"
+        },
+        "width": 7728
+    },
+    "imageFile": "FL2275ObjDist366ZS-243FS383.png",
+    "lambdas": [
+        -45.0,
+        -40.0,
+        -35.0,
+        -30.0,
+        -25.0,
+        -20.0,
+        -18.0,
+        -16.0,
+        -14.0,
+        -12.0,
+        -10.0,
+        -9.0,
+        -8.0,
+        -7.0,
+        -6.0,
+        -5.0,
+        -4.0,
+        -3.0,
+        -2.0,
+        -1.0,
+        0.0,
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        8.0,
+        9.0,
+        10.0,
+        12.0,
+        14.0,
+        16.0,
+        18.0,
+        20.0,
+        25.0,
+        30.0
+    ],
+    "master": {
+        "picture": {
+            "accelerationArray": [],
+            "derivationArray": [
+                "sha1-f8d19099ad0df499aa134e3c7ed09855444f6d72"
+            ],
+            "frameArray": [
+                {
+                    "frame": {
+                        "imageRef": "sha1-95fbab7173e60fb6166696a7721a21d309e5f84d",
+                        "metadata": {
+                            "camera": {
+                                "firmware": "Unknown",
+                                "make": "Lytro, Inc.",
+                                "model": "B01"
+                            },
+                            "devices": {
+                                "accelerometer": {
+                                    "sampleArray": [
+                                        {
+                                            "time": 0.0,
+                                            "x": 1.0,
+                                            "y": 0.0,
+                                            "z": 0.0
+                                        }
+                                    ]
+                                },
+                                "clock": {
+                                    "zuluTime": "2014-01-01T00:00:00.000Z"
+                                },
+                                "lens": {
+                                    "exitPupilOffset": {
+                                        "z": 0.07608528137207031
+                                    },
+                                    "fNumber": 1.909999966621399,
+                                    "focalLength": 0.02233293151855469,
+                                    "focusStep": 383,
+                                    "focusStepperOffset": 0,
+                                    "infinityLambda": 7.0,
+                                    "temperature": 40.0,
+                                    "temperatureAdc": 2300,
+                                    "zoomStep": -243,
+                                    "zoomStepperOffset": 0
+                                },
+                                "mla": {
+                                    "defectArray": [],
+                                    "lensPitch": 1.9999999552965164e-05,
+                                    "rotation": 0,
+                                    "scaleFactor": {
+                                        "x": 1.0,
+                                        "y": 1.0
+                                    },
+                                    "sensorOffset": {
+                                        "x": 0.0,
+                                        "y": 0.0,
+                                        "z": 3.87725830078125e-05
+                                    },
+                                    "tiling": "hexUniformRowMajor"
+                                },
+                                "ndfilter": {
+                                    "exposureBias": 0.0
+                                },
+                                "sensor": {
+                                    "analogGain": {
+                                        "b": 2.0,
+                                        "gb": 2.0,
+                                        "gr": 2.0,
+                                        "r": 2.0
+                                    },
+                                    "bitsPerPixel": 16,
+                                    "iso": 100,
+                                    "mosaic": {
+                                        "tile": "monochrome",
+                                        "upperLeftPixel": "gr"
+                                    },
+                                    "pixelPitch": 1.39999995008111e-06
+                                },
+                                "shutter": {
+                                    "frameExposureDuration": 0.009999999776482582,
+                                    "mechanism": "sensorOpenApertureClose",
+                                    "pixelExposureDuration": 0.009999999776482582
+                                },
+                                "soc": {
+                                    "temperature": 50.0,
+                                    "temperatureAdc": 2400
+                                }
+                            },
+                            "image": {
+                                "color": {
+                                    "applied": {},
+                                    "ccmRgbToSrgbArray": [
+                                        1.0,
+                                        0.0,
+                                        0.0,
+                                        0.0,
+                                        1.0,
+                                        0.0,
+                                        0.0,
+                                        0.0,
+                                        1.0
+                                    ],
+                                    "gamma": 0.41666001081466675,
+                                    "whiteBalanceGain": {
+                                        "b": 1.0,
+                                        "gb": 1.0,
+                                        "gr": 1.0,
+                                        "r": 1.0
+                                    }
+                                },
+                                "height": 5905,
+                                "limitExposureBias": 0.0,
+                                "modulationExposureBias": 0.0,
+                                "orientation": 1,
+                                "rawDetails": {
+                                    "mosaic": {
+                                        "tile": "monochrome",
+                                        "upperLeftPixel": "gr"
+                                    },
+                                    "pixelFormat": {
+                                        "black": {
+                                            "b": 168,
+                                            "gb": 168,
+                                            "gr": 168,
+                                            "r": 168
+                                        },
+                                        "rightShift": 0,
+                                        "white": {
+                                            "b": 65535,
+                                            "gb": 65535,
+                                            "gr": 65535,
+                                            "r": 65535
+                                        }
+                                    },
+                                    "pixelPacking": {
+                                        "bitsPerPixel": 16,
+                                        "endianness": "little"
+                                    }
+                                },
+                                "representation": "raw",
+                                "targetHeight": 5368,
+                                "targetWidth": 7728,
+                                "width": 8500
+                            },
+                            "modes": {},
+                            "type": "lightField"
+                        },
+                        "privateMetadata": {
+                            "camera": {
+                                "serialNumber": "LytroSimulator"
+                            },
+                            "devices": {
+                                "sensor": {
+                                    "sensorSerial": "0xFFFFFFFFFFFFFFFF"
+                                }
+                            }
+                        }
+                    },
+                    "parameters": {
+                        "vendorContent": {
+                            "com.lytro.tags": {
+                                "darkFrame": false,
+                                "modulationFrame": true
+                            }
+                        }
+                    }
+                }
+            ],
+            "viewArray": []
+        },
+        "thumbnailArray": [],
+        "version": {
+            "major": 1,
+            "minor": 0,
+            "provisionalDate": "2011-08-03"
+        }
+    },
+    "numKernelsX": 3,
+    "numKernelsY": 3,
+    "picture": {
+        "dcfDirectory": "100PHOTO",
+        "dcfFile": "IMG_0201",
+        "frameIndex": 0,
+        "totalFrames": 1
+    },
+    "schema": "http://schema.lytro.com/lfp/picture/2.1.6/picture_schema.json",
+    "settings": {
+        "depth": {
+            "assist": "off",
+            "histogram": "off",
+            "overlay": "off"
+        },
+        "exposure": {
+            "aeLock": false,
+            "bracketCount": 3,
+            "bracketEnable": false,
+            "bracketOffset": 0.0,
+            "bracketStep": 1.0,
+            "compensation": 1.0,
+            "meter": {
+                "mode": "evaluative",
+                "roi": [
+                    {
+                        "bottom": 1.0,
+                        "left": 0.0,
+                        "right": 1.0,
+                        "top": 0.0
+                    }
+                ],
+                "roiMode": "af"
+            },
+            "mode": "program"
+        },
+        "flash": {
+            "afAssistMode": "auto",
+            "curtainTriggerSync": "front",
+            "exposureCompensation": 0.0,
+            "mode": "unknown",
+            "zoomMode": "auto"
+        },
+        "focus": {
+            "afActuationMode": "single",
+            "afDriveMode": "single",
+            "bracketCount": 3,
+            "bracketEnable": false,
+            "bracketOffset": 0.0,
+            "bracketStep": 3.0,
+            "captureLambda": -4.0,
+            "mode": "auto",
+            "ringLock": false,
+            "roi": [
+                {
+                    "bottom": 1.0,
+                    "left": 0.0,
+                    "right": 1.0,
+                    "top": 0.0
+                }
+            ]
+        },
+        "shutter": {
+            "driveMode": "single",
+            "selfTimerDuration": 2.0,
+            "selfTimerEnable": false
+        },
+        "whiteBalance": {
+            "cct": 6500,
+            "mode": "manual",
+            "tint": 0.0
+        },
+        "zoom": {
+            "ringLock": false
+        }
+    },
+    "targetHeight": 1778,
+    "targetWidth": 2560,
+    "thumbnails": [
+        {
+            "colorSpace": "sRGB",
+            "height": 480,
+            "imageRef": "sha1-89d4737a29589ea5ffc22d879f3e27bf5aa3a584",
+            "representation": "jpeg",
+            "width": 704
+        }
+    ],
+    "views": [],
+    "zoomStep": -243
+}

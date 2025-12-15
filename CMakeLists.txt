@@ -9,6 +9,26 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(BIN_NAME "lightfieldlab")
 
+if(MSVC)
+    # 1. 架构指令：Debug/Release 都开启 (为了能编译 SIMD 代码)
+    add_compile_options(/arch:AVX2)
+
+    # 2. 优化指令：分开写，每个参数单独判断
+    # 仅在 Release 或 RelWithDebInfo 模式下生效
+    add_compile_options($<$<CONFIG:Release>:/O2>)
+    add_compile_options($<$<CONFIG:Release>:/Ob2>)
+
+    add_compile_options($<$<CONFIG:RelWithDebInfo>:/O2>)
+    add_compile_options($<$<CONFIG:RelWithDebInfo>:/Ob2>)
+
+else()
+    # Linux/GCC/Clang
+    add_compile_options(-mavx2 -march=native)
+
+    # 优化指令也分开写
+    add_compile_options($<$<CONFIG:Release>:-O3>)
+    add_compile_options($<$<CONFIG:RelWithDebInfo>:-O3>)
+endif()
 
 if(WIN32) # Windows
     set(OpenCV_DIR "D:\\Libraries\\opencv-4.11.0-cuda-12.8")
@@ -34,6 +54,7 @@ set(CMAKE_PREFIX_PATH "${OpenCV_DIR};${Qt6_DIR};${Boost_DIR};${Eigen3_DIR}")
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 find_package(OpenCV REQUIRED COMPONENTS core highgui imgproc imgcodecs dnn_superres)
 find_package(OpenSSL REQUIRED)
+find_package(OpenMP REQUIRED)
 # find_package(Eigen3 REQUIRED)
 
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR}/core)
@@ -43,7 +64,7 @@ set(SOURCE_FILES
     main.cpp
     ${SOURCE_DIR}/utils.cpp
     ${SOURCE_DIR}/config.cpp
-    ${SOURCE_DIR}/lfload.cpp
+    ${SOURCE_DIR}/lfio.cpp
     ${SOURCE_DIR}/raw_decode.cpp
     ${SOURCE_DIR}/lfrefocus.cpp
     ${SOURCE_DIR}/lfsuperres.cpp
@@ -55,7 +76,7 @@ set(INCLUDE_FILES
     ${SOURCE_DIR}/utils.h
     ${SOURCE_DIR}/config.h
     ${SOURCE_DIR}/lfdata.h
-    ${SOURCE_DIR}/lfload.h
+    ${SOURCE_DIR}/lfio.h
     ${SOURCE_DIR}/lfrefocus.h
     ${SOURCE_DIR}/lfsuperres.h
     ${UI_DIR}/lightfieldlab.h
