@@ -41,8 +41,8 @@
 | **TensorRT** | ![TensorRT](https://img.shields.io/badge/TensorRT-10.12-76B900?style=flat-square&logo=nvidia&logoColor=white) | 深度学习推理加速 |
 | **CUDA** | ![CUDA](https://img.shields.io/badge/CUDA-12.8-76B900?style=flat-square&logo=nvidia&logoColor=white) | 并行计算框架 (含 cuDNN) |
 | **OpenSSL** | ![OpenSSL](https://img.shields.io/badge/OpenSSL-3.5.1-721412?style=flat-square&logo=openssl&logoColor=white) | 加密支持 |
+| **Eigen** | ![Eigen](https://img.shields.io/badge/Eigen-5.0.0-1528AD?style=flat-square&logoColor=white) | 线性代数与网格拟合 (New Semantic Versioning) |
 | **OpenMP** | ![OpenMP](https://img.shields.io/badge/OpenMP-Enabled-blueviolet?style=flat-square) | CPU 并行加速 |
-
 ## 📂 项目结构
 
 ```text
