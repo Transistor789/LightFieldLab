@@ -1,6 +1,7 @@
 ﻿#include "lfio.h"
 
 #include "raw_decode.h"
+#include "utils.h"
 
 #include <filesystem>
 #include <fstream>
@@ -27,99 +28,12 @@ cv::Mat LFIO::read_image(const std::string &path) {
 		RawDecoder lfpdecoder;
 		img = lfpdecoder.decode(path);
 		// ISP::blc<uint16_t>(img);
-		// ret = lfpdecoder.normalize_raw(ret);
 		// json_dict = lfpdecoder.json_dict;
 	}
 	return img;
 }
 
-cv::Mat LFIO::gamma_convert(const cv::Mat &src, bool inverse) {
-	if (src.empty()) {
-		throw std::runtime_error("gammaConvert: src is empty!");
-	}
-
-	// 转换为 float32 格式，归一化到 [0, 1]
-	cv::Mat srcFloat;
-	if (src.depth() != CV_32F) {
-		src.convertTo(srcFloat, CV_32F, 1.0 / 255.0);
-	} else {
-		srcFloat = src;
-	}
-
-	std::vector<cv::Mat> channels;
-	cv::split(srcFloat, channels); // 拆分通道
-
-	constexpr float A = 0.055f;
-	constexpr float ALPHA = 1.055f;
-
-	for (auto &ch : channels) {
-		if (!inverse) {
-			// 线性 -> sRGB
-			constexpr float BETA = 0.0031308f;
-			cv::Mat mask = ch >= BETA;
-
-			cv::Mat gammaPart, linearPart;
-			cv::pow(ch, 1.0f / 2.4f, gammaPart);
-			gammaPart = ALPHA * gammaPart - A;
-
-			linearPart = ch * 12.92f;
-			gammaPart.copyTo(ch, mask);	  // 用 gamma 区覆盖
-			linearPart.copyTo(ch, ~mask); // 用线性区覆盖其余部分
-		} else {
-			// sRGB -> 线性
-			constexpr float THRESHOLD = 0.04045f;
-			cv::Mat mask = ch > THRESHOLD;
-
-			cv::Mat srcAdjusted = (ch + A) / ALPHA;
-			cv::Mat gammaPart;
-			cv::pow(srcAdjusted, 2.4f, gammaPart);
-
-			cv::Mat linearPart = ch / 12.92f;
-			gammaPart.copyTo(ch, mask);
-			linearPart.copyTo(ch, ~mask);
-		}
-	}
-
-	cv::Mat result;
-	cv::merge(channels, result); // 合并通道
-	return result;
-}
-
-LfPtr LFIO::read_sai(const std::string &path, bool isRGB) {
-	if (!std::filesystem::exists(path)) {
-		throw std::runtime_error("read_sai: file not exist! Path: " + path);
-	}
-
-	std::vector<std::string> filenames;
-	for (const auto &entry : std::filesystem::directory_iterator(path)) {
-		if (entry.is_regular_file()) {
-			filenames.push_back(entry.path().filename().string());
-		}
-	}
-	std::sort(filenames.begin(), filenames.end());
-
-	std::vector<cv::Mat> temp(filenames.size());
-	std::vector<std::future<cv::Mat>> futures;
-
-	for (const auto &i : filenames) {
-		std::string filename = path + "/" + i;
-		futures.push_back(
-			std::async(std::launch::async, [&, isRGB, filename]() {
-				return cv::imread(filename,
-								  isRGB ? cv::IMREAD_COLOR
-										: cv::IMREAD_GRAYSCALE); // 写入对应位置
-			}));
-	}
-
-	for (int i = 0; i < futures.size(); ++i) {
-		temp[i] = futures[i].get();
-		temp[i].convertTo(temp[i], CV_32FC(temp[i].channels()), 1.0 / 255.0);
-	}
-
-	return std::make_shared<LFData>(std::move(temp));
-}
-
-LfPtr LFIO::read_sai_openmp(const std::string &path, bool isRGB) {
+LfPtr LFIO::read_sai(const std::string &path) {
 	// 1. 检查路径
 	if (!std::filesystem::exists(path)) {
 		throw std::runtime_error("read_sai: file not exist! Path: " + path);
@@ -156,22 +70,22 @@ LfPtr LFIO::read_sai_openmp(const std::string &path, bool isRGB) {
 		std::string full_path = path + "/" + filenames[i];
 
 		// A. 读取 (IO + 解码)
-		cv::Mat raw_img = cv::imread(
-			full_path, isRGB ? cv::IMREAD_COLOR : cv::IMREAD_GRAYSCALE);
+		temp[i] = cv::imread(full_path, cv::IMREAD_COLOR);
+		// cv::Mat raw_img = cv::imread(full_path, cv::IMREAD_COLOR);
 
 		// 鲁棒性检查
-		if (raw_img.empty()) {
-// 在多线程里打印要注意，最好用原子操作或忽略，这里简单打印
-#pragma omp critical
-			std::cerr << "[Warning] Failed to read: " << filenames[i]
-					  << std::endl;
-			continue;
-		}
+		// 		if (raw_img.empty()) {
+		// // 在多线程里打印要注意，最好用原子操作或忽略，这里简单打印
+		// #pragma omp critical
+		// 			std::cerr << "[Warning] Failed to read: " << filenames[i]
+		// 					  << std::endl;
+		// 			continue;
+		// 		}
 
 		// B. 转换 (计算)
 		// 【关键优化】：读完立刻转！
 		// 此时 raw_img 的像素数据还在 CPU 缓存里，convertTo 速度极快
-		raw_img.convertTo(temp[i], CV_32FC(raw_img.channels()), 1.0 / 255.0);
+		// raw_img.convertTo(temp[i], CV_32FC(raw_img.channels()), 1.0 / 255.0);
 
 		// raw_img 在这里析构，释放 8-bit 内存，降低峰值内存占用
 	}

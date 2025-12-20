@@ -21,8 +21,6 @@ public:
 	cv::Mat decode(std::string filename);
 	cv::Mat decode_lytro(std::string filename);
 	cv::Mat decode_raw(std::string filename);
-	cv::Mat normalize_raw(const cv::Mat &image, double black_level = 64.0,
-						  double white_level = 1023.0);
 
 	std::vector<std::string> read_lytro_file(const std::string &filename);
 	std::string read_section(std::ifstream &file);

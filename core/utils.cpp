@@ -257,3 +257,72 @@ std::string get_base_filename(const std::string &filename) {
 	// 3. 使用 substr 截取从开始到点号前的部分
 	return filename.substr(0, last_dot_pos);
 }
+
+cv::Mat gamma_convert(const cv::Mat &src, bool inverse) {
+	if (src.empty())
+		throw std::runtime_error("Src empty");
+
+	cv::Mat result;
+	// 确保输入是 float
+	if (src.depth() != CV_32F) {
+		src.convertTo(result, CV_32F, 1.0 / 255.0);
+	} else {
+		result = src.clone(); // 深拷贝，避免修改原图
+	}
+
+	int total_pixels = result.rows * result.cols * result.channels();
+
+	// 获取连续内存指针（如果连续）
+	if (result.isContinuous()) {
+		total_pixels = total_pixels; // 数量不变
+		// reshape 成 1行，方便并行
+		result = result.reshape(1, 1);
+	}
+
+	float *ptr = result.ptr<float>();
+
+	constexpr float A = 0.055f;
+	constexpr float ALPHA = 1.055f;
+	constexpr float BETA = 0.0031308f;
+	constexpr float THRESHOLD = 0.04045f;
+	constexpr float INV_GAMMA = 1.0f / 2.4f;
+	constexpr float GAMMA = 2.4f;
+
+// 并行处理所有像素
+#pragma omp parallel for
+	for (int i = 0; i < total_pixels; ++i) {
+		float v = ptr[i];
+		// 简单的 clamp 防止负数或溢出（可选）
+		if (v < 0.0f)
+			v = 0.0f;
+		else if (v > 1.0f)
+			v = 1.0f;
+
+		if (!inverse) {
+			// Linear -> sRGB
+			if (v <= BETA) {
+				ptr[i] = v * 12.92f;
+			} else {
+				// std::pow 比较慢，但在 float 精度下难以避免，
+				// 除非用 SSE/AVX 近似指令
+				ptr[i] = ALPHA * std::pow(v, INV_GAMMA) - A;
+			}
+		} else {
+			// sRGB -> Linear
+			if (v <= THRESHOLD) {
+				ptr[i] = v / 12.92f;
+			} else {
+				ptr[i] = std::pow((v + A) / ALPHA, GAMMA);
+			}
+		}
+	}
+
+	// 如果之前 reshape 过，OpenCV 会自动处理维度，
+	// 但如果 result 是新创建的 reshape 后的 Mat，这里需要 reshape 回去。
+	// 不过由于我们 clone 并在原数据上操作，只要 reshape 只是改头信息，
+	// 最好在 return 前 reshape 回原始尺寸：
+	if (src.rows != result.rows || src.cols != result.cols)
+		return result.reshape(src.channels(), src.rows);
+
+	return result;
+}

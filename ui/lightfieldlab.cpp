@@ -74,10 +74,6 @@ void LFProcessor::onLFUpdated(const LfPtr &ptr) {
 	emit sendLfPtr(lf);
 }
 
-void LFProcessor::onGpuSliderValueChanged(int value) {
-	isGpu = static_cast<bool>(value);
-	emit sendLfPtr(lf);
-}
 void LFProcessor::onSRButtonClicked() {
 	// cv::Mat image;
 	// if (pSuperres->type() >= LFEnhancer::EDSR

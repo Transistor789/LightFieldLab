@@ -98,16 +98,11 @@ void get_sai() {
 	cv::demosaicing(wht_img, wht_img_gray, cv::COLOR_BayerGR2GRAY);
 	wht_img_gray.convertTo(wht_img_gray, CV_8U, 255.0 / 1023.0);
 
-	// LFCalibrate cali(wht_img_gray);
-	// cali.run();
-
-	ISPConfig config;
-	config.awb_gains =
-		Config::Get().img_meta()["awb"].get<std::vector<float>>();
-	LFIsp<uint16_t> isp(config, lf_img, wht_img);
+	LFIsp<uint16_t> isp(Config::Get().img_meta(), lf_img, wht_img);
+	isp.print_config();
 
 	int slice_size = 0, dehex_size = 0;
-	LFIO::loadLookUpTables("../../data/calibration/slice_7.bin", isp.maps.slice,
+	LFIO::loadLookUpTables("../../data/calibration/slice_9.bin", isp.maps.slice,
 						   slice_size);
 	LFIO::loadLookUpTables("../../data/calibration/dehex.bin", isp.maps.dehex,
 						   dehex_size);
@@ -115,15 +110,22 @@ void get_sai() {
 	Timer timer;
 
 	isp.preview(1.0).resample();
+	isp.ccm_fast();
+	// isp.color_equalize();
 	// isp.raw_process_fast().demosaic().resample();
 
 	timer.stop();
 	timer.print_elapsed_ms();
 
 	const auto &sais = isp.getSAIS();
+	std::cout << sais[0].size << std::endl;
 	for (int i = 0; i < sais.size(); ++i) {
-		// cv::imshow("", sais[i]);
-		imshowRaw("", sais[i]);
+		// cv::Mat temp;
+		// sais[i].convertTo(temp, CV_8U, 255.0f / (1023 - 64));
+		// cv::imshow("", temp);
+		// cv::imwrite("../../data/center.png", temp);
+		cv::imshow("", sais[i]);
+		// cv::imwrite("../../data/center_preview.png", sais[i]);
 		cv::waitKey();
 	}
 }

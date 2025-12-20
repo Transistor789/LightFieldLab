@@ -36,6 +36,8 @@ if(WIN32) # Windows
     set(OPENSSL_ROOT_DIR "D:\\Libraries\\OpenSSL-3.5.1")
     set(Boost_DIR "D:\\Libraries\\boost_1_89_0")
     set(Eigen_DIR "D:\\Libraries\\eigen-5.0.1")
+    set(TENSORRT_DIR "D:\\Libraries\\TensorRT-10.12.0.36")
+    set(ORT_DIR "D:\\Libraries\\onnxruntime-win-x64-gpu-1.22.0")
     find_program(WINDEPLOYQT_EXECUTABLE
         NAMES windeployqt windeployqt.exe
         PATHS "${Qt6_DIR}/bin"
@@ -55,6 +57,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 find_package(OpenCV REQUIRED COMPONENTS core highgui imgproc imgcodecs dnn_superres)
 find_package(OpenSSL REQUIRED)
 find_package(OpenMP REQUIRED)
+find_package(CUDAToolkit REQUIRED)
 # find_package(Eigen3 REQUIRED)
 
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR}/core)
@@ -67,7 +70,11 @@ set(SOURCE_FILES
     ${SOURCE_DIR}/lfio.cpp
     ${SOURCE_DIR}/raw_decode.cpp
     ${SOURCE_DIR}/lfrefocus.cpp
-    ${SOURCE_DIR}/lfsuperres.cpp
+    ${SOURCE_DIR}/lfsr.cpp
+    ${SOURCE_DIR}/trtwrapper.cpp
+    ${SOURCE_DIR}/distgssr.cpp
+    ${SOURCE_DIR}/lfmbase.cpp
+    ${SOURCE_DIR}/lfsr_base.cpp
     ${UI_DIR}/mainwindow.cpp
     ${UI_DIR}/ui.cpp
     ${UI_DIR}/lightfieldlab.cpp
@@ -78,7 +85,9 @@ set(INCLUDE_FILES
     ${SOURCE_DIR}/lfdata.h
     ${SOURCE_DIR}/lfio.h
     ${SOURCE_DIR}/lfrefocus.h
-    ${SOURCE_DIR}/lfsuperres.h
+    ${SOURCE_DIR}/lfsr.h
+    ${SOURCE_DIR}/trtwrapper.h
+    ${SOURCE_DIR}/distgssr.h
     ${UI_DIR}/lightfieldlab.h
     ${UI_DIR}/mainwindow.h
     ${UI_DIR}/ui.h
@@ -92,12 +101,17 @@ target_include_directories(${BIN_NAME} PRIVATE
     "${SOURCE_DIR}"
     "${UI_DIR}"
     "${OPENSSL_INCLUDE_DIR}"
+    "${TENSORRT_DIR}/include"
+    ${CUDAToolkit_INCLUDE_DIRS}
 )
 target_link_directories(${BIN_NAME} PRIVATE
     "${OPENSSL_ROOT_DIR}/lib"
+
 )
 target_link_libraries(${BIN_NAME} PRIVATE
-    ${OpenCV_LIBS} opencv_cudaimgproc opencv_cudaarithm opencv_cudawarping
+    ${OpenCV_LIBS} opencv_dnn_superres opencv_cudaimgproc opencv_cudaarithm opencv_cudawarping
+    "${TENSORRT_DIR}/lib/nvinfer_10.lib"
+    CUDA::cudart
     OpenSSL::SSL OpenSSL::Crypto
     Qt6::Core Qt6::Gui Qt6::Widgets
 )
@@ -134,10 +148,13 @@ message(STATUS "OpenSSL libraries: ${OPENSSL_LIBRARIES}")
 message(STATUS "===============================================================")
 
 # copy data
-file(COPY "${CMAKE_SOURCE_DIR}/data" DESTINATION "${CMAKE_BINARY_DIR}")
+# file(COPY "${CMAKE_SOURCE_DIR}/data" DESTINATION "${CMAKE_BINARY_DIR}")
 add_subdirectory(tests)
 
 if(WIN32)
+    # ==============================================================================
+    # 1. Qt Deployment (必须要绑定到具体的可执行文件 Target)
+    # ==============================================================================
     if(WINDEPLOYQT_EXECUTABLE)
         add_custom_command(TARGET ${BIN_NAME} POST_BUILD
             COMMAND ${WINDEPLOYQT_EXECUTABLE}
@@ -145,6 +162,7 @@ if(WIN32)
             $<$<CONFIG:Debug>:--debug>$<$<NOT:$<CONFIG:Debug>>:--release>
             --no-translations
             --verbose=1
+            --dir "$<TARGET_FILE_DIR:${BIN_NAME}>"
             COMMENT "Running windeployqt for $<CONFIG> configuration..."
             VERBATIM
         )
@@ -152,45 +170,80 @@ if(WIN32)
         message(WARNING "windeployqt not found in '${Qt6_DIR}/bin'. Auto-deployment disabled.")
     endif()
 
-    # ===== Copy OpenSSL DLLs to output directory =====
-    set(OPENSSL_DLLS
+    # ==============================================================================
+    # 2. 全局资源与依赖拷贝 (脱离具体 Target，独立管理)
+    # ==============================================================================
+
+    # 定义需要拷贝的目标文件夹列表: 
+    # 1. 构建根目录 (例如 build/Release)
+    # 2. 测试目录 (例如 build/tests/Release)
+    # 注意：这里我们使用 CMAKE_BINARY_DIR 的根，如果你的 tests 输出在特定子目录，请根据实际调整
+    set(DEST_DIRS
+        "${CMAKE_BINARY_DIR}"
+        "${CMAKE_BINARY_DIR}/tests"
+    )
+
+    # 确保目标文件夹存在，否则拷贝可能会失败
+    foreach(DIR ${DEST_DIRS})
+        file(MAKE_DIRECTORY "${DIR}")
+    endforeach()
+
+    # 创建一个独立的伪目标，专门用于拷贝依赖
+    # "ALL" 表示只要构建整个项目，这个 Target 就会自动运行
+    add_custom_target(CopyDependencies ALL COMMENT "Copying Data and DLLs to build directories...")
+
+    # --------------------------------------------------------
+    # A. 复制 Data 文件夹
+    # --------------------------------------------------------
+    # 假设 data 文件夹在项目根目录 ${CMAKE_SOURCE_DIR}/data
+    add_custom_command(TARGET CopyDependencies POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/data"
+        "${CMAKE_BINARY_DIR}/data"
+        COMMENT "Copying data folder to build root..."
+        VERBATIM
+    )
+
+    # --------------------------------------------------------
+    # B. 准备 DLL 列表
+    # --------------------------------------------------------
+    set(DLLS_TO_COPY "")
+
+    # 1. 添加 OpenSSL DLLs
+    list(APPEND DLLS_TO_COPY
         "${OPENSSL_ROOT_DIR}/bin/libssl-3-x64.dll"
         "${OPENSSL_ROOT_DIR}/bin/libcrypto-3-x64.dll"
     )
 
-    add_custom_command(TARGET ${BIN_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${OPENSSL_DLLS}
-        "$<TARGET_FILE_DIR:${BIN_NAME}>/"
-        COMMENT "Copying OpenSSL DLLs to $<CONFIG> output directory..."
-        VERBATIM
-    )
-
-    # ===== Copy OpenCV DLLs =====
-    # 1. 遍历 ${OpenCV_LIBS}，筛选出有效的 CMake Target
-    set(OPENCV_DLLS_TO_COPY "")
+    # 2. 添加 OpenCV DLLs (自动解析)
     foreach(cv_item ${OpenCV_LIBS})
-        # 检查是否为 Target (忽略 'debug'/'optimized' 等关键字)
         if(TARGET "${cv_item}")
-            # 获取目标类型，确保是动态库 (SHARED) 或未知类型 (UNKNOWN，通常是导入的库)
             get_target_property(target_type "${cv_item}" TYPE)
             if("${target_type}" STREQUAL "SHARED_LIBRARY" OR "${target_type}" STREQUAL "UNKNOWN_LIBRARY")
-                # 使用生成器表达式自动获取对应配置(Debug/Release)的 DLL 路径
-                list(APPEND OPENCV_DLLS_TO_COPY "$<TARGET_FILE:${cv_item}>")
+                # 使用生成器表达式获取 DLL 路径
+                list(APPEND DLLS_TO_COPY "$<TARGET_FILE:${cv_item}>")
             endif()
         endif()
     endforeach()
 
-    # 2. 如果找到了 OpenCV DLLs，添加到构建后命令
-    if(OPENCV_DLLS_TO_COPY)
-        # --- Copy to Main Target Directory (${BIN_NAME}) ---
-        add_custom_command(TARGET ${BIN_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${OPENCV_DLLS_TO_COPY}
-            "$<TARGET_FILE_DIR:${BIN_NAME}>/"
-            COMMENT "Copying OpenCV DLLs to ${BIN_NAME} output directory..."
-            VERBATIM
-        )
+    # 3. 添加 TensorRT/CUDA DLLs (如果你需要的话，手动添加)
+    list(APPEND DLLS_TO_COPY "${TENSORRT_DIR}/lib/nvinfer_10.dll" ...)
+
+    # --------------------------------------------------------
+    # C. 执行拷贝 (分发到所有目录)
+    # --------------------------------------------------------
+    if(DLLS_TO_COPY)
+        foreach(DEST_DIR ${DEST_DIRS})
+            add_custom_command(TARGET CopyDependencies POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${DLLS_TO_COPY}
+                "${DEST_DIR}/"
+                COMMENT "Distributing DLLs to ${DEST_DIR}..."
+                VERBATIM
+            )
+        endforeach()
     endif()
 
 endif()
+
+

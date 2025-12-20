@@ -26,6 +26,7 @@ cv::Mat RawDecoder::decode(std::string filename) {
 	}
 	return ret;
 }
+
 cv::Mat RawDecoder::decode_lytro(std::string filename) {
 	// decode lfp file
 	auto sections = read_lytro_file(filename);
@@ -44,19 +45,13 @@ cv::Mat RawDecoder::decode_lytro(std::string filename) {
 		reinterpret_cast<uint8_t *>(sections[Lytro::buffer_index].data());
 	return unpack_raw2bayer(img_buf, width, height);
 }
+
 cv::Mat RawDecoder::decode_raw(std::string filename) {
 	buffer = read_raw_file(filename);
 	auto ptr = buffer.data();
 	return unpack_raw2bayer(ptr);
 }
-cv::Mat RawDecoder::normalize_raw(const cv::Mat &image, double black_level,
-								  double white_level) {
-	cv::Mat res;
-	double scale = 1.0 / (white_level - black_level);
-	double shift = -black_level * scale;
-	image.convertTo(res, CV_32F, scale, shift);
-	return res;
-}
+
 cv::Mat RawDecoder::unpack_raw2bayer(const uint8_t *src, int width,
 									 int height) {
 	if (src == nullptr) {
@@ -74,6 +69,7 @@ cv::Mat RawDecoder::unpack_raw2bayer(const uint8_t *src, int width,
 	}
 	return ret;
 }
+
 std::vector<std::string> RawDecoder::read_lytro_file(
 	const std::string &filename) {
 	std::vector<std::string> sections;
@@ -124,6 +120,7 @@ std::vector<std::string> RawDecoder::read_lytro_file(
 	file.close();
 	return sections;
 }
+
 std::vector<uint8_t> RawDecoder::read_raw_file(const std::string &filename) {
 	std::ifstream file(filename, std::ios::binary | std::ios::ate);
 	if (!file) {
@@ -138,6 +135,7 @@ std::vector<uint8_t> RawDecoder::read_raw_file(const std::string &filename) {
 	}
 	return buffer;
 }
+
 json RawDecoder::extract_json(const std::vector<std::string> &sections) {
 	json json_dict;
 	for (const auto &section : sections) {
@@ -150,6 +148,7 @@ json RawDecoder::extract_json(const std::vector<std::string> &sections) {
 	}
 	return json_dict;
 }
+
 std::string RawDecoder::read_section(std::ifstream &file) {
 	std::string section;
 	constexpr unsigned char LFM_HEADER[] = {0x89, 'L',	'F',  'M',	0x0d, 0x0a,
@@ -223,6 +222,7 @@ std::string RawDecoder::read_section(std::ifstream &file) {
 
 	return section;
 }
+
 json RawDecoder::filter_lfp_json(const json &jsonDict) {
 	json settings;
 

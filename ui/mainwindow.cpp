@@ -110,13 +110,11 @@ MainWindow::~MainWindow() {
 	}
 	delete ui;
 }
+
 void MainWindow::connect_init() {
 	connect(lfp_thread, &QThread::started, lfp, &LFProcessor::printThreadId);
 	connect(lfp_thread, &QThread::finished, lfp_thread, &QObject::deleteLater);
 	connect(lfp_thread, &QThread::finished, lfp, &QObject::deleteLater);
-
-	// connect(ui->gpuSlider, &QSlider::valueChanged, lfp,
-	// 		&LFProcessor::onGpuSliderValueChanged, Qt::QueuedConnection);
 
 	// 0. load
 	connect(ui->lensletBrowseBtn, &QPushButton::clicked, this,
@@ -160,17 +158,17 @@ void MainWindow::connect_init() {
 	connect(lfp->qsuperres, &QLFSuperRes::finished, this,
 			&MainWindow::updateSAI, Qt::QueuedConnection);
 }
+
 void MainWindow::onLensletBrowseBtn() {
 	if (ui->lensletPathEdit->text().isEmpty()) {
 		return;
 	}
 	lfp->lensletImagePath = this->ui->lensletPathEdit->text();
-	lfp->isRgb = this->ui->colorSlider->value() ? true : false;
 	qDebug() << lfp->lensletImagePath;
 	QMetaObject::invokeMethod(lfp->qload, &QLFLoad::loadSAI,
-							  Qt::QueuedConnection, lfp->lensletImagePath,
-							  lfp->isRgb);
+							  Qt::QueuedConnection, lfp->lensletImagePath);
 }
+
 void MainWindow::updateSAI(const cv::Mat &cvImg) {
 	if (cvImg.empty())
 		return;

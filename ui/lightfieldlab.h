@@ -23,7 +23,6 @@ public:
 	cv::Mat sai;
 	LfPtr lf;
 	QString lensletImagePath, whiteImagePath;
-	bool isRgb = GRAY, isGpu = CPU;
 	int sai_row = 8, sai_col = 8, crop = 0;
 	float alpha = 1.0;
 
@@ -35,7 +34,6 @@ public:
 public slots:
 	static void printThreadId();
 	void onLFUpdated(const LfPtr &src);
-	void onGpuSliderValueChanged(int value);
 	void onSRButtonClicked();
 
 signals:

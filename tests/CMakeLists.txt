@@ -14,13 +14,29 @@ target_include_directories(test_ui PRIVATE ${CMAKE_SOURCE_DIR}/ui)
 target_link_libraries(test_ui PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
 # test_superres
-add_executable(test_superres
+add_executable(test_lfsuperres
     test_lfsuperres.cpp
+    ${SOURCE_DIR}/lfsr.cpp
+    ${SOURCE_DIR}/trtwrapper.cpp
+    ${SOURCE_DIR}/distgssr.cpp
+    ${SOURCE_DIR}/utils.cpp
+    ${SOURCE_DIR}/lfio.cpp
+    ${SOURCE_DIR}/raw_decode.cpp
+    ${SOURCE_DIR}/config.cpp
+    ${SOURCE_DIR}/lfmbase.cpp
+    ${SOURCE_DIR}/lfsr_base.cpp
 )
-target_include_directories(test_superres PRIVATE ${PROJECT_SOURCE_DIR}/include)
-target_link_libraries(test_superres PRIVATE
+target_include_directories(test_lfsuperres PRIVATE
+    ${SOURCE_DIR}
+    "${TENSORRT_DIR}/include"
+    ${CUDAToolkit_INCLUDE_DIRS}
+)
+target_link_libraries(test_lfsuperres PRIVATE
     ${OpenCV_LIBS}
     opencv_dnn_superres
+    "${TENSORRT_DIR}/lib/nvinfer_10.lib"
+    OpenSSL::SSL OpenSSL::Crypto
+    CUDA::cudart
 )
 
 # test_load
@@ -38,50 +54,6 @@ target_link_libraries(test_lfload PRIVATE
     ${OpenCV_LIBS} opencv_cudaimgproc opencv_cudaarithm opencv_cudawarping
     OpenMP::OpenMP_CXX
 )
-
-if(WIN32)
-    # ===== Copy OpenSSL DLLs to output directory =====
-    set(OPENSSL_DLLS
-        "${OPENSSL_ROOT_DIR}/bin/libssl-3-x64.dll"
-        "${OPENSSL_ROOT_DIR}/bin/libcrypto-3-x64.dll"
-    )
-
-    add_custom_command(TARGET test_lfload POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${OPENSSL_DLLS}
-        "$<TARGET_FILE_DIR:test_lfload>/"
-        COMMENT "Copying OpenSSL DLLs to $<CONFIG> output directory..."
-        VERBATIM
-    )
-
-    # ===== Copy OpenCV DLLs =====
-    # 1. 遍历 ${OpenCV_LIBS}，筛选出有效的 CMake Target
-    set(OPENCV_DLLS_TO_COPY "")
-    foreach(cv_item ${OpenCV_LIBS})
-        # 检查是否为 Target (忽略 'debug'/'optimized' 等关键字)
-        if(TARGET "${cv_item}")
-            # 获取目标类型，确保是动态库 (SHARED) 或未知类型 (UNKNOWN，通常是导入的库)
-            get_target_property(target_type "${cv_item}" TYPE)
-            if("${target_type}" STREQUAL "SHARED_LIBRARY" OR "${target_type}" STREQUAL "UNKNOWN_LIBRARY")
-                # 使用生成器表达式自动获取对应配置(Debug/Release)的 DLL 路径
-                list(APPEND OPENCV_DLLS_TO_COPY "$<TARGET_FILE:${cv_item}>")
-            endif()
-        endif()
-    endforeach()
-
-    # 2. 如果找到了 OpenCV DLLs，添加到构建后命令
-    if(OPENCV_DLLS_TO_COPY)
-        # --- Copy to Main Target Directory (test_lfload) ---
-        add_custom_command(TARGET test_lfload POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${OPENCV_DLLS_TO_COPY}
-            "$<TARGET_FILE_DIR:test_lfload>/"
-            COMMENT "Copying OpenCV DLLs to test_lfload output directory..."
-            VERBATIM
-        )
-    endif()
-
-endif()
 
 
 # test_lfrefocus
@@ -179,4 +151,118 @@ target_link_libraries(test_lfresample PRIVATE
     OpenSSL::SSL OpenSSL::Crypto
     ${OpenCV_LIBS} opencv_cudaimgproc opencv_cudaarithm
     OpenMP::OpenMP_CXX
+)
+
+
+add_executable(test_trtcli test_trtcli.cpp)
+target_include_directories(test_trtcli PRIVATE
+    "${TENSORRT_DIR}/include"
+    ${CUDAToolkit_INCLUDE_DIRS} # 必须！否则 NvInfer.h 里找不到 cuda_runtime_api.h
+)
+target_link_libraries(test_trtcli PRIVATE
+    "${TENSORRT_DIR}/lib/nvinfer_10.lib"
+    "${TENSORRT_DIR}/lib/nvonnxparser_10.lib"
+    CUDA::cudart
+)
+
+
+add_executable(test_distgssr_onnx test_distgssr_onnx.cpp ${SOURCE_DIR}/utils.cpp)
+target_include_directories(test_distgssr_onnx PRIVATE ${ORT_DIR}/include)
+target_link_directories(test_distgssr_onnx PRIVATE ${ORT_DIR}/lib)
+target_link_libraries(test_distgssr_onnx PRIVATE
+    onnxruntime.lib
+    ${OpenCV_LIBS}
+)
+if(WIN32)
+    set(ORT_LIB_DIR "${ORT_DIR}/lib")
+
+    add_custom_command(TARGET test_distgssr_onnx POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${ORT_LIB_DIR}/onnxruntime.dll"
+        "$<TARGET_FILE_DIR:test_distgssr_onnx>"
+
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${ORT_LIB_DIR}/onnxruntime_providers_shared.dll" # <--- 关键文件 1
+        "$<TARGET_FILE_DIR:test_distgssr_onnx>"
+
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${ORT_LIB_DIR}/onnxruntime_providers_cuda.dll" # <--- 关键文件 2 (CUDA支持)
+        "$<TARGET_FILE_DIR:test_distgssr_onnx>"
+
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${ORT_LIB_DIR}/onnxruntime_providers_tensorrt.dll" # <--- 关键文件 2 (CUDA支持)
+        "$<TARGET_FILE_DIR:test_distgssr_onnx>"
+    )
+endif()
+
+add_executable(test_distgssr_trt
+    test_distgssr_trt.cpp
+    ${SOURCE_DIR}/utils.cpp
+    ${SOURCE_DIR}/distgssr.cpp
+    ${SOURCE_DIR}/trtwrapper.cpp
+    ${SOURCE_DIR}/lfio.cpp
+    ${SOURCE_DIR}/raw_decode.cpp
+    ${SOURCE_DIR}/config.cpp
+    ${SOURCE_DIR}/lfmbase.cpp
+    ${SOURCE_DIR}/lfsr_base.cpp
+)
+target_include_directories(test_distgssr_trt PRIVATE
+    "${TENSORRT_DIR}/include"
+    "${OpenCV_DIR}/include"
+    ${CUDAToolkit_INCLUDE_DIRS}
+)
+target_link_libraries(test_distgssr_trt PRIVATE
+    "${OpenCV_LIBS}"
+    "${TENSORRT_DIR}/lib/nvinfer_10.lib"
+    CUDA::cudart
+    OpenSSL::SSL OpenSSL::Crypto
+    OpenMP::OpenMP_CXX
+)
+
+add_executable(test_epit
+    test_epit.cpp
+    ${SOURCE_DIR}/utils.cpp
+    ${SOURCE_DIR}/epit.cpp
+    ${SOURCE_DIR}/trtwrapper.cpp
+    ${SOURCE_DIR}/lfio.cpp
+    ${SOURCE_DIR}/raw_decode.cpp
+    ${SOURCE_DIR}/config.cpp
+    ${SOURCE_DIR}/lfmbase.cpp
+    ${SOURCE_DIR}/lfsr_base.cpp
+)
+target_include_directories(test_epit PRIVATE
+    "${TENSORRT_DIR}/include"
+    "${OpenCV_DIR}/include"
+    ${CUDAToolkit_INCLUDE_DIRS}
+)
+target_link_libraries(test_epit PRIVATE
+    "${OpenCV_LIBS}"
+    "${TENSORRT_DIR}/lib/nvinfer_10.lib"
+    CUDA::cudart
+    OpenSSL::SSL OpenSSL::Crypto
+    OpenMP::OpenMP_CXX
+)
+
+add_executable(test_distgdisp
+    test_distgdisp.cpp
+    ${SOURCE_DIR}/utils.cpp
+    ${SOURCE_DIR}/distgdisp.cpp
+    ${SOURCE_DIR}/trtwrapper.cpp
+    ${SOURCE_DIR}/lfmbase.cpp
+    ${SOURCE_DIR}/lfdisp_base.cpp
+    ${SOURCE_DIR}/config.cpp
+    ${SOURCE_DIR}/raw_decode.cpp
+    ${SOURCE_DIR}/lfio.cpp
+)
+target_include_directories(test_distgdisp PRIVATE
+    "${TENSORRT_DIR}/include"
+    "${OpenCV_DIR}/include"
+    ${CUDAToolkit_INCLUDE_DIRS}
+)
+target_link_libraries(test_distgdisp PRIVATE
+    "${OpenCV_LIBS}"
+    "${TENSORRT_DIR}/lib/nvinfer_10.lib"
+    CUDA::cudart
+    OpenMP::OpenMP_CXX
+    OpenSSL::SSL OpenSSL::Crypto
 )

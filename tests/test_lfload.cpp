@@ -6,7 +6,6 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/opencv.hpp>
 
-
 void test_read() {
 	LFIO lfpreader = LFIO();
 
@@ -20,7 +19,7 @@ void test_read() {
 
 	auto test_img = lfpreader.read_image("../data/zutomayo.jpg");
 
-	auto lfptr = lfpreader.read_sai("../data/toy", false);
+	auto lfptr = lfpreader.read_sai("../data/toy");
 	cv::Mat center = lfptr->getCenter();
 	std::cout << center.at<float>(200, 200) << std::endl;
 
@@ -42,14 +41,14 @@ void test_openmp() {
 	LFIO lfpreader;
 
 	Timer timer;
-	auto lf = lfpreader.read_sai("../data/toy_lftoolbox", false);
+	auto lf = lfpreader.read_sai("../data/toy_lftoolbox");
 	timer.stop();
 	timer.print_elapsed_ms();
 	// cv::imshow("", lf->getCenter());
 	// cv::waitKey();
 
 	timer.start();
-	lf = lfpreader.read_sai_openmp("../data/toy_lftoolbox", false);
+	lf = lfpreader.read_sai("../data/toy_lftoolbox");
 	timer.stop();
 	timer.print_elapsed_ms();
 	// cv::imshow("", lf->getCenter());

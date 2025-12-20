@@ -68,7 +68,7 @@ std::future<LfPtr> LFController::load_lf(const std::string &path) {
 	return std::async(std::launch::async, [this, path]() -> LfPtr {
 		LfPtr lf;
 		if (fs::is_directory(path)) {
-			lf = load->read_sai(path, false);
+			lf = load->read_sai(path);
 		} else {
 			cv::Mat img = load->read_image(path);
 			lf = rsp->run(img);

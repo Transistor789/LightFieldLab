@@ -1,4 +1,4 @@
-#include "lfrefocus.h"
+﻿#include "lfrefocus.h"
 
 #include <algorithm> // 用于 std::max
 #include <omp.h>
@@ -23,7 +23,7 @@ void LFRefocus::init(const LfPtr &ptr) {
 	_ymap = cv::repeat(_ymap, ptr->height, 1);
 }
 
-void LFRefocus::update(const LfPtr &ptr) {
+void LFRefocus::setLF(const LfPtr &ptr) {
 	lf = ptr;
 	init(lf);
 }

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <immintrin.h>
+#include <json.hpp>
 #include <limits> // 必须包含，用于 numeric_limits
 #include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
@@ -13,6 +14,8 @@
 #include <type_traits>
 #include <vector>
 
+using json = nlohmann::json;
+
 enum class BayerPattern { GRBG, RGGB, GBRG, BGGR };
 
 struct ISPConfig {
@@ -20,7 +23,6 @@ struct ISPConfig {
 	int bit = 10;
 	int white_level = 1023;
 	int black_level = 64;
-	bool lsc_fixed_q12 = true;
 	std::vector<float> awb_gains = {1.0f, 1.0f, 1.0f, 1.0f};
 	std::vector<float> ccm_matrix = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
 									 0.0f, 0.0f, 0.0f, 1.0f};
@@ -41,9 +43,16 @@ public:
 	explicit LFIsp(const ISPConfig &config, const cv::Mat &lfp_img,
 				   const cv::Mat &wht_img) {
 		cv::setNumThreads(cv::getNumberOfCPUs());
-		updateImage(lfp_img, false);
-		updateImage(wht_img, true);
-		updateConfig(config);
+		set_lf_img(lfp_img);
+		set_white_img(wht_img);
+		set_config(config);
+	}
+	explicit LFIsp(const json &json_config, const cv::Mat &lfp_img,
+				   const cv::Mat &wht_img) {
+		cv::setNumThreads(cv::getNumberOfCPUs());
+		set_lf_img(lfp_img);
+		set_white_img(wht_img);
+		set_config(json_config);
 	}
 
 	ISPConfig getConfig() const { return config_; }
@@ -52,9 +61,135 @@ public:
 	const cv::Mat &getResult() const { return lfp_img_; }
 	const std::vector<cv::Mat> &getSAIS() const { return sais; }
 
-	LFIsp &updateConfig(const ISPConfig &new_config) {
+	LFIsp &set_config(const ISPConfig &new_config) {
 		config_ = new_config;
 		prepare_ccm_fixed_point();
+
+		return *this;
+	}
+
+	LFIsp &set_config(const json &json_settings) {
+		ISPConfig new_config; // 使用默认值初始化
+
+		// 1. 解析 Bayer 格式字符串转枚举
+		// filter_lfp_json 保证了只有 "BGGR" (Gen1) 或 "GRBG" (Gen2)
+		// 等标准字符串
+		if (json_settings.contains("bay")) {
+			std::string bay_str = json_settings["bay"].get<std::string>();
+			if (bay_str == "GRBG")
+				new_config.pattern = BayerPattern::GRBG;
+			else if (bay_str == "RGGB")
+				new_config.pattern = BayerPattern::RGGB;
+			else if (bay_str == "GBRG")
+				new_config.pattern = BayerPattern::GBRG;
+			else if (bay_str == "BGGR")
+				new_config.pattern = BayerPattern::BGGR;
+		}
+
+		// 2. 位深
+		if (json_settings.contains("bit")) {
+			new_config.bit = json_settings["bit"].get<int>();
+		}
+
+		// 3. 黑/白电平 (BLC)
+		// JSON 中提供的是 4 通道的数组 (vector)，但 ISPConfig
+		// 目前用的是单一直流分量。 通常取第一个分量 (Gr) 或者做平均即可。对于
+		// Lytro 相机，4个通道通常是一致的。
+		if (json_settings.contains("blc")) {
+			const auto &blc = json_settings["blc"];
+
+			if (blc.contains("black") && blc["black"].is_array()
+				&& !blc["black"].empty()) {
+				// 取第 0 个元素的黑电平
+				new_config.black_level = blc["black"][0].get<int>();
+			}
+
+			if (blc.contains("white") && blc["white"].is_array()
+				&& !blc["white"].empty()) {
+				// 取第 0 个元素的白电平 (饱和值)
+				new_config.white_level = blc["white"][0].get<int>();
+			}
+		}
+
+		// 4. AWB 增益
+		// filter_lfp_json 已经将增益顺序调整为与 Bayer Pattern
+		// 对应的顺序，直接赋值即可
+		if (json_settings.contains("awb") && json_settings["awb"].is_array()) {
+			new_config.awb_gains =
+				json_settings["awb"].get<std::vector<float>>();
+		}
+
+		// 5. CCM 矩阵 (3x3 平铺为 9 float)
+		if (json_settings.contains("ccm") && json_settings["ccm"].is_array()) {
+			new_config.ccm_matrix =
+				json_settings["ccm"].get<std::vector<float>>();
+		}
+
+		// 6. Gamma 值
+		if (json_settings.contains("gam")) {
+			new_config.gamma = json_settings["gam"].get<float>();
+		}
+
+		// 7. 曝光补偿 (可选)
+		// 虽然 ISPConfig 目前没有 exposure
+		// 字段，如果将来需要数字增益补偿，可以在这里处理 float exp_bias =
+		// json_settings.value("exp", 0.0f); new_config.digital_gain = pow(2.0f,
+		// exp_bias);
+
+		// 调用原本的 set_config 进行各种预计算 (如定点化 CCM)
+		return set_config(new_config);
+	}
+
+	LFIsp &print_config() {
+		std::cout << "\n================ [LFIsp Config] ================"
+				  << std::endl;
+
+		// 1. 基础信息
+		std::cout << "Bayer Pattern : " << bayer_to_string(config_.pattern)
+				  << std::endl;
+		std::cout << "Bit Depth     : " << config_.bit << "-bit" << std::endl;
+		std::cout << "Black Level   : " << config_.black_level << std::endl;
+		std::cout << "White Level   : " << config_.white_level << std::endl;
+
+		// 2. AWB Gains
+		std::cout << "AWB Gains     : [ ";
+		std::cout << std::fixed << std::setprecision(3); // 设置浮点精度
+		if (config_.awb_gains.size() >= 4) {
+			// 假设顺序是 Gr, R, B, Gb (或者根据你的定义打印对应的名字)
+			std::cout << "Gr:" << config_.awb_gains[0] << ", ";
+			std::cout << "R :" << config_.awb_gains[1] << ", ";
+			std::cout << "B :" << config_.awb_gains[2] << ", ";
+			std::cout << "Gb:" << config_.awb_gains[3];
+		} else {
+			for (float g : config_.awb_gains) std::cout << g << " ";
+		}
+		std::cout << " ]" << std::endl;
+
+		// 3. Gamma
+		std::cout << "Gamma         : " << config_.gamma << std::endl;
+
+		// 4. CCM Matrix (格式化为 3x3 矩阵)
+		std::cout << "CCM Matrix    :" << std::endl;
+		if (config_.ccm_matrix.size() == 9) {
+			for (int i = 0; i < 3; ++i) {
+				std::cout << "                [ ";
+				for (int j = 0; j < 3; ++j) {
+					float val = config_.ccm_matrix[i * 3 + j];
+					// setw(8) 保证对齐, showpos 显示正号
+					std::cout << std::showpos << std::setw(8) << val << " ";
+				}
+				std::cout << std::noshowpos << "]" << std::endl;
+			}
+		} else {
+			std::cout << "                (Invalid size: "
+					  << config_.ccm_matrix.size() << ")" << std::endl;
+		}
+
+		std::cout << "================================================"
+				  << std::endl;
+
+		// 恢复默认 cout 格式，以免影响后续打印
+		std::cout << std::defaultfloat;
 
 		return *this;
 	}
@@ -374,13 +509,7 @@ public:
 				return *this;
 			}
 
-			// 【注意】这里必须保持与 lsc_simd 中的移位逻辑一致！
-			// 如果配置为固定 Q12，则 Scale=4096；否则跟随 bit (如 10bit ->
-			// 1024)
-			int shift = config_.lsc_fixed_q12 ? 12 : config_.bit;
-			double scale = static_cast<double>(1 << shift);
-
-			lsc_gain_map_.convertTo(lsc_gain_map_int_, CV_16U, scale);
+			lsc_gain_map_.convertTo(lsc_gain_map_int_, CV_16U, 4096.0f);
 		}
 
 		if constexpr (std::is_same_v<T, uint16_t>) {
@@ -451,9 +580,9 @@ public:
 		if (ccm_matrix_int_.empty())
 			prepare_ccm_fixed_point();
 		int depth = lfp_img_.depth();
-		if (depth == CV_16U) {
+		if constexpr (std::is_same_v<T, uint16_t>) {
 			return ccm_fixed_u16(lfp_img_);
-		} else if (depth == CV_8U) {
+		} else if (std::is_same_v<T, uint8_t>) {
 			return ccm_fixed_u8(lfp_img_);
 		} else {
 			return *this;
@@ -479,6 +608,40 @@ public:
 		return *this;
 	}
 
+	LFIsp &color_equalize() {
+		if (sais.empty())
+			return *this;
+
+		// 1. 找到中心视点 (Reference)
+		int num_views = sais.size();
+		int side_len = static_cast<int>(std::sqrt(num_views));
+		int center_idx = (side_len / 2) * side_len + (side_len / 2);
+
+		// 边界检查
+		if (center_idx >= num_views)
+			center_idx = 0;
+
+		const cv::Mat &ref_img = sais[center_idx];
+
+		// 2. [优化] 预计算参考图(中心视点)的统计信息
+		// 避免在循环中重复计算 80 次，节省时间
+		cv::Scalar ref_mean, ref_std;
+		compute_lab_stats(ref_img, ref_mean, ref_std);
+
+// 3. 并行处理所有视点 (Source)
+#pragma omp parallel for schedule(dynamic)
+		for (int i = 0; i < num_views; ++i) {
+			if (i == center_idx)
+				continue; // 跳过中心视点自己
+
+			// 对当前视点应用 Reinhard 变换
+			// sais[i] 会被原地修改
+			apply_reinhard_transfer(sais[i], ref_mean, ref_std);
+		}
+
+		return *this;
+	}
+
 private:
 	ISPConfig config_;
 
@@ -488,6 +651,21 @@ private:
 	cv::Mat fused_gain_map_int_;
 	std::vector<int32_t> ccm_matrix_int_;
 	std::vector<cv::Mat> sais;
+
+	std::string bayer_to_string(BayerPattern p) const {
+		switch (p) {
+			case BayerPattern::GRBG:
+				return "GRBG";
+			case BayerPattern::RGGB:
+				return "RGGB";
+			case BayerPattern::GBRG:
+				return "GBRG";
+			case BayerPattern::BGGR:
+				return "BGGR";
+			default:
+				return "Unknown";
+		}
+	}
 
 	LFIsp &blc_simd_u16(cv::Mat &img) {
 		uint16_t bl_val = static_cast<uint16_t>(config_.black_level);
@@ -1238,7 +1416,7 @@ private:
 	}
 
 	// SIMD 核：u16 Raw -> LSC -> AWB -> u8 Raw
-	void raw_to_8bit_with_gains_simd(cv::Mat &dst_8u, float exposure = 1.5f) {
+	LFIsp &raw_to_8bit_with_gains_simd(cv::Mat &dst_8u, float exposure = 1.5f) {
 		int rows = lfp_img_.rows;
 		int cols = lfp_img_.cols;
 
@@ -1395,8 +1573,8 @@ private:
 		}
 	}
 
-	void raw_to_8bit_with_gains_simd_u8(cv::Mat &dst_8u,
-										float exposure = 1.5f) {
+	LFIsp &raw_to_8bit_with_gains_simd_u8(cv::Mat &dst_8u,
+										  float exposure = 1.5f) {
 		int rows = lfp_img_.rows;
 		int cols = lfp_img_.cols;
 
@@ -1582,9 +1760,9 @@ private:
 		}
 	}
 
-	void prepare_ccm_fixed_point() {
+	LFIsp &prepare_ccm_fixed_point() {
 		if (config_.ccm_matrix.empty())
-			return;
+			return *this;
 
 		ccm_matrix_int_.resize(9);
 		const float scale = 4096.0f; // Q12 格式
@@ -1594,6 +1772,7 @@ private:
 			ccm_matrix_int_[i] =
 				static_cast<int32_t>(config_.ccm_matrix[i] * scale);
 		}
+		return *this;
 	}
 
 	LFIsp &lsc_awb_simd_u16(cv::Mat &img) {
@@ -1935,6 +2114,80 @@ private:
 			}
 		}
 		return *this;
+	}
+
+	LFIsp &compute_lab_stats(const cv::Mat &src, cv::Scalar &mean,
+							 cv::Scalar &stddev) {
+		cv::Mat lab;
+
+		// 必须转为 float32 [0,1] 精度，否则计算不准且 Lab 转换会有量化误差
+		if (src.depth() == CV_8U) {
+			src.convertTo(lab, CV_32F, 1.0 / 255.0);
+		} else {
+			lab = src; // 假设已经是 float
+		}
+
+		// 转到 Lab 空间 (L:亮度, a/b:颜色分量，通道相关性最小)
+		cv::cvtColor(lab, lab, cv::COLOR_BGR2Lab);
+
+		// OpenCV 自带的高效统计函数
+		cv::meanStdDev(lab, mean, stddev);
+	}
+
+	/**
+	 * @brief 核心算法：应用 Reinhard 变换
+	 * * @param target  待修改的图像 (Source)
+	 * @param ref_mean 参考图均值
+	 * @param ref_std  参考图标准差
+	 */
+	LFIsp &apply_reinhard_transfer(cv::Mat &target, const cv::Scalar &ref_mean,
+								   const cv::Scalar &ref_std) {
+		if (target.empty())
+			return;
+
+		// 1. 转换到 Lab 空间 (Float)
+		cv::Mat lab;
+		if (target.depth() == CV_8U) {
+			target.convertTo(lab, CV_32F, 1.0 / 255.0);
+		} else {
+			target.convertTo(lab, CV_32F);
+		}
+		cv::cvtColor(lab, lab, cv::COLOR_BGR2Lab);
+
+		// 2. 计算当前图像的统计信息
+		cv::Scalar src_mean, src_std;
+		cv::meanStdDev(lab, src_mean, src_std);
+
+		// 3. 分通道应用线性变换
+		// 公式: Dst = (Src - Src_Mean) * (Ref_Std / Src_Std) + Ref_Mean
+		// 展开: Dst = Src * alpha + beta
+		// 其中 alpha = Ref_Std / Src_Std
+		//      beta  = Ref_Mean - Src_Mean * alpha
+
+		std::vector<cv::Mat> channels;
+		cv::split(lab, channels);
+
+		for (int i = 0; i < 3; ++i) {
+			// 防止除以 0 (处理纯色图片时的边缘情况)
+			double s_std = (src_std[i] < 1e-6) ? 1e-6 : src_std[i];
+
+			double alpha = ref_std[i] / s_std;
+			double beta = ref_mean[i] - alpha * src_mean[i];
+
+			// 使用 OpenCV 优化的线性变换算子
+			channels[i].convertTo(channels[i], -1, alpha, beta);
+		}
+
+		// 4. 合并通道并转回 RGB
+		cv::merge(channels, lab);
+		cv::cvtColor(lab, lab, cv::COLOR_Lab2BGR);
+
+		// 5. 转回原始数据类型 (通常是 uint8)
+		if (target.depth() == CV_8U) {
+			lab.convertTo(target, CV_8U, 255.0);
+		} else {
+			lab.copyTo(target);
+		}
 	}
 };
 

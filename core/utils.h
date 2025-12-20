@@ -55,5 +55,6 @@ void saveAs8Bit(const std::string &path, const cv::Mat &img,
 void imshowRaw(const std::string &winname, const cv::Mat &img,
 			   float resize_factor = 0.0f);
 std::string get_base_filename(const std::string &filename);
+cv::Mat gamma_convert(const cv::Mat &src, bool inverse);
 
 #endif

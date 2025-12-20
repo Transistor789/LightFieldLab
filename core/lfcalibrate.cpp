@@ -96,7 +96,7 @@ void LFCalibrate::_computeSliceMaps(int winSize) {
 	float startOffset = -(winSize - 1) / 2.0f;
 
 // OpenMP 并行计算
-#pragma omp parallel for collapse(2)
+#pragma omp parallel for
 	for (int u = 0; u < winSize; ++u) {
 		for (int v = 0; v < winSize; ++v) {
 			float off_y = startOffset + u;

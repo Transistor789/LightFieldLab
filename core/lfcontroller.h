@@ -4,11 +4,11 @@
 #include "lfcalibrate.h"
 #include "lfcapture.h"
 #include "lfdata.h"
-#include "lfdepth.h"
+#include "lfdisp.h"
 #include "lfio.h"
 #include "lfrefocus.h"
 #include "lfresample.h"
-#include "lfsuperres.h"
+#include "lfsr.h"
 
 #include <future>
 #include <memory>

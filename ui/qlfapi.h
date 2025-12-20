@@ -4,7 +4,7 @@
 #include "config.h"
 #include "lfio.h"
 #include "lfrefocus.h"
-#include "lfsuperres.h"
+#include "lfsr.h"
 
 #include <QDebug>
 #include <QObject>
@@ -24,8 +24,8 @@ public slots:
 		std::cout << "LFIO threadId: " << QThread::currentThreadId()
 				  << std::endl;
 	}
-	void loadSAI(const QString &path, bool isRGB) {
-		emit sendLfPtr(backend->read_sai(path.toStdString(), isRGB));
+	void loadSAI(const QString &path) {
+		emit sendLfPtr(backend->read_sai(path.toStdString()));
 	}
 
 signals:
@@ -54,7 +54,7 @@ public slots:
 		}
 		emit sendMat(result);
 	}
-	void onUpdateLF(const LfPtr &ptr) const { backend->update(ptr); }
+	void onUpdateLF(const LfPtr &ptr) const { backend->setLF(ptr); }
 
 signals:
 	void sendMat(const cv::Mat &);
@@ -80,7 +80,7 @@ public slots:
 		backend->setType(static_cast<ModelType>(index));
 	}
 	void setScale(int index) const { backend->setScale(index); }
-	void onUpdateLF(const LfPtr &ptr) const { backend->update(ptr); }
+	void onUpdateLF(const LfPtr &ptr) const { backend->setLF(ptr); }
 	void loadModel() const { backend->ensureModelLoaded(); }
 	void upsample(const cv::Mat &src) {
 		cv::Mat result = backend->upsample(src);

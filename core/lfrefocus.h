@@ -10,7 +10,7 @@ public:
 
 	void init(const LfPtr &ptr);
 	cv::Mat refocus(float alpha, int crop = 0);
-	void update(const LfPtr &ptr);
+	void setLF(const LfPtr &ptr);
 
 	LfPtr lf;
 

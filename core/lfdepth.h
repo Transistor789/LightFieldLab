@@ -5,9 +5,9 @@
 
 #include <opencv2/opencv.hpp>
 
-class LFDepth {
+class LFDisp {
 public:
-	explicit LFDepth();
+	explicit LFDisp();
 	void update(const LfPtr &ptr);
 	LfPtr lf;
 };
