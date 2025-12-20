@@ -17,8 +17,8 @@
 ### 2. AI 增强与推理 (AI Powered by TensorRT)
 本项目利用 TensorRT 对多个顶尖光场深度学习模型进行了 C++ 工程化部署与 FP16 加速：
 * **光场超分辨率 (Super-Resolution)**:
-    * 集成 **DistgSSR** (CVPR 2021) 模型。
-    * 集成 **EPIT** (NeurIPS 2024) 模型。
+    * 集成 **DistgSSR** (TPAMI 2022) 模型。
+    * 集成 **EPIT** (ICCV 2023) 模型。
     * 支持 Mosaic 与 Stack 两种数据输入布局。
 * **光场深度/视差估计 (Disparity Estimation)**:
     * 集成 **DistgDisp** (TPAMI 2022) 模型，支持高精度的视差图计算。
