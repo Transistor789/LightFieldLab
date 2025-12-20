@@ -3,7 +3,6 @@
 ![C++](https://img.shields.io/badge/C++-20-00599C?style=flat-square&logo=c%2B%2B&logoColor=white)
 ![CMake](https://img.shields.io/badge/CMake-3.20+-064F8C?style=flat-square&logo=cmake&logoColor=white)
 ![License](https://img.shields.io/badge/License-GPL_v3-blue.svg?style=flat-square)
-![Build](https://img.shields.io/badge/Build-Passing-success?style=flat-square)
 
 **LightFieldLab** 是一个基于现代 C++ (C++20) 开发的高性能光场数据处理与分析平台。本项目旨在提供从原始光场数据解码到高级计算机视觉应用的全流程解决方案，深度集成了 **NVIDIA TensorRT**，实现了光场超分辨率与深度估计算法的实时推理。
 
