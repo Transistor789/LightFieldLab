@@ -12,13 +12,13 @@
 * **原始数据解码 (Raw Decoding)**: 支持 LFR/RAW 格式光场数据的读取与解析 (`raw_decode`, `lfio`)。
 * **图像信号处理 (ISP)**: 包含去马赛克 (Demosaic)、白平衡、色彩校正与 Gamma 变换 (`lfisp`)。
 * **相机标定 (Calibration)**: 提供微透镜阵列 (MLA) 中心提取、排序与六边形网格拟合算法 (`lfcalibrate`, `centers_extract`, `hexgrid_fit`)。
-* **重聚焦与重采样 (Refocusing & Resampling)**: 实现基于频域或空域的数字重聚焦与光场重采样 (`lfrefocus`, `lfresample`)。
+* **重聚焦 (Refocusing)**: 实现基频域或空域的数字重聚焦 (`lfrefocus`)。
 
 ### 2. AI 增强与推理 (AI Powered by TensorRT)
 本项目利用 TensorRT 对多个顶尖光场深度学习模型进行了 C++ 工程化部署与 FP16 加速：
 * **光场超分辨率 (Super-Resolution)**:
-    * 集成 **DistgSSR** (CVPR 2021) 模型。
-    * 集成 **EPIT** (NeurIPS 2024) 模型。
+    * 集成 **DistgSSR** (TPAMI 2022) 模型。
+    * 集成 **EPIT** (ICCV 2023) 模型。
     * 支持 Mosaic 与 Stack 两种数据输入布局。
 * **光场深度/视差估计 (Disparity Estimation)**:
     * 集成 **DistgDisp** (TPAMI 2022) 模型，支持高精度的视差图计算。
