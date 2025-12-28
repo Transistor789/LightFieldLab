@@ -6,11 +6,9 @@
 class DistgDisp : public LFDispBase {
 public:
 	explicit DistgDisp() {
-		scale_ = 1;		   // 深度估计不改变分辨率
 		ang_res_ = 9;	   // 固定 9x9
-		patch_size_ = 128; // 默认，需与 Engine 匹配
+		patch_size_ = 196; // 默认，需与 Engine 匹配
 		padding_ = 8;
-		center_only_ = true;
 	}
 
 private:

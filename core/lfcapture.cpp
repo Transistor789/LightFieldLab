@@ -6,22 +6,25 @@
 
 LFCapture::LFCapture() {
 	int ret = SetUSBConfiguration(1920, 1080, 3, 0, 0, 0, false, false);
-	if (ret == 0)
+	if (ret == 0) {
 		std::cout << "USB configuration succeeded." << std::endl;
-	else
+	} else {
 		std::cout << "USB configuration failed! Error code: " << ret
 				  << std::endl;
+	}
 
-	cap = cv::VideoCapture(0, cv::CAP_DSHOW);
+	// cap = cv::VideoCapture(0, cv::CAP_DSHOW);
+	cap.open(0, cv::CAP_DSHOW);
+	if (cap.isOpened()) {
+		cap.set(cv::CAP_PROP_FRAME_WIDTH, 1920);
+		cap.set(cv::CAP_PROP_FRAME_HEIGHT, 1080);
 
-	cap.set(cv::CAP_PROP_FRAME_WIDTH, 1920);
-	cap.set(cv::CAP_PROP_FRAME_HEIGHT, 1080);
+		int cam_width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
 
-	int cam_width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
-
-	width = 1024, height = 768;
-	start_x = (cam_width - width) / 2;
-	start_y = 0;
+		width = 1024, height = 768;
+		start_x = (cam_width - width) / 2;
+		start_y = 0;
+	}
 }
 cv::Mat LFCapture::getFrame() {
 	cv::Mat frame, gray_frame;

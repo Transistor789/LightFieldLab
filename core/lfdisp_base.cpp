@@ -9,22 +9,52 @@ cv::Mat LFDispBase::run(const std::vector<cv::Mat> &inputViews) {
 		return {};
 	}
 
-	// 1. 筛选视角 (关键修复)
-	// 这一步会根据 ang_res_ (例如 9) 检查 inputViews 是否合法
-	// 如果 inputViews 是 13x13 而模型只需要 9x9，这里会自动裁剪中心
-	std::vector<cv::Mat> validViews = SelectCentralViews(inputViews);
+	size_t inputSize = inputViews.size();
+	size_t requiredSize = ang_res_ * ang_res_;
 
-	// 如果筛选失败（尺寸不对或非正方形），直接返回
-	if (validViews.empty()) {
+	// 定义一个指针，指向最终要处理的数据（避免不必要的拷贝）
+	const std::vector<cv::Mat> *pValidViews = nullptr;
+
+	// 定义一个临时容器，仅在需要裁切时存储数据
+	std::vector<cv::Mat> croppedViews;
+
+	// 1. 根据视角数量分情况处理
+	if (inputSize < requiredSize) {
+		// --- 情况 A: 小于 -> 报错 ---
+		std::cerr << "[Error] Input views (" << inputSize
+				  << ") are insufficient for model requirement ("
+				  << requiredSize << ")." << std::endl;
 		return {};
+	} else if (inputSize == requiredSize) {
+		// --- 情况 B: 等于 -> 直接使用 ---
+		// 指针直接指向输入，无任何内存复制
+		pValidViews = &inputViews;
+	} else {
+		// --- 情况 C: 大于 -> 裁切中心 ---
+		// 简单的平方数校验
+		int inputAng = static_cast<int>(std::round(std::sqrt(inputSize)));
+		if (inputAng * inputAng != inputSize) {
+			std::cerr << "[Error] Input views size (" << inputSize
+					  << ") is not a square number." << std::endl;
+			return {};
+		}
+
+		// 调用基类的筛选函数获取中心视角
+		croppedViews = SelectCentralViews(inputViews);
+		if (croppedViews.empty()) {
+			return {};
+		}
+
+		// 指针指向裁切后的临时容器
+		pValidViews = &croppedViews;
 	}
 
 	// 2. 预处理：转灰度 + 归一化
-	// 注意：这里必须传入 validViews，而不是原始的 inputViews
+	// 使用指针解引用 (*pValidViews) 传入
 	std::vector<cv::Mat> grayViews;
-	pre_process(validViews, grayViews);
+	pre_process(*pValidViews, grayViews);
 
-	// 3. 核心推理 (多态调用子类 DistgDisp 的实现)
+	// 3. 核心推理
 	return infer(grayViews);
 }
 

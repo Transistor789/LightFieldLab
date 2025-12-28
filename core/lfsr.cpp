@@ -19,8 +19,14 @@ void LFSuperRes::setScale(int value) {
 		_scale = value;
 		_current_model_id = ""; // 强制重载
 
-		// 同步更新 DistgSSR 的参数
-		distg.setScale(value);
+		if (value == 2 || value == 4) {
+			distg.setScale(value);
+		} else {
+			// (可选) 打印警告日志，方便调试
+			std::cerr << "[LFSuperRes] Warning: DistgSSR only supports scale 2 "
+						 "or 4. Input: "
+					  << value << ", ignoring for DistgSSR." << std::endl;
+		}
 	}
 }
 
@@ -62,7 +68,7 @@ void LFSuperRes::loadModel() {
 		int totalRes = angRes * _patch_size;
 
 		std::string engineName = std::format(
-			"DistgSSR_{}x_5x5_1x1x{}x{}.engine", _scale, totalRes, totalRes);
+			"DistgSSR_{}x_1x1x{}x{}_FP16.engine", _scale, totalRes, totalRes);
 
 		std::string fullPath = _trtEnginePath + engineName;
 
@@ -126,43 +132,15 @@ cv::Mat LFSuperRes::upsample(const cv::Mat &src) {
 }
 
 // 核心逻辑：多图处理
-cv::Mat LFSuperRes::upsample() {
+std::vector<cv::Mat> LFSuperRes::upsample(const std::vector<cv::Mat> &views) {
 	ensureModelLoaded();
 
-	if (!lf || lf->data.empty()) {
+	if (views.empty()) {
 		std::cerr << "[Error] No Light Field data loaded!" << std::endl;
 		return cv::Mat();
 	}
 
-	// 1. 准备数据
-	// DistgSSR 需要 5x5 的输入。假设 lf->data 是 9x9 (81张)
-	// 我们需要提取中心的 5x5
-	std::vector<cv::Mat> inputViews;
-
-	int sourceGrid = 9; // 假设你的 LfData 是 9x9
-	int modelGrid = 5;
-	int start_idx = (sourceGrid - modelGrid) / 2; // (9-5)/2 = 2
-
-	for (int u = 0; u < modelGrid; ++u) {
-		for (int v = 0; v < modelGrid; ++v) {
-			int src_u = start_idx + u;
-			int src_v = start_idx + v;
-			int idx = src_u * sourceGrid + src_v;
-
-			// 边界检查
-			if (idx < lf->data.size()) {
-				inputViews.push_back(lf->data[idx]);
-			}
-		}
-	}
-
-	// 2. 调用 DistgSSR
-	// process 返回 vector<Mat>，通常只有一张结果
-	std::vector<cv::Mat> results =
-		distg.run(inputViews); // 注意：这里需要你把 DistgSSR::Process
-							   // 改名为 upsample 或统一接口
-
-	return results[results.size() / 2];
+	return distg.run(views);
 }
 
 cv::Mat LFSuperRes::upsampleCore(const cv::Mat &src) {

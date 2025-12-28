@@ -5,13 +5,13 @@ project(test)
 add_executable(test test.cpp)
 
 # test_ui
-add_executable(test_ui
-    test_ui.cpp
-    ${UI_DIR}/ui.cpp
-    ${UI_DIR}/ui.h
-)
-target_include_directories(test_ui PRIVATE ${CMAKE_SOURCE_DIR}/ui)
-target_link_libraries(test_ui PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+# add_executable(test_ui
+#     test_ui.cpp
+#     ${UI_DIR}/ui.cpp
+#     ${UI_DIR}/ui.h
+# )
+# target_include_directories(test_ui PRIVATE ${CMAKE_SOURCE_DIR}/ui)
+# target_link_libraries(test_ui PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
 # test_superres
 add_executable(test_lfsuperres
@@ -266,3 +266,30 @@ target_link_libraries(test_distgdisp PRIVATE
     OpenMP::OpenMP_CXX
     OpenSSL::SSL OpenSSL::Crypto
 )
+
+add_executable(test_lfdepth
+    test_lfdepth.cpp
+    ${SOURCE_DIR}/utils.cpp
+    ${SOURCE_DIR}/distgdisp.cpp
+    ${SOURCE_DIR}/trtwrapper.cpp
+    ${SOURCE_DIR}/lfmbase.cpp
+    ${SOURCE_DIR}/lfdisp_base.cpp
+    ${SOURCE_DIR}/config.cpp
+    ${SOURCE_DIR}/raw_decode.cpp
+    ${SOURCE_DIR}/lfio.cpp
+    ${SOURCE_DIR}/lfdepth.cpp
+)
+target_include_directories(test_lfdepth PRIVATE
+    "${TENSORRT_DIR}/include"
+    "${OpenCV_DIR}/include"
+    ${CUDAToolkit_INCLUDE_DIRS}
+)
+target_link_libraries(test_lfdepth PRIVATE
+    "${OpenCV_LIBS}"
+    "${TENSORRT_DIR}/lib/nvinfer_10.lib"
+    CUDA::cudart
+    OpenMP::OpenMP_CXX
+    OpenSSL::SSL OpenSSL::Crypto
+)
+
+

@@ -7,8 +7,7 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/opencv.hpp>
-
-int main() {
+void test() {
 	// 1. 设置参数
 	int patchSize = 196; // Engine 的输出尺寸
 	int padding = 8;	 // 重叠区域
@@ -25,7 +24,7 @@ int main() {
 
 	if (!dispenser.isEngineLoaded()) {
 		std::cerr << "Failed to load engine." << std::endl;
-		return -1;
+		return;
 	}
 
 	// 3. 读取图像
@@ -46,6 +45,30 @@ int main() {
 		cv::imshow("final_result.png", dispVis);
 		cv::waitKey();
 	}
+}
+void patch_test() {
+	auto lf = LFIO::read_sai("../data/bedroom");
+
+	DistgDisp disp;
+	disp.readEngine("../data/DistgDisp_9x9_196_FP16.engine");
+	disp.setPatchSize(196);
+
+	Timer timer;
+	disp.run(lf->data);
+	timer.stop();
+	timer.print_elapsed_ms();
+
+	disp.readEngine("../data/DistgDisp_9x9_128_FP16.engine");
+	disp.setPatchSize(128);
+
+	timer.start();
+	disp.run(lf->data);
+	timer.stop();
+	timer.print_elapsed_ms();
+}
+int main() {
+	// test();
+	patch_test();
 
 	return 0;
 }

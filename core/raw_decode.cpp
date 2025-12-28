@@ -33,7 +33,8 @@ cv::Mat RawDecoder::decode_lytro(std::string filename) {
 	// retrieve JSON data
 	json_dict = extract_json(sections);
 	// JSON file export
-	writeJson("../../data/" + get_base_filename(filename) + ".json", json_dict);
+	writeJson(get_base_filename(filename) + ".json", json_dict);
+	// writeJson("../data/" + get_base_filename(filename) + ".json", json_dict);
 	// decompose JSON data
 	width = json_dict["image"]["width"];
 	height = json_dict["image"]["height"];

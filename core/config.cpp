@@ -10,7 +10,7 @@
 namespace fs = std::filesystem;
 
 Config::Config() {
-	defaultConfigFile_ = "../data/config.json";
+	defaultConfigFile_ = "data/config.json";
 
 	readParams(defaultConfigFile_);
 	defaultValues();

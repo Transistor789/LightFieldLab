@@ -6,17 +6,19 @@
 #include "lfio.h"
 #include "utils.h"
 
-#include <fstream>
 #include <json.hpp>
 
 using json = nlohmann::json;
 
 LFCalibrate::LFCalibrate() {}
-LFCalibrate::LFCalibrate(const cv::Mat &white_img) {
-	if (white_img.channels() != 1) {
+
+LFCalibrate::LFCalibrate(const cv::Mat &white_img) { setImage(white_img); }
+
+void LFCalibrate::setImage(const cv::Mat &img) {
+	if (img.channels() != 1) {
 		throw std::runtime_error("Calibrate requires single channel image!");
 	}
-	_white_img = white_img.clone();
+	_white_img = img.clone();
 }
 
 std::vector<std::vector<cv::Point2f>> LFCalibrate::run(bool use_cca,
@@ -39,19 +41,19 @@ std::vector<std::vector<cv::Point2f>> LFCalibrate::run(bool use_cca,
 
 	if (save) {
 		if (use_cca) {
-			draw_points(_white_img, pts, "../../data/centers_detected_cca.png",
-						1, 0, true);
+			draw_points(_white_img, pts, "../data/centers_detected_cca.png", 1,
+						0, true);
 		} else {
-			draw_points(_white_img, pts,
-						"../../data/centers_detected_moments.png", 1, 0, true);
+			draw_points(_white_img, pts, "../data/centers_detected_moments.png",
+						1, 0, true);
 		}
 
-		draw_points(_white_img, pts_sorted, "../../data/centers_sorted.png", 1,
-					0, true);
-		draw_points(_white_img, pts_fitted, "../../data/centers_fitted.png", 1,
-					0, true);
+		draw_points(_white_img, pts_sorted, "../data/centers_sorted.png", 1, 0,
+					true);
+		draw_points(_white_img, pts_fitted, "../data/centers_fitted.png", 1, 0,
+					true);
 
-		savePoints("../../data/centroids.json");
+		savePoints("../data/centroids.json");
 	}
 
 	return pts_fitted;

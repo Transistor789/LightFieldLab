@@ -22,6 +22,7 @@ public:
 	explicit LFCalibrate(const cv::Mat &white_img);
 	std::vector<std::vector<cv::Point2f>> run(bool use_cca = false,
 											  bool save = false);
+	void setImage(const cv::Mat &img);
 	void savePoints(const std::string &filename);
 
 	void computeSliceMaps(int winSize);

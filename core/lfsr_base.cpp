@@ -6,21 +6,48 @@ std::vector<cv::Mat> LFSRBase::run(const std::vector<cv::Mat> &inputViews) {
 		return {};
 	}
 
-	// 1. 筛选
-	std::vector<cv::Mat> validViews = SelectCentralViews(inputViews);
-	if (validViews.empty())
+	size_t inputSize = inputViews.size();
+	size_t requiredSize = ang_res_ * ang_res_;
+
+	// 定义指针指向最终使用的数据 (零拷贝策略)
+	const std::vector<cv::Mat> *pValidViews = nullptr;
+	// 临时容器 (仅在需要裁切时使用)
+	std::vector<cv::Mat> croppedViews;
+
+	// 1. 筛选逻辑优化
+	if (inputSize < requiredSize) {
+		// --- 情况 A: 小于 -> 报错 ---
+		std::cerr << "[Error] Input views (" << inputSize
+				  << ") < Model requirement (" << requiredSize << ")."
+				  << std::endl;
 		return {};
+	} else if (inputSize == requiredSize) {
+		// --- 情况 B: 等于 -> 直接使用 ---
+		pValidViews = &inputViews;
+	} else {
+		// --- 情况 C: 大于 -> 裁切中心 ---
+		int inputAng = static_cast<int>(std::round(std::sqrt(inputSize)));
+		if (inputAng * inputAng != inputSize) {
+			std::cerr << "[Error] Input views size (" << inputSize
+					  << ") is not a square number." << std::endl;
+			return {};
+		}
 
-	int H = validViews[0].rows;
-	int W = validViews[0].cols;
+		croppedViews = SelectCentralViews(inputViews);
+		if (croppedViews.empty())
+			return {};
 
-	// printf("[%s] Run... Input: %dx%d, Scale: %d, Mode: %s\n",
-	// 	   getModelName().c_str(), H, W, scale_,
-	// 	   center_only_ ? "Center" : "All");
+		pValidViews = &croppedViews;
+	}
+
+	// 获取尺寸 (通过指针访问)
+	int H = (*pValidViews)[0].rows;
+	int W = (*pValidViews)[0].cols;
 
 	// 2. 预处理 (通用)
+	// 这里传入 *pValidViews 解引用
 	std::vector<cv::Mat> yFloatViews, cbViews, crViews;
-	pre_process(validViews, yFloatViews, cbViews, crViews);
+	pre_process(*pValidViews, yFloatViews, cbViews, crViews);
 
 	// 3. 推理 (多态调用子类实现)
 	std::vector<cv::Mat> srYList = infer(yFloatViews);
@@ -32,7 +59,8 @@ std::vector<cv::Mat> LFSRBase::run(const std::vector<cv::Mat> &inputViews) {
 
 	if (center_only_) {
 		// Mode A: Center Only
-		// infer 在 center_only 为 true 时只返回 1 张 Y
+		// infer 在 center_only 为 true 时通常只返回 1 张 Y
+		// 注意：cbViews 依然是全视角的，所以需要取中心索引
 		int centerIdx = cbViews.size() / 2;
 		cv::Mat bgr =
 			post_process(srYList[0], cbViews[centerIdx], crViews[centerIdx]);

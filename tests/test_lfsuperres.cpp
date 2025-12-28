@@ -1,8 +1,7 @@
 #include "lfio.h"
 #include "lfsr.h"
+#include "utils.h"
 
-#include <chrono>
-#include <iostream>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/types.hpp>
 #include <opencv2/opencv.hpp>
@@ -29,11 +28,14 @@ int main() {
 	cv::imshow("res_espcn", res_espcn);
 
 	sr.setType(ModelType::DISTGSSR);
-	sr.setLF(lf);
-	sr.setPatchSize(128);
-	// sr.se
-	auto res_distgssr = sr.upsample();
-	cv::imshow("DISTGSSR", res_distgssr);
+	sr.setPatchSize(196);
+	sr.setScale(2);
+	auto res_distgssrx2 = sr.upsample(lf->data);
+	cv::imshow("DISTGSSR x2", res_distgssrx2[res_distgssrx2.size() / 2]);
+
+	sr.setScale(4);
+	auto res_distgssrx4 = sr.upsample(lf->data);
+	cv::imshow("DISTGSSR x4", res_distgssrx4[res_distgssrx4.size() / 2]);
 
 	cv::waitKey();
 

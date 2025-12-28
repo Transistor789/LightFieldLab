@@ -54,6 +54,7 @@ endif()
 set(CMAKE_PREFIX_PATH "${OpenCV_DIR};${Qt6_DIR};${Boost_DIR};${Eigen3_DIR}")
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
 find_package(OpenCV REQUIRED COMPONENTS core highgui imgproc imgcodecs dnn_superres)
 find_package(OpenSSL REQUIRED)
 find_package(OpenMP REQUIRED)
@@ -63,56 +64,72 @@ find_package(CUDAToolkit REQUIRED)
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR}/core)
 set(UI_DIR ${PROJECT_SOURCE_DIR}/ui)
 include_directories(${SOURCE_DIR})
-set(SOURCE_FILES
+
+add_executable(${BIN_NAME}
     main.cpp
-    ${SOURCE_DIR}/utils.cpp
-    ${SOURCE_DIR}/config.cpp
-    ${SOURCE_DIR}/lfio.cpp
-    ${SOURCE_DIR}/raw_decode.cpp
-    ${SOURCE_DIR}/lfrefocus.cpp
-    ${SOURCE_DIR}/lfsr.cpp
-    ${SOURCE_DIR}/trtwrapper.cpp
-    ${SOURCE_DIR}/distgssr.cpp
-    ${SOURCE_DIR}/lfmbase.cpp
-    ${SOURCE_DIR}/lfsr_base.cpp
-    ${UI_DIR}/mainwindow.cpp
-    ${UI_DIR}/ui.cpp
-    ${UI_DIR}/lightfieldlab.cpp
+    core/utils.cpp
+    core/distgdisp.cpp
+    core/distgssr.cpp
+    core/trtwrapper.cpp
+    core/lfmbase.cpp
+    core/lfdisp_base.cpp
+    core/lfsr_base.cpp
+    core/lfio.cpp
+    core/lfdepth.cpp
+    core/lfsr.cpp
+    core/lfrefocus.cpp
+    core/lfcalibrate.cpp
+    core/lfcapture.cpp
+    core/config.cpp
+    core/raw_decode.cpp
+    core/centers_extract.cpp
+    core/centers_sort.cpp
+    core/hexgrid_fit.cpp
+    ui/lfcontrol.cpp
+    ui/lfcontrol.h
+    ui/qlogger.h
+    ui/mainwindow.h
+    ui/mainwindow.cpp
+    ui/mainwindow.ui
+    ui/widgetcontrol.h
+    ui/widgetcontrol.cpp
+    ui/widgetcontrol.ui
+    ui/widgetlogger.h
+    ui/widgetlogger.cpp
+    ui/widgetlogger.ui
+    ui/widgetimage.h
+    ui/widgetimage.cpp
+    ui/widgetimage.ui
+    ui/dialogwbgains.h
+    ui/dialogwbgains.cpp
+    ui/dialogwbgains.ui
+    ui/dialogccm.h
+    ui/dialogccm.cpp
+    ui/dialogccm.ui
+    ui/interactiveview.h ui/interactiveview.cpp
+    ui/smartimageviewer.h ui/smartimageviewer.cpp ui/smartimageviewer.ui
 )
-set(INCLUDE_FILES
-    ${SOURCE_DIR}/utils.h
-    ${SOURCE_DIR}/config.h
-    ${SOURCE_DIR}/lfdata.h
-    ${SOURCE_DIR}/lfio.h
-    ${SOURCE_DIR}/lfrefocus.h
-    ${SOURCE_DIR}/lfsr.h
-    ${SOURCE_DIR}/trtwrapper.h
-    ${SOURCE_DIR}/distgssr.h
-    ${UI_DIR}/lightfieldlab.h
-    ${UI_DIR}/mainwindow.h
-    ${UI_DIR}/ui.h
-    ${UI_DIR}/qlfapi.h
-    ${UI_DIR}/lightfieldlab.h
-
-)
-
-add_executable(${BIN_NAME} ${SOURCE_FILES} ${INCLUDE_FILES})
 target_include_directories(${BIN_NAME} PRIVATE
+
+target_link_libraries(lightfieldlab PRIVATE Qt6::Core Qt6::Widgets)
+"${TENSORRT_DIR}/include"
+    "${OpenCV_DIR}/include"
+    "${CUDAToolkit_INCLUDE_DIRS}"
     "${SOURCE_DIR}"
+    "${Eigen_DIR}"
     "${UI_DIR}"
-    "${OPENSSL_INCLUDE_DIR}"
-    "${TENSORRT_DIR}/include"
-    ${CUDAToolkit_INCLUDE_DIRS}
 )
 target_link_directories(${BIN_NAME} PRIVATE
     "${OPENSSL_ROOT_DIR}/lib"
-
+    "${SOURCE_DIR}"
 )
 target_link_libraries(${BIN_NAME} PRIVATE
     ${OpenCV_LIBS} opencv_dnn_superres opencv_cudaimgproc opencv_cudaarithm opencv_cudawarping
     "${TENSORRT_DIR}/lib/nvinfer_10.lib"
     CUDA::cudart
+    OpenMP::OpenMP_CXX
     OpenSSL::SSL OpenSSL::Crypto
+    USBConfiguration
     Qt6::Core Qt6::Gui Qt6::Widgets
 )
 # === DEBUG: Check if OpenSSL::Crypto propagates include dirs ===
@@ -213,6 +230,8 @@ if(WIN32)
     list(APPEND DLLS_TO_COPY
         "${OPENSSL_ROOT_DIR}/bin/libssl-3-x64.dll"
         "${OPENSSL_ROOT_DIR}/bin/libcrypto-3-x64.dll"
+        "${SOURCE_DIR}/ft602.dll"
+        "${SOURCE_DIR}/USBConfiguration.dll"
     )
 
     # 2. 添加 OpenCV DLLs (自动解析)

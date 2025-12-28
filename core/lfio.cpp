@@ -5,7 +5,6 @@
 
 #include <filesystem>
 #include <fstream>
-#include <future>
 #include <iostream>
 #include <omp.h>
 #include <opencv2/opencv.hpp>

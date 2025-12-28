@@ -33,7 +33,6 @@ template <typename T>
 class LFIsp {
 public:
 	struct ResampleMaps {
-		cv::Mat dehex_x, dehex_y;
 		std::vector<cv::Mat> slice;
 		std::vector<cv::Mat> dehex;
 	} maps;
