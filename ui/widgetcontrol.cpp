@@ -2,15 +2,28 @@
 
 #include "dialogccm.h"
 #include "dialogwbgains.h"
+#include "lfparams.h"
+#include "lfsr.h"
 #include "logger.h"
 #include "ui_widgetcontrol.h"
 
 #include <QMenu>
+#include <format>
+#include <qcheckbox.h>
+#include <qcombobox.h>
 #include <qpushbutton.h>
+#include <qspinbox.h>
 
 WidgetControl::WidgetControl(QWidget *parent)
 	: QWidget(parent), ui(new Ui::WidgetControl) {
 	ui->setupUi(this);
+
+	connect(ui->comboBoxBayer, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				params_->source.bayer = static_cast<BayerPattern>(index);
+			});
+	connect(ui->comboBoxBit, &QComboBox::currentIndexChanged, this,
+			[this](int index) { params_->source.bitDepth = 8 + 2 * index; });
 
 	QMenu *menuOpenLFP = new QMenu(this);
 	menuOpenLFP->addAction("原图", this, [this] {
@@ -20,7 +33,7 @@ WidgetControl::WidgetControl(QWidget *parent)
 			"*.jpg)");
 
 		if (!path.isEmpty()) {
-			ui->lineEditLFP->setText(path);
+			params_->source.pathLFP = path.toStdString();
 			emit requestLoadLFP(path);
 		}
 	});
@@ -30,12 +43,13 @@ WidgetControl::WidgetControl(QWidget *parent)
 			QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
 
 		if (!path.isEmpty()) {
-			ui->lineEditLFP->setText(path);
+			params_->source.pathSAI = path.toStdString();
 			emit requestLoadSAI(path);
 		}
 	});
 	ui->toolButtonLF->setMenu(menuOpenLFP);
 
+	// 加载白图像
 	connect(ui->toolButtonWhite, &QToolButton::clicked, this, [this] {
 		QString path = QFileDialog::getOpenFileName(
 			this, "打开白图像", "",
@@ -43,47 +57,183 @@ WidgetControl::WidgetControl(QWidget *parent)
 			"*.jpg)");
 
 		if (!path.isEmpty()) {
-			ui->lineEditWhite->setText(path);
+			params_->source.pathWhite = path.toStdString();
 			emit requestLoadWhite(path);
 		}
 	});
 
-	connect(ui->toolButtonSlice, &QToolButton::clicked, this, [this] {
-		QString path =
-			QFileDialog::getOpenFileName(this, "打开重排表", "", "LUT (*.bin)");
+	// 加载提取子孔径LUT
+	connect(ui->toolButtonExtract, &QToolButton::clicked, this, [this] {
+		QString path = QFileDialog::getOpenFileName(this, "打开子孔径提取表",
+													"", "LUT (*.bin)");
 
 		if (!path.isEmpty()) {
-			ui->lineEditWhite->setText(path);
-			emit requestLoadSliceLUT(path);
+			params_->source.pathExtract = path.toStdString();
+			emit requestLoadExtractLUT(path);
 		}
 	});
-
+	// 加载六边形重采样LUT
 	connect(ui->toolButtonDehex, &QToolButton::clicked, this, [this] {
 		QString path = QFileDialog::getOpenFileName(this, "打开Dehex表", "",
 													"LUT (*.bin)");
 
 		if (!path.isEmpty()) {
-			ui->lineEditWhite->setText(path);
+			params_->source.pathDehex = path.toStdString();
 			emit requestLoadDehexLUT(path);
 		}
 	});
 
+	// 标定
+	connect(ui->btnCalibrate, &QPushButton::clicked, this,
+			&WidgetControl::requestCalibrate);
+	// 生成LUT
+	connect(ui->btnGenLUT, &QPushButton::clicked, this,
+			&WidgetControl::requestGenLUT);
+
+	// awb
 	connect(ui->btnSetWBGains, &QPushButton::clicked, this, [this] {
 		DialogWBGains dialog(this);
-		dialog.set({1, 1, 1, 1});
-		LOG_INFO("setWBGains open");
+		dialog.setupParams(&params_->source);
 		if (dialog.exec() == QDialog::Accepted) {
-			LOG_INFO("setWBGains accepted");
+			updateUI();
 		}
 	});
+
+	// 假设在 MainWindow 或其他类中，有一个成员变量 LFParamsSource paramsSource;
 
 	connect(ui->btnSetCCM, &QPushButton::clicked, this, [this] {
 		DialogCCM dialog(this);
-		LOG_INFO("setCCM open");
+		dialog.setupParams(&params_->source);
 		if (dialog.exec() == QDialog::Accepted) {
-			LOG_INFO("setCCM accepted");
+			updateUI();
 		}
 	});
+
+	connect(ui->btnFastPreview, &QPushButton::clicked, this,
+			&WidgetControl::requestFastPreview);
+
+	connect(ui->btnISP, &QPushButton::clicked, this,
+			&WidgetControl::requestISP);
+
+	// 重聚焦
+	connect(ui->btnRefocus, &QPushButton::clicked, this,
+			&WidgetControl::requestRefocus);
+
+	connect(ui->btnSR, &QPushButton::clicked, this, &WidgetControl::requestSR);
+	connect(ui->btnDE, &QPushButton::clicked, this, &WidgetControl::requestDE);
 }
 
 WidgetControl::~WidgetControl() { delete ui; }
+
+void WidgetControl::setupParams(LFParams *params) {
+	params_ = params;
+	if (params_ == nullptr) {
+		return;
+	}
+
+	// calibrate
+	connect(ui->comboBoxCCA, &QComboBox::currentIndexChanged, this,
+			[this](int index) { params_->calibrate.useCCA = index; });
+	connect(ui->checkBoxGridFit, &QCheckBox::toggled, this,
+			[this](bool value) { params_->calibrate.gridfit = value; });
+	connect(ui->checkBoxSaveLUT, &QCheckBox::toggled, this,
+			[this](bool value) { params_->calibrate.saveLUT = value; });
+	connect(ui->spinBoxLUTViews, &QSpinBox::valueChanged, this,
+			[this](int value) { params_->calibrate.views = value; });
+
+	// isp
+	connect(ui->checkBoxDPC, &QCheckBox::toggled, this,
+			[this](bool value) { params_->isp.enableDPC = value; });
+	connect(ui->checkBoxBLC, &QCheckBox::toggled, this,
+			[this](bool value) { params_->isp.enableBLC = value; });
+	connect(ui->checkBoxLSC, &QCheckBox::toggled, this,
+			[this](bool value) { params_->isp.enableLSC = value; });
+	connect(ui->checkBoxWB, &QCheckBox::toggled, this,
+			[this](bool value) { params_->isp.enableAWB = value; });
+	connect(ui->checkBoxDemosaic, &QCheckBox::toggled, this,
+			[this](bool value) { params_->isp.enableDemosaic = value; });
+	connect(ui->checkBoxCCM, &QCheckBox::toggled, this,
+			[this](bool value) { params_->isp.enableCCM = value; });
+	connect(ui->checkBoxGamma, &QCheckBox::toggled, this,
+			[this](bool value) { params_->isp.enableGamma = value; });
+	connect(ui->checkBoxExtract, &QCheckBox::toggled, this,
+			[this](bool value) { params_->isp.enableExtract = value; });
+	connect(ui->checkBoxDehex, &QCheckBox::toggled, this,
+			[this](bool value) { params_->isp.enableDehex = value; });
+	connect(ui->checkBoxColorEq, &QCheckBox::toggled, this,
+			[this](bool value) { params_->isp.enableColorEq = value; });
+
+	// Refocus
+	connect(ui->spinBoxRefocusCrop, &QSpinBox::valueChanged, this,
+			[this](int value) { params_->refocus.crop = value; });
+	connect(ui->doubleSpinBoxRefocusAlpha, &QDoubleSpinBox::valueChanged, this,
+			[this](double value) { params_->refocus.alpha = value; });
+
+	// SR
+	connect(ui->comboBoxSRAlgo, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				params_->sr.type = static_cast<LFParamsSR::Type>(index);
+			});
+	connect(ui->comboBoxSRScale, &QComboBox::currentIndexChanged, this,
+			[this](int index) { params_->sr.scale = index + 2; });
+	connect(
+		ui->comboBoxSRPatchSize, &QComboBox::currentIndexChanged, this,
+		[this](int index) { params_->sr.patchSize = index == 0 ? 128 : 196; });
+	connect(ui->comboBoxSRViews, &QComboBox::currentIndexChanged, this,
+			[this](int index) { params_->sr.views = 5 + 2 * index; });
+
+	// DE
+	connect(ui->comboBoxDepthAlgo, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				params_->de.type = static_cast<LFParamsDE::Type>(index);
+			});
+	connect(ui->comboBoxDepthPatchColor, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				params_->de.color = static_cast<LFParamsDE::Color>(index);
+			});
+	connect(
+		ui->comboBoxDepthPatchSize, &QComboBox::currentIndexChanged, this,
+		[this](int index) { params_->de.patchSize = index == 0 ? 128 : 196; });
+	connect(ui->comboBoxDepthViews, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				params_->de.views = params_->sr.views = 5 + 2 * index;
+			});
+}
+
+void WidgetControl::updateUI() {
+	if (params_ == nullptr) {
+		return;
+	}
+
+	// 信息
+	setValSilent(ui->comboBoxBayer, params_->source.bayer);
+	setValSilent(ui->comboBoxBit, (params_->source.bitDepth - 8) / 2);
+	setValSilent(ui->labelResValue, std::format("{}x{}", params_->source.width,
+												params_->source.height));
+	// 加载
+	setValSilent(ui->lineEditLFP, params_->source.pathLFP);
+	setValSilent(ui->lineEditWhite, params_->source.pathWhite);
+	setValSilent(ui->lineEditExtract, params_->source.pathExtract);
+	setValSilent(ui->lineEditDehex, params_->source.pathDehex);
+
+	// ISP
+
+	// Refocus
+	setValSilent(ui->spinBoxRefocusCrop, params_->refocus.crop);
+	setValSilent(ui->doubleSpinBoxRefocusAlpha, params_->refocus.alpha);
+
+	// SR
+	setValSilent(ui->comboBoxSRAlgo, params_->sr.type);
+	setValSilent(ui->comboBoxSRScale, params_->sr.scale - 2);
+	setValSilent(ui->comboBoxSRPatchSize,
+				 (params_->sr.patchSize == 128) ? 0 : 1);
+	setValSilent(ui->comboBoxSRViews, (params_->sr.views - 5) / 2);
+
+	// DE
+	setValSilent(ui->comboBoxDepthAlgo, params_->de.type);
+	setValSilent(ui->comboBoxDepthPatchColor,
+				 static_cast<int>(params_->de.color));
+	setValSilent(ui->comboBoxDepthPatchSize,
+				 (params_->de.patchSize == 128) ? 0 : 1);
+	setValSilent(ui->comboBoxDepthViews, (params_->de.views - 5) / 2);
+}

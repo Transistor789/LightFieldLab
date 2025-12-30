@@ -13,7 +13,7 @@
 
 LFIO::LFIO() { cv::setNumThreads(cv::getNumberOfCPUs()); }
 
-cv::Mat LFIO::read_image(const std::string &path) {
+cv::Mat LFIO::readImage(const std::string &path, json *lfp) {
 	cv::Mat img;
 	std::filesystem::path fs_path(path);
 	std::string ext = fs_path.extension().string();
@@ -24,18 +24,19 @@ cv::Mat LFIO::read_image(const std::string &path) {
 		img = cv::imread(path, cv::IMREAD_UNCHANGED);
 		img = gamma_convert(img, true);
 	} else {
-		RawDecoder lfpdecoder;
-		img = lfpdecoder.decode(path);
-		// ISP::blc<uint16_t>(img);
-		// json_dict = lfpdecoder.json_dict;
+		RawDecoder decoder;
+		img = decoder.decode(path);
+		if (lfp != nullptr) {
+			*lfp = decoder.lfp;
+		}
 	}
 	return img;
 }
 
-LfPtr LFIO::read_sai(const std::string &path) {
+LfPtr LFIO::readSAI(const std::string &path) {
 	// 1. 检查路径
 	if (!std::filesystem::exists(path)) {
-		throw std::runtime_error("read_sai: file not exist! Path: " + path);
+		throw std::runtime_error("readSAI: file not exist! Path: " + path);
 	}
 
 	// 2. 获取文件列表 (这部分必须串行，IO瓶颈且 filesystem

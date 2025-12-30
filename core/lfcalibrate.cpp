@@ -7,10 +7,11 @@
 #include "utils.h"
 
 #include <json.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/imgproc.hpp>
+#include <stdexcept>
 
 using json = nlohmann::json;
-
-LFCalibrate::LFCalibrate() {}
 
 LFCalibrate::LFCalibrate(const cv::Mat &white_img) { setImage(white_img); }
 
@@ -21,8 +22,22 @@ void LFCalibrate::setImage(const cv::Mat &img) {
 	_white_img = img.clone();
 }
 
-std::vector<std::vector<cv::Point2f>> LFCalibrate::run(bool use_cca,
-													   bool save) {
+std::vector<std::vector<cv::Point2f>> LFCalibrate::run(bool use_cca, bool save,
+													   bool demosaic, int bit) {
+	if (demosaic) {
+		cv::Mat temp;
+		cv::demosaicing(_white_img, temp, cv::COLOR_BayerGR2GRAY);
+		_white_img = temp;
+	}
+
+	if (_white_img.type() != CV_8U || _white_img.type() != CV_8UC1) {
+		if (bit == 8) {
+			throw std::runtime_error(std::string(__FUNCTION__)
+									 + "白图像位深参数错误");
+		}
+		_white_img.convertTo(_white_img, CV_8U, 255.0 / ((1 << bit) - 1));
+	}
+
 	CentroidsExtract ce(_white_img);
 	ce.run(use_cca);
 	std::vector<cv::Point2f> pts = ce.getPoints();
@@ -134,8 +149,9 @@ void LFCalibrate::computeSliceMaps(int winSize, cv::Mat &out_x, cv::Mat &out_y,
 	_computeSliceMaps(winSize);			  // 强制刷新缓存
 	getSliceMaps(out_x, out_y, row, col); // 获取指定视角
 }
-void LFCalibrate::computeSliceMaps(int winSize) {
+std::vector<cv::Mat> LFCalibrate::computeSliceMaps(int winSize) {
 	_computeSliceMaps(winSize); // 强制刷新缓存
+	return _slice_maps;
 }
 
 // ---------------------------------------------------------
@@ -222,7 +238,10 @@ void LFCalibrate::_computeDehexMaps() {
 	std::cout << "[Calibrate] Dehex maps computed and cached." << std::endl;
 }
 
-void LFCalibrate::computeDehexMaps() { _computeDehexMaps(); }
+std::vector<cv::Mat> LFCalibrate::computeDehexMaps() {
+	_computeDehexMaps();
+	return _dehex_maps;
+}
 void LFCalibrate::computeDehexMaps(cv::Mat &out_x, cv::Mat &out_y) {
 	_computeDehexMaps();
 	getDehexMaps(out_x, out_y);

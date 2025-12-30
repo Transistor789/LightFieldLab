@@ -32,10 +32,9 @@ public:
 	cv::Mat unpack_raw2bayer(const uint8_t *src, int width = Lytro::width,
 							 int height = Lytro::height);
 
-	// interval
 	std::vector<uint8_t> buffer;
 	int width, height;
-	json json_dict;
+	json json_dict, lfp;
 };
 
 #endif

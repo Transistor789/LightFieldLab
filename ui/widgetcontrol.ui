@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>379</width>
-    <height>1061</height>
+    <width>422</width>
+    <height>1132</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -20,15 +20,177 @@
    <string>Form</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="leftMargin">
+    <number>5</number>
+   </property>
    <property name="topMargin">
-    <number>7</number>
+    <number>5</number>
    </property>
    <property name="rightMargin">
-    <number>7</number>
+    <number>5</number>
    </property>
    <property name="bottomMargin">
-    <number>7</number>
+    <number>5</number>
    </property>
+   <item>
+    <widget class="QGroupBox" name="groupBox">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="title">
+      <string>图像参数</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayout_5">
+      <property name="leftMargin">
+       <number>5</number>
+      </property>
+      <property name="topMargin">
+       <number>5</number>
+      </property>
+      <property name="rightMargin">
+       <number>5</number>
+      </property>
+      <property name="bottomMargin">
+       <number>5</number>
+      </property>
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayoutInfo" stretch="0,0,0,0,0,0">
+        <property name="leftMargin">
+         <number>5</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>5</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="labelBayer">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="text">
+           <string>Bayer</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="comboBoxBayer">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>200</width>
+            <height>16777215</height>
+           </size>
+          </property>
+          <item>
+           <property name="text">
+            <string>NONE</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>RGGB</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>GRBG</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>GBRG</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>BGGR</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="labelBit">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="text">
+           <string>位深</string>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignmentFlag::AlignCenter</set>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="comboBoxBit">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>100</width>
+            <height>16777215</height>
+           </size>
+          </property>
+          <item>
+           <property name="text">
+            <string>8</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>10</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="labelResText">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="text">
+           <string>分辨率</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="labelResValue">
+          <property name="text">
+           <string>1920x1080</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
    <item>
     <widget class="QGroupBox" name="groupBoxCalibrate">
      <property name="sizePolicy">
@@ -153,7 +315,7 @@
        </layout>
       </item>
       <item>
-       <layout class="QHBoxLayout" name="horizontalLayoutSlice">
+       <layout class="QHBoxLayout" name="horizontalLayoutExtract">
         <property name="leftMargin">
          <number>5</number>
         </property>
@@ -167,7 +329,7 @@
          <number>0</number>
         </property>
         <item>
-         <widget class="QLabel" name="labelSlice">
+         <widget class="QLabel" name="labelExtract">
           <property name="minimumSize">
            <size>
             <width>50</width>
@@ -186,10 +348,10 @@
          </widget>
         </item>
         <item>
-         <widget class="QLineEdit" name="lineEditSlice"/>
+         <widget class="QLineEdit" name="lineEditExtract"/>
         </item>
         <item>
-         <widget class="QToolButton" name="toolButtonSlice">
+         <widget class="QToolButton" name="toolButtonExtract">
           <property name="text">
            <string>...</string>
           </property>
@@ -263,22 +425,22 @@
          <number>0</number>
         </property>
         <item>
-         <widget class="QLabel" name="label_6">
+         <widget class="QLabel" name="labelCenterDetectAlgo">
           <property name="text">
            <string>中心点检测方法</string>
           </property>
          </widget>
         </item>
         <item>
-         <widget class="QComboBox" name="comboBox_2">
+         <widget class="QComboBox" name="comboBoxCCA">
           <item>
            <property name="text">
-            <string>CCA</string>
+            <string>Contour</string>
            </property>
           </item>
           <item>
            <property name="text">
-            <string>Contour</string>
+            <string>CCA</string>
            </property>
           </item>
          </widget>
@@ -296,24 +458,42 @@
           </property>
          </widget>
         </item>
+        <item>
+         <widget class="QPushButton" name="btnCalibrate">
+          <property name="text">
+           <string>标定</string>
+          </property>
+         </widget>
+        </item>
        </layout>
       </item>
       <item>
-       <layout class="QHBoxLayout" name="horizontalLayout">
+       <layout class="QHBoxLayout" name="horizontalLayout_3">
         <property name="leftMargin">
          <number>5</number>
-        </property>
-        <property name="topMargin">
-         <number>0</number>
         </property>
         <property name="rightMargin">
          <number>5</number>
         </property>
-        <property name="bottomMargin">
-         <number>0</number>
-        </property>
         <item>
-         <widget class="QCheckBox" name="checkBoxGenLUT">
+         <widget class="QLabel" name="label">
+          <property name="text">
+           <string>视角数</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="spinBoxLUTViews">
+          <property name="maximum">
+           <number>20</number>
+          </property>
+          <property name="value">
+           <number>9</number>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btnGenLUT">
           <property name="text">
            <string>生成查找表</string>
           </property>
@@ -327,13 +507,6 @@
          </widget>
         </item>
        </layout>
-      </item>
-      <item>
-       <widget class="QPushButton" name="pushButtonRunRefocusRunCali">
-        <property name="text">
-         <string>运行</string>
-        </property>
-       </widget>
       </item>
      </layout>
     </widget>
@@ -362,148 +535,6 @@
       <property name="bottomMargin">
        <number>5</number>
       </property>
-      <item>
-       <layout class="QHBoxLayout" name="horizontalLayoutInfo" stretch="0,0,0,0,0,0">
-        <property name="leftMargin">
-         <number>5</number>
-        </property>
-        <property name="topMargin">
-         <number>0</number>
-        </property>
-        <property name="rightMargin">
-         <number>5</number>
-        </property>
-        <property name="bottomMargin">
-         <number>0</number>
-        </property>
-        <item>
-         <widget class="QLabel" name="labelBayer">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="text">
-           <string>Bayer</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QComboBox" name="comboBoxBayer">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="maximumSize">
-           <size>
-            <width>200</width>
-            <height>16777215</height>
-           </size>
-          </property>
-          <item>
-           <property name="text">
-            <string>RGGB</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>GRBG</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>GBRG</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>BGGR</string>
-           </property>
-          </item>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLabel" name="labelBit">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="text">
-           <string>位深</string>
-          </property>
-          <property name="alignment">
-           <set>Qt::AlignmentFlag::AlignCenter</set>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QComboBox" name="comboBoxBit">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="maximumSize">
-           <size>
-            <width>100</width>
-            <height>16777215</height>
-           </size>
-          </property>
-          <item>
-           <property name="text">
-            <string>8</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>10</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>12</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>14</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>16</string>
-           </property>
-          </item>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLabel" name="label_3">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="text">
-           <string>分辨率</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLabel" name="label_4">
-          <property name="text">
-           <string/>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </item>
       <item>
        <layout class="QHBoxLayout" name="horizontalLayoutDPC">
         <property name="leftMargin">
@@ -538,7 +569,7 @@
           </property>
           <item>
            <property name="text">
-            <string>1</string>
+            <string>Directional </string>
            </property>
           </item>
           <item>
@@ -843,6 +874,42 @@
        </layout>
       </item>
       <item>
+       <layout class="QHBoxLayout" name="horizontalLayoutResample">
+        <property name="leftMargin">
+         <number>5</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>5</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QCheckBox" name="checkBoxExtract">
+          <property name="text">
+           <string>子孔径提取</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QCheckBox" name="checkBoxDehex">
+          <property name="text">
+           <string>六边形重采样</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
        <layout class="QHBoxLayout" name="horizontalLayoutColorEq">
         <property name="leftMargin">
          <number>5</number>
@@ -857,7 +924,7 @@
          <number>0</number>
         </property>
         <item>
-         <widget class="QCheckBox" name="checkBoxColorEq_2">
+         <widget class="QCheckBox" name="checkBoxColorEq">
           <property name="text">
            <string>颜色一致性矫正</string>
           </property>
@@ -866,14 +933,46 @@
           </property>
          </widget>
         </item>
+        <item>
+         <widget class="QComboBox" name="comboBox_2">
+          <item>
+           <property name="text">
+            <string>Reinhard</string>
+           </property>
+          </item>
+         </widget>
+        </item>
        </layout>
       </item>
       <item>
-       <widget class="QPushButton" name="pushButtonRunRefocusRunProc">
-        <property name="text">
-         <string>运行</string>
+       <layout class="QHBoxLayout" name="horizontalLayout_2">
+        <property name="leftMargin">
+         <number>5</number>
         </property>
-       </widget>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>5</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QPushButton" name="btnISP">
+          <property name="text">
+           <string>处理</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btnFastPreview">
+          <property name="text">
+           <string>快速预览</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </item>
      </layout>
     </widget>
@@ -983,7 +1082,7 @@
        </layout>
       </item>
       <item>
-       <widget class="QPushButton" name="pushButtonRunRefocus">
+       <widget class="QPushButton" name="btnRefocus">
         <property name="text">
          <string>运行</string>
         </property>
@@ -1059,21 +1158,6 @@
          <widget class="QComboBox" name="comboBoxSRAlgo">
           <item>
            <property name="text">
-            <string>ESPN</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>FSRCNN</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>DistgSSR</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
             <string>Nearest</string>
            </property>
           </item>
@@ -1090,6 +1174,21 @@
           <item>
            <property name="text">
             <string>Lanczos</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>ESPCN</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>FSRCNN</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>DistgSSR</string>
            </property>
           </item>
          </widget>
@@ -1153,7 +1252,7 @@
        </layout>
       </item>
       <item>
-       <layout class="QHBoxLayout" name="horizontalLayoutSRAlgo_2">
+       <layout class="QHBoxLayout" name="horizontalLayoutSRAlgo2">
         <property name="leftMargin">
          <number>5</number>
         </property>
@@ -1167,7 +1266,7 @@
          <number>0</number>
         </property>
         <item>
-         <widget class="QLabel" name="labelSRPatchSize_2">
+         <widget class="QLabel" name="labelSRPatchSize">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
             <horstretch>0</horstretch>
@@ -1192,7 +1291,7 @@
          </widget>
         </item>
         <item>
-         <widget class="QComboBox" name="comboBoxSRPatchSize_2">
+         <widget class="QComboBox" name="comboBoxSRPatchSize">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
             <horstretch>0</horstretch>
@@ -1218,7 +1317,7 @@
          </widget>
         </item>
         <item>
-         <widget class="QLabel" name="labelSRViews_2">
+         <widget class="QLabel" name="labelSRViews">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
             <horstretch>0</horstretch>
@@ -1243,7 +1342,7 @@
          </widget>
         </item>
         <item>
-         <widget class="QComboBox" name="comboBoxSRViews_2">
+         <widget class="QComboBox" name="comboBoxSRViews">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
             <horstretch>0</horstretch>
@@ -1276,7 +1375,7 @@
        </layout>
       </item>
       <item>
-       <widget class="QPushButton" name="pushButtonRunSR">
+       <widget class="QPushButton" name="btnSR">
         <property name="text">
          <string>运行</string>
         </property>
@@ -1346,7 +1445,7 @@
          </widget>
         </item>
         <item>
-         <widget class="QLabel" name="labelDepthPatchSize">
+         <widget class="QLabel" name="labelDepthPatchColor">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
             <horstretch>0</horstretch>
@@ -1359,7 +1458,7 @@
          </widget>
         </item>
         <item>
-         <widget class="QComboBox" name="comboBoxDepthPatchSize">
+         <widget class="QComboBox" name="comboBoxDepthPatchColor">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
             <horstretch>0</horstretch>
@@ -1392,7 +1491,7 @@
        </layout>
       </item>
       <item>
-       <layout class="QHBoxLayout" name="horizontalLayoutDepth_2">
+       <layout class="QHBoxLayout" name="horizontalLayoutDepth2">
         <property name="leftMargin">
          <number>5</number>
         </property>
@@ -1406,7 +1505,7 @@
          <number>0</number>
         </property>
         <item>
-         <widget class="QLabel" name="labelDepthPatchSize_2">
+         <widget class="QLabel" name="labelDepthPatchSize">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
             <horstretch>0</horstretch>
@@ -1419,7 +1518,7 @@
          </widget>
         </item>
         <item>
-         <widget class="QComboBox" name="comboBoxDepthPatchSize_2">
+         <widget class="QComboBox" name="comboBoxDepthPatchSize">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
             <horstretch>0</horstretch>
@@ -1445,14 +1544,14 @@
          </widget>
         </item>
         <item>
-         <widget class="QLabel" name="labelDepthViews_2">
+         <widget class="QLabel" name="labelDepthViews">
           <property name="text">
            <string>视角</string>
           </property>
          </widget>
         </item>
         <item>
-         <widget class="QComboBox" name="comboBoxDepthViews_2">
+         <widget class="QComboBox" name="comboBoxDepthViews">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
             <horstretch>0</horstretch>
@@ -1485,7 +1584,7 @@
        </layout>
       </item>
       <item>
-       <widget class="QPushButton" name="pushButtonRunDepth">
+       <widget class="QPushButton" name="btnDE">
         <property name="text">
          <string>运行</string>
         </property>

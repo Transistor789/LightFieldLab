@@ -18,24 +18,28 @@ struct adl_serializer<cv::Point2f> {
 
 class LFCalibrate {
 public:
-	explicit LFCalibrate();
+	explicit LFCalibrate() = default;
 	explicit LFCalibrate(const cv::Mat &white_img);
-	std::vector<std::vector<cv::Point2f>> run(bool use_cca = false,
-											  bool save = false);
+	std::vector<std::vector<cv::Point2f>> run(bool use_cca, bool save,
+											  bool demosaic, int bit);
 	void setImage(const cv::Mat &img);
 	void savePoints(const std::string &filename);
 
-	void computeSliceMaps(int winSize);
+	std::vector<cv::Mat> computeSliceMaps(int winSize);
 	void computeSliceMaps(int winSize, cv::Mat &out_x, cv::Mat &out_y,
 						  int row = -1, int col = -1);
 	void getSliceMaps(cv::Mat &out_x, cv::Mat &out_y, int row = -1,
 					  int col = -1);
 	std::vector<cv::Mat> getSliceMaps() const { return _slice_maps; }
 
-	void computeDehexMaps();
+	std::vector<cv::Mat> computeDehexMaps();
 	void computeDehexMaps(cv::Mat &out_x, cv::Mat &out_y);
 	void getDehexMaps(cv::Mat &out_x, cv::Mat &out_y);
 	std::vector<cv::Mat> getDehexMaps() const { return _dehex_maps; }
+
+private:
+	void _computeSliceMaps(int winSize);
+	void _computeDehexMaps();
 
 private:
 	cv::Mat _white_img;
@@ -43,9 +47,6 @@ private:
 
 	std::vector<cv::Mat> _slice_maps;
 	std::vector<cv::Mat> _dehex_maps;
-
-	void _computeSliceMaps(int winSize);
-	void _computeDehexMaps();
 };
 
 #endif

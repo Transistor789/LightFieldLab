@@ -13,8 +13,8 @@ class LFIO {
 public:
 	explicit LFIO();
 
-	static cv::Mat read_image(const std::string &path);
-	static LfPtr read_sai(const std::string &path);
+	static cv::Mat readImage(const std::string &path, json *lfp = nullptr);
+	static LfPtr readSAI(const std::string &path);
 
 	static bool saveLookUpTables(const std::string &path,
 								 const std::vector<cv::Mat> &maps, int winSize);

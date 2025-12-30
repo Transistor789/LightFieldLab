@@ -7,7 +7,9 @@
 
 #include <format>
 #include <iostream>
+#include <opencv2/core/hal/interface.h>
 #include <opencv2/core/types.hpp>
+#include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/opencv.hpp>
 #include <vector>
@@ -19,9 +21,9 @@ void test_lut();
 
 int main() {
 	// test_module();
-	// test_calibrate();
+	test_calibrate();
 	// test_json();
-	test_lut();
+	// test_lut();
 
 	return 0;
 }
@@ -123,18 +125,24 @@ void test_module() {
 }
 
 void test_calibrate() {
-	cv::Mat img = cv::imread("../../data/gray.png", cv::IMREAD_GRAYSCALE);
+	// cv::Mat img = cv::imread("../../data/gray.png", cv::IMREAD_GRAYSCALE);
+	cv::Mat img = LFIO::readImage("../../data/MOD_0015.RAW");
 	Timer timer;
+
+	// cv::Mat demosic;
+	// cv::demosaicing(img, demosic, cv::COLOR_BayerGB2GRAY);
+	// demosic.convertTo(demosic, CV_8U, 255.0 / 1023.0);
 
 	LFCalibrate cali(img);
 	timer.start();
-	auto pts_cali = cali.run(false, true);
+	auto pts_cali = cali.run(false, false, true, 10);
 	timer.stop();
 	std::cout << "--- Calibrate ---" << std::endl;
 	std::cout << "pts_cali size: " << pts_cali.size() << " "
 			  << pts_cali[0].size() << std::endl;
 	std::cout << "总耗时: " << timer.elapsed_ms() << " ms" << std::endl;
 }
+
 void test_json() {
 	std::string path = "../../data/centroids.json";
 	Timer timer;
@@ -156,7 +164,7 @@ void test_lut() {
 	cv::Mat img = cv::imread("../../data/gray.png", cv::IMREAD_GRAYSCALE);
 	LFCalibrate cali(img);
 	Timer timer;
-	auto pts_cali = cali.run(false, true);
+	auto pts_cali = cali.run(false, false, false, 8);
 	timer.stop();
 	timer.print_elapsed_ms();
 

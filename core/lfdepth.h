@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 
-
 class LFDisp {
 public:
 	explicit LFDisp() {}

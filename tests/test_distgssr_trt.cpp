@@ -83,7 +83,7 @@ void test() {
 
 int main() {
 	// test();
-	auto lf = LFIO::read_sai("../data/bedroom");
+	auto lf = LFIO::readSAI("../data/bedroom");
 
 	DistgSSR ssr;
 

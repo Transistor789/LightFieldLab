@@ -6,7 +6,7 @@
 
 int main(int argc, char *argv[]) {
 	LFIO lfreader;
-	auto lf = lfreader.read_sai("../data/toy_lftoolbox");
+	auto lf = lfreader.readSAI("../data/toy_lftoolbox");
 
 	LFRefocus rfc;
 	rfc.setLF(lf);

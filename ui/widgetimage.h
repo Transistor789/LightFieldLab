@@ -6,7 +6,7 @@
 #include <QMap>
 #include <QWidget>
 
-enum class ImageType { LFP, White, Center, Refocus, SR, Depth };
+enum class ImageType { LFP, White, SAI, Center, Refocus, SR, Depth };
 
 namespace Ui {
 class WidgetImage;
@@ -20,14 +20,6 @@ public:
 	~WidgetImage();
 
 	void updateImage(ImageType type, const QImage &img);
-
-	// public slots:
-	// 	void showLFP(const QImage &img);
-	// 	void showWhite(const QImage &img);
-	// 	void showCenter(const QImage &img);
-	// 	void showRefocus(const QImage &img);
-	// 	void showSR(const QImage &img);
-	// 	void showDepth(const QImage &img);
 
 private:
 	Ui::WidgetImage *ui;

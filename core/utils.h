@@ -1,6 +1,8 @@
 ﻿#ifndef UTILS_H
 #define UTILS_H
 
+#include "lfparams.h"
+
 #include <chrono>
 #include <json.hpp>
 #include <opencv2/opencv.hpp>
@@ -56,5 +58,5 @@ void imshowRaw(const std::string &winname, const cv::Mat &img,
 			   float resize_factor = 0.0f);
 std::string get_base_filename(const std::string &filename);
 cv::Mat gamma_convert(const cv::Mat &src, bool inverse);
-
+int get_demosaic_code(BayerPattern pattern, bool gray = false);
 #endif

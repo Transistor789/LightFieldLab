@@ -39,7 +39,7 @@ cv::Mat RawDecoder::decode_lytro(std::string filename) {
 	width = json_dict["image"]["width"];
 	height = json_dict["image"]["height"];
 	// filter LFP metadata settings
-	Config::Get().img_meta() = filter_lfp_json(json_dict);
+	lfp = filter_lfp_json(json_dict);
 
 	// compose bayer image from lfp file
 	auto img_buf =

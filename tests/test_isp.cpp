@@ -17,13 +17,13 @@
 
 void test_isp() {
 	LFIO load;
-	auto lf_img = load.read_image("../data/toy.lfr");
-	auto wht_img = load.read_image("../data/MOD_0015.RAW");
+	auto lf_img = load.readImage("../data/toy.lfr");
+	auto wht_img = load.readImage("../data/MOD_0015.RAW");
 	// lf_img.convertTo(lf_img, CV_8U, 255.0 / 1023.0);
 	// wht_img.convertTo(wht_img, CV_8U, 255.0 / 1023.0);
 
-	ISPConfig config;
-	config.bit = Config::Get().img_meta()["bit"].get<int>();
+	LFParamsSource config;
+	config.bitDepth = Config::Get().img_meta()["bit"].get<int>();
 	config.black_level = Config::Get()
 							 .img_meta()["blc"]["black"]
 							 .get<std::vector<uint16_t>>()[0];
@@ -38,7 +38,7 @@ void test_isp() {
 	config.ccm_matrix =
 		Config::Get().img_meta()["ccm"].get<std::vector<float>>();
 
-	LFIsp<uint16_t> isp(config, lf_img, wht_img);
+	LFIsp isp(config, lf_img, wht_img);
 	// LFIsp<uint8_t> isp(config, lf_img, wht_img);
 
 	Timer timer;

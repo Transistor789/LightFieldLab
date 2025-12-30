@@ -6,7 +6,7 @@
 #include <opencv2/opencv.hpp>
 
 int main() {
-	auto lf = LFIO::read_sai("../data/bedroom");
+	auto lf = LFIO::readSAI("../data/bedroom");
 	LFDisp disp;
 
 	disp.setPatchSize(196);

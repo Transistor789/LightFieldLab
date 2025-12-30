@@ -12,22 +12,22 @@ int main() {
 #else
 	std::string path = "/Users/jax/code/LightFieldLab/input/toy";
 #endif
-	auto lf = LFIO::read_sai(path);
+	auto lf = LFIO::readSAI(path);
 	auto center = lf->getCenter();
 	cv::imshow("ORIGINAL", center);
 
 	LFSuperRes sr;
 	sr.setScale(2);
-	sr.setType(ModelType::CUBIC);
+	sr.setType(SRType::CUBIC);
 
 	auto res_cubic = sr.upsample(center);
 	cv::imshow("res_cubic", res_cubic);
 
-	sr.setType(ModelType::ESPCN);
+	sr.setType(SRType::ESPCN);
 	auto res_espcn = sr.upsample(center);
 	cv::imshow("res_espcn", res_espcn);
 
-	sr.setType(ModelType::DISTGSSR);
+	sr.setType(SRType::DISTGSSR);
 	sr.setPatchSize(196);
 	sr.setScale(2);
 	auto res_distgssrx2 = sr.upsample(lf->data);

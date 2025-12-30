@@ -12,8 +12,8 @@
 
 void fast_preview() {
 	LFIO load;
-	auto lf_img = load.read_image("../data/toy.lfr");
-	auto wht_img = load.read_image("../data/MOD_0015.RAW");
+	auto lf_img = load.readImage("../data/toy.lfr", &Config::Get().img_meta());
+	auto wht_img = load.readImage("../data/MOD_0015.RAW");
 	cv::Mat wht_img_gray;
 	cv::demosaicing(wht_img, wht_img_gray, cv::COLOR_BayerGR2GRAY);
 	wht_img_gray.convertTo(wht_img_gray, CV_8U, 255.0 / 1023.0);
@@ -21,12 +21,12 @@ void fast_preview() {
 	// cv::waitKey();
 
 	LFCalibrate cali(wht_img_gray);
-	cali.run();
+	cali.run(false, false, false, 10);
 
-	ISPConfig config;
+	LFParamsSource config;
 	config.awb_gains =
 		Config::Get().img_meta()["awb"].get<std::vector<float>>();
-	LFIsp<uint16_t> isp(config, lf_img, wht_img);
+	LFIsp isp(config, lf_img, wht_img);
 
 	Timer timer;
 	// isp.lsc_awb_fused_fast().demosaic();
@@ -92,24 +92,24 @@ void fast_preview() {
 
 void get_sai() {
 	LFIO load;
-	auto lf_img = load.read_image("../data/toy.lfr");
-	auto wht_img = load.read_image("../data/MOD_0015.RAW");
+	auto lf_img = load.readImage("../data/toy.lfr");
+	auto wht_img = load.readImage("../data/MOD_0015.RAW");
 	cv::Mat wht_img_gray;
 	cv::demosaicing(wht_img, wht_img_gray, cv::COLOR_BayerGR2GRAY);
 	wht_img_gray.convertTo(wht_img_gray, CV_8U, 255.0 / 1023.0);
 
-	LFIsp<uint16_t> isp(Config::Get().img_meta(), lf_img, wht_img);
+	LFIsp isp(Config::Get().img_meta(), lf_img, wht_img);
 	isp.print_config();
 
 	int slice_size = 0, dehex_size = 0;
-	LFIO::loadLookUpTables("../../data/calibration/slice_9.bin", isp.maps.slice,
-						   slice_size);
+	LFIO::loadLookUpTables("../../data/calibration/slice_9.bin",
+						   isp.maps.extract, slice_size);
 	LFIO::loadLookUpTables("../../data/calibration/dehex.bin", isp.maps.dehex,
 						   dehex_size);
 
 	Timer timer;
 
-	isp.preview(1.0).resample();
+	isp.preview(1.0).resample(true);
 	isp.ccm_fast();
 	// isp.color_equalize();
 	// isp.raw_process_fast().demosaic().resample();

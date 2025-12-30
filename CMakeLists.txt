@@ -75,6 +75,7 @@ add_executable(${BIN_NAME}
     core/lfdisp_base.cpp
     core/lfsr_base.cpp
     core/lfio.cpp
+    core/lfisp.cpp
     core/lfdepth.cpp
     core/lfsr.cpp
     core/lfrefocus.cpp
@@ -111,8 +112,8 @@ add_executable(${BIN_NAME}
 )
 target_include_directories(${BIN_NAME} PRIVATE
 
-target_link_libraries(lightfieldlab PRIVATE Qt6::Core Qt6::Widgets)
-"${TENSORRT_DIR}/include"
+    target_link_libraries (lightfieldlab PRIVATE Qt6::Core Qt6::Widgets)
+    "${TENSORRT_DIR}/include"
     "${OpenCV_DIR}/include"
     "${CUDAToolkit_INCLUDE_DIRS}"
     "${SOURCE_DIR}"

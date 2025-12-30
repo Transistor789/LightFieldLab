@@ -1,12 +1,12 @@
 ﻿#ifndef FT602_H_EKYVTQBG
 #define FT602_H_EKYVTQBG
 
-#define CHANNEL_COUNT		4
-#define RESOLUTION_COUNT	14
+#define CHANNEL_COUNT 4
+#define RESOLUTION_COUNT 14
 
 #include <cstdint>
 
-typedef void* FT_HANDLE;
+typedef void *FT_HANDLE;
 
 enum _FT_STATUS {
 	FT_OK,
@@ -48,18 +48,16 @@ enum _FT_STATUS {
 
 typedef unsigned long FT_STATUS;
 #define FT_SUCCESS(status) ((status) == FT_OK)
-#define FT_FAILED(status)  ((status) != FT_OK)
+#define FT_FAILED(status) ((status) != FT_OK)
 
 //
 // Create flags
 //
-#define FT_OPEN_BY_SERIAL_NUMBER                            0x00000001
-#define FT_OPEN_BY_DESCRIPTION                              0x00000002
-#define FT_OPEN_BY_LOCATION                                 0x00000004
-#define FT_OPEN_BY_GUID                                     0x00000008
-#define FT_OPEN_BY_INDEX									0x00000010
-
-
+#define FT_OPEN_BY_SERIAL_NUMBER 0x00000001
+#define FT_OPEN_BY_DESCRIPTION 0x00000002
+#define FT_OPEN_BY_LOCATION 0x00000004
+#define FT_OPEN_BY_GUID 0x00000008
+#define FT_OPEN_BY_INDEX 0x00000010
 
 enum FT_BURST_BUFFER {
 	FT_BURST_OFF = 0,
@@ -86,7 +84,6 @@ enum FT_PIPE_DIRECTION {
 	FT_PIPE_DIR_OUT,
 	FT_PIPE_DIR_COUNT,
 };
-
 
 struct FT_CHIP_FLAGS {
 	uint8_t fifo_clk : 2;
@@ -116,7 +113,7 @@ struct FT_CHIP_FLAGS {
 	 * Standard downstream port (SDP): 01
 	 * Charging downstream port (CDP): 10
 	 * Dedicated charging port (DCP): 11
-	*/
+	 */
 	uint8_t enable_battery_charging : 1;
 
 	uint8_t reserved2 : 2;
@@ -132,7 +129,7 @@ struct FT_USB_STRING_DESCRIPTOR {
 struct FT_60XCOMMON_CONFIGURATION {
 	unsigned short length;
 	/* Generic USB configs */
-	//unsigned short max_power_cs;
+	// unsigned short max_power_cs;
 	unsigned char max_power_cs;
 	unsigned char max_power_ss;
 	unsigned short vendor_id;
@@ -147,7 +144,6 @@ struct FT_60XCOMMON_CONFIGURATION {
 	unsigned char epc[FT_PIPE_DIR_COUNT][4];
 	char version[16];
 };
-
 
 enum I2C_SPEED {
 	I2C_DISABLED,
@@ -332,10 +328,9 @@ struct _FT_602CONFIGURATION {
 
 	struct FRAME_INFO frame[CHANNEL_COUNT][USB_SPEED_COUNT];
 	struct UVC_CONTROL_CONFIG controls[CHANNEL_COUNT];
-	struct I2C_CONFIG i2c; //2
+	struct I2C_CONFIG i2c; // 2
 };
 typedef struct _FT_602CONFIGURATION FT_602CONFIGURATION, *PFT_602CONFIGURATION;
-
 
 //
 //
@@ -343,13 +338,12 @@ typedef struct _FT_602CONFIGURATION FT_602CONFIGURATION, *PFT_602CONFIGURATION;
 //
 //
 
-typedef enum _FT_FILTER_TYPE
-{
+typedef enum _FT_FILTER_TYPE {
 	FT_FILTER_NONE = 0,
 	FT_FILTER_VID = 1,
 	FT_FILTER_PID = 2,
 	FT_FILTER_DESCRIPTION = 4
-}FT_FILTER_TYPE;
+} FT_FILTER_TYPE;
 
 #ifdef FT602_EXPORTS
 #define FT602_API __declspec(dllexport)
@@ -361,19 +355,18 @@ typedef enum _FT_FILTER_TYPE
 
 #pragma pack(1)
 typedef struct _FT_SETUP_PACKET {
-	unsigned char   RequestType;
-	unsigned char   Request;
-	unsigned short  Value;
-	unsigned short  Index;
-	unsigned short  Length;
-} FT_SETUP_PACKET, * PFT_SETUP_PACKET;
+	unsigned char RequestType;
+	unsigned char Request;
+	unsigned short Value;
+	unsigned short Index;
+	unsigned short Length;
+} FT_SETUP_PACKET, *PFT_SETUP_PACKET;
 #pragma pack()
 
 //
 // Notification callback type
 //
-typedef enum _E_FT_NOTIFICATION_CALLBACK_TYPE
-{
+typedef enum _E_FT_NOTIFICATION_CALLBACK_TYPE {
 	E_FT_NOTIFICATION_CALLBACK_TYPE_INTERRUPT = 2,
 	E_FT_NOTIFICATION_CALLBACK_TYPE_INTERRUPT_STOPPED = 3,
 
@@ -382,40 +375,28 @@ typedef enum _E_FT_NOTIFICATION_CALLBACK_TYPE
 //
 // Notification callback function
 //
-typedef void(*FT_NOTIFICATION_CALLBACK)(void* pvCallbackContext,
-	E_FT_NOTIFICATION_CALLBACK_TYPE eCallbackType, void* pvCallbackInfo);
+typedef void (*FT_NOTIFICATION_CALLBACK)(
+	void *pvCallbackContext, E_FT_NOTIFICATION_CALLBACK_TYPE eCallbackType,
+	void *pvCallbackInfo);
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-	FT602_API FT_STATUS __stdcall FT_Create(
-		void* pvArg,
-		unsigned long dwFlags,
-		FT_HANDLE* pftHandle
-	);
+FT602_API FT_STATUS __stdcall FT_Create(void *pvArg, unsigned long dwFlags,
+										FT_HANDLE *pftHandle);
 
-	FT602_API FT_STATUS __stdcall FT_Close(
-		FT_HANDLE ftHandle
-	);
+FT602_API FT_STATUS __stdcall FT_Close(FT_HANDLE ftHandle);
 
-	FT602_API FT_STATUS __stdcall FT_GetChipConfiguration(
-		FT_HANDLE ftHandle,
-		void* pvConfiguration
-	);
+FT602_API FT_STATUS __stdcall FT_GetChipConfiguration(FT_HANDLE ftHandle,
+													  void *pvConfiguration);
 
-	FT602_API FT_STATUS __stdcall FT_SetChipConfiguration(
-		FT_HANDLE ftHandle,
-		void* pvConfiguration
-	);
+FT602_API FT_STATUS __stdcall FT_SetChipConfiguration(FT_HANDLE ftHandle,
+													  void *pvConfiguration);
 
-	FT602_API FT_STATUS __stdcall FT_ControlTransfer(
-		FT_HANDLE ftHandle,
-		FT_SETUP_PACKET tSetupPacket,
-		unsigned char* pucBuffer,
-		unsigned long ulBufferLength,
-		unsigned long* pulLengthTransferred
-	);
+FT602_API FT_STATUS __stdcall FT_ControlTransfer(
+	FT_HANDLE ftHandle, FT_SETUP_PACKET tSetupPacket, unsigned char *pucBuffer,
+	unsigned long ulBufferLength, unsigned long *pulLengthTransferred);
 
 #ifdef __cplusplus
 }

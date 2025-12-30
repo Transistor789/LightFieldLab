@@ -9,17 +9,17 @@
 void test_read() {
 	LFIO lfpreader = LFIO();
 
-	auto white_img = lfpreader.read_image("../data/MOD_0015.RAW");
+	auto white_img = lfpreader.readImage("../data/MOD_0015.RAW");
 	std::cout << white_img.at<float>(0, 0) << std::endl;
 
-	auto lf_img = lfpreader.read_image("../data/toy.lfr");
+	auto lf_img = lfpreader.readImage("../data/toy.lfr");
 	std::cout << lf_img.at<float>(0, 0) << std::endl;
 	std::cout << Config::Get().img_meta()["camera"]["serialNumber"]
 			  << std::endl;
 
-	auto test_img = lfpreader.read_image("../data/zutomayo.jpg");
+	auto test_img = lfpreader.readImage("../data/zutomayo.jpg");
 
-	auto lfptr = lfpreader.read_sai("../data/toy");
+	auto lfptr = lfpreader.readSAI("../data/toy");
 	cv::Mat center = lfptr->getCenter();
 	std::cout << center.at<float>(200, 200) << std::endl;
 
@@ -41,14 +41,14 @@ void test_openmp() {
 	LFIO lfpreader;
 
 	Timer timer;
-	auto lf = lfpreader.read_sai("../data/toy_lftoolbox");
+	auto lf = lfpreader.readSAI("../data/toy_lftoolbox");
 	timer.stop();
 	timer.print_elapsed_ms();
 	// cv::imshow("", lf->getCenter());
 	// cv::waitKey();
 
 	timer.start();
-	lf = lfpreader.read_sai("../data/toy_lftoolbox");
+	lf = lfpreader.readSAI("../data/toy_lftoolbox");
 	timer.stop();
 	timer.print_elapsed_ms();
 	// cv::imshow("", lf->getCenter());

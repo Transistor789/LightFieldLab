@@ -6,6 +6,7 @@
 #include "lfdepth.h"
 #include "lfio.h"
 #include "lfisp.h"
+#include "lfparams.h"
 #include "lfrefocus.h"
 #include "lfsr.h"
 #include "logger.h"
@@ -19,7 +20,6 @@
 #include <format>
 #include <qimage.h>
 #include <qtmetamacros.h>
-#include <string>
 
 enum class ImageType;
 
@@ -39,18 +39,23 @@ public slots:
 	bool getIsCapturing() const { return isCapturing.load(); }
 	bool getIsProcessing() const { return isProcessing.load(); }
 
-	void read_sai(const QString &path);
-	void read_img(const QString &path, bool isWhite);
+	void readSAI(const QString &path);
+	void readImage(const QString &path, bool isWhite);
+	void readExtractLUT(const QString &path);
+	void readDehexLUT(const QString &path);
+
 	void calibrate();
+	void genLUT();
 	void process();
-	// void refocus();
-	// void upsample();
-	// void depth();
+	void fast_preview();
+	void refocus();
+	void upsample();
+	void depth();
 
 signals:
 	void updateSAI(const cv::Mat &img);
-
 	void imageReady(ImageType type, const QImage &img);
+	void paramsChanged();
 
 private:
 	QImage cvMatToQImage(const cv::Mat &inMat);
@@ -80,13 +85,7 @@ private:
 	}
 
 public:
-	bool cal_cca, cal_save, cal_winsize;
-	bool isp_dpc, isp_blc, isp_lsc, isp_awb, isp_ccm, isp_gamma;
-	float ref_alpha;
-	int ref_crop;
-	int sr_scale, sr_patchsize;
-	ModelType sr_type;
-	int dep_patchsize;
+	LFParams params;
 
 private:
 	LfPtr lf;
@@ -98,7 +97,7 @@ private:
 
 	std::unique_ptr<LFCalibrate> cal;
 
-	std::unique_ptr<LFIsp<uint16_t>> isp;
+	std::unique_ptr<LFIsp> isp;
 
 	std::unique_ptr<LFRefocus> ref;
 

@@ -1,31 +1,50 @@
 ﻿#include "lfsr.h"
 
+#include <format> // C++20
 #include <iostream>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
 
+// 构造函数：初始化路径
 LFSuperRes::LFSuperRes() {
-	// 默认初始化 DistgSSR
-	// 此时还没有加载 Engine，直到 ensureModelLoaded 被调用
+	_modelPath = "data/opencv_srmodel/";
+	_trtEnginePath = "data/";
 }
 
-void LFSuperRes::setType(ModelType value) {
+void LFSuperRes::setModelPaths(const std::string &opencvPath,
+							   const std::string &trtPath) {
+	_modelPath = opencvPath;
+	_trtEnginePath = trtPath;
+	// 路径改变可能意味着需要重新加载（尽管通常不需要，但在找不到文件重试时有用）
+	_isDirty = true;
+}
+
+void LFSuperRes::setType(LFParamsSR::Type value) {
 	if (_type != value) {
 		_type = value;
-		_current_model_id = ""; // 强制下次 ensureModelLoaded 时重载
+		_isDirty = true; // 标记需要重载
+
+		// 优化：切换类型时，尝试释放不用的资源以节省显存
+		if (_type != LFParamsSR::Type::DISTGSSR) {
+			// 如果 DistgSSR 有 release/clear 方法，在这里调用
+			// distg.release();
+		}
 	}
 }
 
 void LFSuperRes::setScale(int value) {
 	if (_scale != value) {
 		_scale = value;
-		_current_model_id = ""; // 强制重载
+		_isDirty = true;
 
 		if (value == 2 || value == 4) {
 			distg.setScale(value);
 		} else {
-			// (可选) 打印警告日志，方便调试
+// 仅在 Debug 模式或 Verbose 模式下打印，避免刷屏
+#ifdef _DEBUG
 			std::cerr << "[LFSuperRes] Warning: DistgSSR only supports scale 2 "
-						 "or 4. Input: "
-					  << value << ", ignoring for DistgSSR." << std::endl;
+						 "or 4.\n";
+#endif
 		}
 	}
 }
@@ -33,151 +52,162 @@ void LFSuperRes::setScale(int value) {
 void LFSuperRes::setPatchSize(int value) {
 	if (_patch_size != value) {
 		_patch_size = value;
-		// DistgSSR 的 Engine 是和 PatchSize 绑定的，改变后必须重载 Engine
-		if (_type == ModelType::DISTGSSR) {
-			_current_model_id = "";
+		// 只有当使用 DistgSSR 时，PatchSize 改变才需要重载引擎
+		if (_type == LFParamsSR::Type::DISTGSSR) {
+			_isDirty = true;
 		}
 		distg.setPatchSize(value);
 	}
 }
 
 void LFSuperRes::ensureModelLoaded() {
-	// 生成一个当前配置的唯一 ID
-	std::string new_id;
-	if (_type == ModelType::DISTGSSR) {
-		new_id = std::format("DISTGSSR_x{}_p{}", _scale, _patch_size);
-	} else {
-		new_id = std::format("OPENCV_t{}_x{}", (int)_type, _scale);
-	}
-
-	// 如果配置变了，或者是首次运行
-	if (_current_model_id != new_id) {
+	// 性能优化：只检查布尔标志位
+	if (_isDirty) {
 		loadModel();
-		_current_model_id = new_id;
+		_isDirty = false;
 	}
 }
 
 void LFSuperRes::loadModel() {
-	// ==========================================
-	// 分支 1: DistgSSR (TensorRT)
-	// ==========================================
-	if (_type == ModelType::DISTGSSR) {
-		// 构造 Engine 文件名
-		// 假设文件名格式: DistgSSR_2x_5x5_1x1x640x640.engine
-		int angRes = 5; // 你的模型固定是 5x5
-		int totalRes = angRes * _patch_size;
-
-		std::string engineName = std::format(
-			"DistgSSR_{}x_1x1x{}x{}_FP16.engine", _scale, totalRes, totalRes);
-
-		std::string fullPath = _trtEnginePath + engineName;
-
-		std::cout << "[LFSuperRes] Loading TRT Engine: " << fullPath
-				  << std::endl;
-
-		// 这里的 try-catch 很重要，防止 Engine 不存在导致崩毁
-		try {
-			distg.readEngine(fullPath);
-		} catch (const std::exception &e) {
-			std::cerr << "[Error] Failed to load DistgSSR engine: " << e.what()
-					  << std::endl;
-			// 回退到双线性，防止程序崩溃
-			_type = ModelType::LINEAR;
-		}
-		return;
+	// 根据类型分发加载逻辑
+	if (_type == LFParamsSR::Type::DISTGSSR) {
+		loadDistgSSR();
+	} else if (_type >= LFParamsSR::Type::ESPCN
+			   && _type <= LFParamsSR::Type::FSRCNN) {
+		loadOpenCVDNN();
 	}
-
-	// ==========================================
-	// 分支 2: OpenCV DNN 模型 (ESPCN, FSRCNN)
-	// ==========================================
-	if (_type >= ModelType::ESPCN && _type <= ModelType::FSRCNN) {
-		std::string modelName = getModelNameFromType(_type); // e.g., "espcn"
-		std::string fileName =
-			std::format("{}{}_x{}.pb", _modelPath, modelName, _scale);
-
-		std::cout << "[LFSuperRes] Loading OpenCV Model: " << fileName
-				  << std::endl;
-		try {
-			opencv_dnn_sr.readModel(fileName);
-			opencv_dnn_sr.setModel(modelName, _scale);
-		} catch (const cv::Exception &e) {
-			std::cerr << "[Error] OpenCV SR load failed: " << e.what()
-					  << std::endl;
-			_type = ModelType::LINEAR;
-		}
-		return;
-	}
-
-	// ==========================================
-	// 分支 3: 传统插值 (不需要加载模型)
-	// ==========================================
-	// Do nothing
+	// 传统插值模式无需加载模型
 }
 
-// 单图处理 (DistgSSR 不支持单图模式，这里做个保护)
+void LFSuperRes::loadDistgSSR() {
+	// 构造 Engine 文件名
+	int totalRes = _ang_res * _patch_size;
+
+	// 使用 std::filesystem 处理路径拼接，更安全
+	std::string engineName = std::format("DistgSSR_{}x_1x1x{}x{}_FP16.engine",
+										 _scale, totalRes, totalRes);
+	auto fullPath = _trtEnginePath / engineName;
+
+	std::cout << "[LFSuperRes] Loading TRT Engine: " << fullPath.string()
+			  << std::endl;
+
+	if (!std::filesystem::exists(fullPath)) {
+		std::cerr << "[Error] Engine file not found: " << fullPath.string()
+				  << std::endl;
+		_type = LFParamsSR::Type::LINEAR; // 自动降级
+		return;
+	}
+
+	try {
+		distg.readEngine(fullPath.string());
+	} catch (const std::exception &e) {
+		std::cerr << "[Error] Failed to load DistgSSR engine: " << e.what()
+				  << std::endl;
+		_type = LFParamsSR::Type::LINEAR;
+	}
+}
+
+void LFSuperRes::loadOpenCVDNN() {
+	std::string modelName = getModelNameFromType(_type);
+	std::string fileName =
+		std::format("{}{}_x{}.pb", "", modelName,
+					_scale); // 注意：这里需要根据实际文件名格式调整
+
+	// 路径拼接
+	auto fullPath = _modelPath / fileName;
+
+	std::cout << "[LFSuperRes] Loading OpenCV Model: " << fullPath.string()
+			  << std::endl;
+
+	if (!std::filesystem::exists(fullPath)) {
+		std::cerr << "[Error] Model file not found: " << fullPath.string()
+				  << std::endl;
+		_type = LFParamsSR::Type::LINEAR;
+		return;
+	}
+
+	try {
+		// 读取新模型前，OpenCV DNN
+		// 内部通常会自动处理旧资源，但显式重置是个好习惯 opencv_dnn_sr =
+		// cv::dnn_superres::DnnSuperResImpl();
+		opencv_dnn_sr.readModel(fullPath.string());
+		opencv_dnn_sr.setModel(modelName, _scale);
+	} catch (const cv::Exception &e) {
+		std::cerr << "[Error] OpenCV SR load failed: " << e.what() << std::endl;
+		_type = LFParamsSR::Type::LINEAR;
+	}
+}
+
+// 单图处理接口
 cv::Mat LFSuperRes::upsample(const cv::Mat &src) {
+	if (src.empty())
+		return cv::Mat();
+
 	ensureModelLoaded();
 
-	if (_type == ModelType::DISTGSSR) {
-		std::cerr << "[Warning] DistgSSR requires multiple views! Calling "
-					 "upsample instead..."
+	// 逻辑保护：如果是 DistgSSR 但只给了一张图，降级处理
+	if (_type == LFParamsSR::Type::DISTGSSR) {
+		std::cerr << "[Warning] DistgSSR requires Light Field (vector). "
+					 "Falling back to LINEAR."
 				  << std::endl;
-		// 如果用户错误调用了单图接口，DistgSSR 无法工作，只能降级为双线性
 		cv::Mat dst;
 		cv::resize(src, dst, cv::Size(), _scale, _scale, cv::INTER_LINEAR);
 		return dst;
 	}
 
-	return upsampleCore(src);
-}
-
-// 核心逻辑：多图处理
-std::vector<cv::Mat> LFSuperRes::upsample(const std::vector<cv::Mat> &views) {
-	ensureModelLoaded();
-
-	if (views.empty()) {
-		std::cerr << "[Error] No Light Field data loaded!" << std::endl;
-		return cv::Mat();
-	}
-
-	return distg.run(views);
-}
-
-cv::Mat LFSuperRes::upsampleCore(const cv::Mat &src) {
+	// 执行 OpenCV DNN 或 插值
 	cv::Mat dst;
-
-	// OpenCV DNN
-	if (_type >= ModelType::ESPCN && _type <= ModelType::FSRCNN) {
+	if (_type >= LFParamsSR::Type::ESPCN && _type <= LFParamsSR::Type::FSRCNN) {
 		opencv_dnn_sr.upsample(src, dst);
-	}
-	// 传统插值
-	else {
-		int flag = modelTypeToInterFlag(_type);
+	} else {
+		int flag = SRTypeToInterFlag(_type);
 		cv::resize(src, dst, cv::Size(), _scale, _scale, flag);
 	}
 	return dst;
 }
 
-std::string LFSuperRes::getModelNameFromType(ModelType type) {
+// 多图处理接口
+std::vector<cv::Mat> LFSuperRes::upsample(const std::vector<cv::Mat> &views) {
+	if (views.empty()) {
+		std::cerr << "[Error] No Light Field data loaded!" << std::endl;
+		return {};
+	}
+
+	ensureModelLoaded();
+
+	if (_type == LFParamsSR::Type::DISTGSSR) {
+		return distg.run(views);
+	}
+
+	// 如果当前选的是单图模型（ESPCN等）或插值，但用户传入了多图
+	// 我们遍历处理每一张图
+	std::vector<cv::Mat> results;
+	results.reserve(views.size());
+
+	for (const auto &view : views) {
+		results.push_back(upsample(view)); // 复用单图逻辑
+	}
+	return results;
+}
+
+std::string LFSuperRes::getModelNameFromType(LFParamsSR::Type type) const {
 	switch (type) {
-		case ModelType::ESPCN:
+		case LFParamsSR::Type::ESPCN:
 			return "espcn";
-		case ModelType::FSRCNN:
+		case LFParamsSR::Type::FSRCNN:
 			return "fsrcnn";
 		default:
 			return "";
 	}
 }
 
-int LFSuperRes::modelTypeToInterFlag(ModelType type) const {
+int LFSuperRes::SRTypeToInterFlag(LFParamsSR::Type type) const {
 	switch (type) {
-		case ModelType::NEAREST:
+		case LFParamsSR::Type::NEAREST:
 			return cv::INTER_NEAREST;
-		case ModelType::LINEAR:
-			return cv::INTER_LINEAR;
-		case ModelType::CUBIC:
+		case LFParamsSR::Type::CUBIC:
 			return cv::INTER_CUBIC;
-		case ModelType::LANCZOS:
+		case LFParamsSR::Type::LANCZOS:
 			return cv::INTER_LANCZOS4;
 		default:
 			return cv::INTER_LINEAR;
