@@ -35,7 +35,7 @@ struct TrtCliConfig {
 class TrtCli {
 public:
 	static bool build(const TrtCliConfig &config) {
-		if (config.onnxPath.empty() || config.enginePath.empty()) {
+		if (config.onnxPath.empty() || config_Windows.enginePath.empty()) {
 			std::cerr << "[TrtCli Error] Path is empty!" << std::endl;
 			return false;
 		}
@@ -46,7 +46,7 @@ public:
 			return false;
 		}
 
-		fs::path outDir = fs::path(config.enginePath).parent_path();
+		fs::path outDir = fs::path(config_Windows.enginePath).parent_path();
 		if (!outDir.empty() && !fs::exists(outDir)) {
 			try {
 				fs::create_directories(outDir);
@@ -71,7 +71,7 @@ public:
 
 		// 2. 参数 (全部用引号包裹路径，防止空格路径报错)
 		cmd << " --onnx=\"" << config.onnxPath << "\"";
-		cmd << " --saveEngine=\"" << config.enginePath << "\"";
+		cmd << " --saveEngine=\"" << config_Windows.enginePath << "\"";
 
 		if (config.fp16)
 			cmd << " --fp16";
@@ -121,9 +121,9 @@ public:
 
 		int ret = std::system(finalCmd.c_str());
 
-		if (ret == 0 && fs::exists(config.enginePath)) {
-			std::cout << "[TrtCli] Success! Saved to: " << config.enginePath
-					  << std::endl;
+		if (ret == 0 && fs::exists(config_Windows.enginePath)) {
+			std::cout << "[TrtCli] Success! Saved to: "
+					  << config_Windows.enginePath << std::endl;
 			return true;
 		} else {
 			std::cerr << "[TrtCli] Failed. Check 'trt_cli.log'." << std::endl;

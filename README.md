@@ -60,7 +60,7 @@ LightFieldLab/
 ├── data/               # 资源文件
 │   ├── calibration/    # 标定中间数据 (bin/png)
 │   ├── opencv_srmodel/ # OpenCV自带超分模型
-│   ├── *.engine        # 转换后的 TensorRT 推理引擎
+│   ├── *_Windows.engine        # 转换后的 TensorRT 推理引擎
 │   ├── *.onnx          # ONNX 模型文件
 │   └── *.json/lfr      # 示例光场数据
 ├── python/             # 模型导出工具
@@ -88,14 +88,14 @@ cmake --build . --config Release
 本项目不包含 PyTorch 训练代码，仅包含推理部署代码。你需要将 PyTorch 模型转换为 TensorRT Engine：
 
 1. 使用 `python/export_onnx_all.py` 将 `.pth` 权重导出为 `.onnx` 模型。
-2. 使用 TensorRT 自带工具 `trtexec` 将 `.onnx` 转换为 `.engine` (推荐 FP16 模式)：
+2. 使用 TensorRT 自带工具 `trtexec` 将 `.onnx` 转换为 `_Windows.engine` (推荐 FP16 模式)：
 ```bash
-trtexec.exe --onnx=data/DistgSSR_2x_5x5.onnx --saveEngine=data/DistgSSR_2x_1x1x640x640_FP16.engine --fp16
+trtexec.exe --onnx=data/DistgSSR_2x_5x5.onnx --saveEngine=data/DistgSSR_2x_1x1x640x640_FP16_Windows.engine --fp16
 
 ```
 
 
-3. 确保生成的 `.engine` 文件位于 `data/` 目录下，程序运行时会自动加载。
+3. 确保生成的 `_Windows.engine` 文件位于 `data/` 目录下，程序运行时会自动加载。
 
 ## 🔗 参考项目与致谢
 

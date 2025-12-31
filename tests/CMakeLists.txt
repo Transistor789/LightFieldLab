@@ -107,9 +107,9 @@ endif()
 # ==============================================================================
 
 # Test: TensorRT CLI Basic
-add_executable(test_trtcli test_trtcli.cpp)
-target_include_directories(test_trtcli PRIVATE "${TENSORRT_DIR}/include" "${CUDAToolkit_INCLUDE_DIRS}")
-target_link_libraries(test_trtcli PRIVATE ${NVINFER_LIB} ${NVONNXPARSER_LIB} CUDA::cudart)
+# add_executable(test_trtcli test_trtcli.cpp)
+# target_include_directories(test_trtcli PRIVATE "${TENSORRT_DIR}/include" "${CUDAToolkit_INCLUDE_DIRS}")
+# target_link_libraries(test_trtcli PRIVATE ${NVINFER_LIB} ${NVONNXPARSER_LIB} CUDA::cudart)
 
 # Test: ONNX Runtime (DistgSSR)
 add_executable(test_distgssr_onnx test_distgssr_onnx.cpp ${SOURCE_DIR}/utils.cpp)
@@ -159,7 +159,8 @@ target_link_libraries(test_lfsuperres PRIVATE ${LIBS_BASIC} opencv_dnn_superres 
 # ==============================================================================
 
 # 补充 TensorRT 和 CUDA Include (针对用到它们的 Target)
-foreach(TGT test_trtcli test_distgssr_trt test_distgdisp test_epit test_lfdepth test_lfsuperres)
+# foreach(TGT test_trtcli test_distgssr_trt test_distgdisp test_epit test_lfdepth test_lfsuperres)
+foreach(TGT test_distgssr_trt test_distgdisp test_epit test_lfdepth test_lfsuperres)
     target_include_directories(${TGT} PRIVATE
         "${TENSORRT_DIR}/include"
         "${CUDAToolkit_INCLUDE_DIRS}"

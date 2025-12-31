@@ -38,7 +38,7 @@ LFCapture::LFCapture() {
 #else
 	// Linux: 使用默认接口 (通常是 V4L2)
 	// 如果不需要打开相机，甚至可以在这里注释掉 cap.open
-	cap.open(0);
+	// cap.open(0);
 #endif
 
 	if (cap.isOpened()) {

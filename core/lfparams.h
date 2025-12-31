@@ -6,6 +6,10 @@
 
 enum class BayerPattern { NONE, RGGB, GRBG, GBRG, BGGR };
 
+struct LFParamsPath {
+	std::string lfp, sai, white, extractLUT, dehexLUT;
+};
+
 struct LFParamsSource {
 	std::string pathLFP, pathSAI, pathWhite, pathExtract, pathDehex;
 	int width, height, bitDepth;

@@ -25,11 +25,11 @@ int main() {
 
 	// 构造 Engine 路径 (假设你有这个文件)
 	std::string enginePath2x =
-		std::format("../data/EPIT_2x_1x1x5x5x{}x{}_FP32.engine", target_patch,
-					target_patch);
+		std::format("../data/EPIT_2x_1x1x5x5x{}x{}_FP32_Windows.engine",
+					target_patch, target_patch);
 	std::string enginePath4x =
-		std::format("../data/EPIT_2x_1x1x5x5x{}x{}_FP32.engine", target_patch,
-					target_patch);
+		std::format("../data/EPIT_2x_1x1x5x5x{}x{}_FP32_Windows.engine",
+					target_patch, target_patch);
 
 	ssr.readEngine(enginePath4x);
 

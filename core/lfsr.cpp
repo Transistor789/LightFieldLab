@@ -83,9 +83,15 @@ void LFSuperRes::loadDistgSSR() {
 	// 构造 Engine 文件名
 	int totalRes = _ang_res * _patch_size;
 
-	// 使用 std::filesystem 处理路径拼接，更安全
-	std::string engineName = std::format("DistgSSR_{}x_1x1x{}x{}_FP16.engine",
-										 _scale, totalRes, totalRes);
+// 使用 std::filesystem 处理路径拼接，更安全
+#ifdef _WIN32
+	std::string engineName =
+		std::format("DistgSSR_{}x_1x1x{}x{}_FP16_Windows.engine", _scale,
+					totalRes, totalRes);
+#elif __linux__
+	std::string engineName = std::format(
+		"DistgSSR_{}x_1x1x{}x{}_FP16_Linux.engine", _scale, totalRes, totalRes);
+#endif
 	auto fullPath = _trtEnginePath / engineName;
 
 	std::cout << "[LFSuperRes] Loading TRT Engine: " << fullPath.string()

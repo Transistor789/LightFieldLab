@@ -31,9 +31,9 @@ private:
 
 	// --- 参数状态管理 ---
 	int m_targetAngRes = 9;		 // 用户设定的目标角度分辨率
-	int m_targetPatchSize = 128; // 用户设定的目标 Patch 大小
+	int m_targetPatchSize = 196; // 用户设定的目标 Patch 大小
 
-	int m_loadedAngRes = -1;	// 当前已加载模型的参数 (-1 表示未加载)
+	int m_loadedAngRes = -1; // 当前已加载模型的参数 (-1 表示未加载)
 	int m_loadedPatchSize = -1; // 当前已加载模型的参数
 };
 

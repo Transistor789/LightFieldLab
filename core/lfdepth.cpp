@@ -70,7 +70,8 @@ bool LFDisp::checkAndLoadModel() {
 	}
 
 	// 2. 生成模型路径
-	// 假设模型都在 data/ 目录下，命名规则如: DistgDisp_9x9_128_FP16.engine
+	// 假设模型都在 data/ 目录下，命名规则如:
+	// DistgDisp_9x9_128_FP16_Windows.engine
 	std::string modelPath = getModelPath(m_targetAngRes, m_targetPatchSize);
 
 	// 3. 加载模型
@@ -100,7 +101,12 @@ bool LFDisp::checkAndLoadModel() {
 }
 
 std::string LFDisp::getModelPath(int angRes, int patchSize) const {
-	// C++20 写法
-	return std::format("data/DistgDisp_{}x{}_{}_FP16.engine", angRes, angRes,
-					   patchSize);
+// C++20 写法
+#ifdef _WIN32
+	return std::format("data/DistgDisp_{}x{}_{}_FP16_Windows.engine", angRes,
+					   angRes, patchSize);
+#elif __linux__
+	return std::format("data/DistgDisp_{}x{}_{}_FP16_Linux.engine", angRes,
+					   angRes, patchSize);
+#endif
 }

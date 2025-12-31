@@ -95,9 +95,9 @@ int main() {
 	ssr.setPadding(8);
 	ssr.setCenterOnly(center_only);
 
-	ssr.readEngine(std::format("../data/DistgSSR_{}x_1x1x{}x{}_FP16.engine",
-							   target_scale, 5 * target_patch,
-							   5 * target_patch));
+	ssr.readEngine(
+		std::format("../data/DistgSSR_{}x_1x1x{}x{}_FP16_Windows.engine",
+					target_scale, 5 * target_patch, 5 * target_patch));
 
 	Timer timer;
 	auto result = ssr.run(lf->data);
