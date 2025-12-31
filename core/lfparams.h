@@ -23,11 +23,11 @@ struct LFParamsSource {
 };
 
 struct LFParamsSAI {
-	int width;
-	int height;
-	int bit;
-	int row;
-	int col;
+	int row = 5;
+	int col = 5;
+	int rows = 9;
+	int cols = 9;
+	bool isPlaying = false;
 };
 
 struct LFParamsCalibrate {
@@ -58,8 +58,8 @@ struct LFParamsISP {
 };
 
 struct LFParamsRefocus {
-	int crop = 1;
-	float alpha = 2.0;
+	int crop = 0;
+	float alpha = 1.0;
 };
 
 struct LFParamsSR {
@@ -92,6 +92,7 @@ struct LFParams {
 	LFParamsSource source;
 	LFParamsCalibrate calibrate;
 	LFParamsISP isp;
+	LFParamsSAI sai;
 	LFParamsRefocus refocus;
 	LFParamsSR sr;
 	LFParamsDE de;

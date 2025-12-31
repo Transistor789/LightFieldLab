@@ -45,9 +45,11 @@ MainWindow::MainWindow(QWidget *parent)
 			[this] { ctrl->fast_preview(); });
 	connect(ui->widgetControl, &WidgetControl::requestISP, this,
 			[this] { ctrl->process(); });
+	connect(ui->widgetControl, &WidgetControl::requestPlay, this,
+			[this] { ctrl->play(); });
+	connect(ui->widgetControl, &WidgetControl::requestSAI, this,
+			[this](int row, int col) { ctrl->updateSAI(row, col); });
 	// 重聚焦
-	ui->widgetControl->setupParams(&ctrl->params);
-
 	connect(ui->widgetControl, &WidgetControl::requestRefocus, this,
 			[this] { ctrl->refocus(); });
 
@@ -61,7 +63,7 @@ MainWindow::MainWindow(QWidget *parent)
 			&WidgetImage::updateImage);
 
 // 启动业务
-#ifdef NDEBUG
+#ifndef NDEBUG
 	ctrl->readExtractLUT("data/calibration/lut_extract_9.bin");
 	ctrl->readDehexLUT("data/calibration/lut_dehex.bin");
 	ctrl->readSAI("data/bedroom");

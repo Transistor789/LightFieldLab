@@ -13,17 +13,11 @@
 #include <qcombobox.h>
 #include <qpushbutton.h>
 #include <qspinbox.h>
+#include <qtmetamacros.h>
 
 WidgetControl::WidgetControl(QWidget *parent)
 	: QWidget(parent), ui(new Ui::WidgetControl) {
 	ui->setupUi(this);
-
-	connect(ui->comboBoxBayer, &QComboBox::currentIndexChanged, this,
-			[this](int index) {
-				params_->source.bayer = static_cast<BayerPattern>(index);
-			});
-	connect(ui->comboBoxBit, &QComboBox::currentIndexChanged, this,
-			[this](int index) { params_->source.bitDepth = 8 + 2 * index; });
 
 	QMenu *menuOpenLFP = new QMenu(this);
 	menuOpenLFP->addAction("原图", this, [this] {
@@ -90,6 +84,8 @@ WidgetControl::WidgetControl(QWidget *parent)
 	connect(ui->btnGenLUT, &QPushButton::clicked, this,
 			&WidgetControl::requestGenLUT);
 
+	// SAI
+
 	// awb
 	connect(ui->btnSetWBGains, &QPushButton::clicked, this, [this] {
 		DialogWBGains dialog(this);
@@ -99,8 +95,7 @@ WidgetControl::WidgetControl(QWidget *parent)
 		}
 	});
 
-	// 假设在 MainWindow 或其他类中，有一个成员变量 LFParamsSource paramsSource;
-
+	// ccm
 	connect(ui->btnSetCCM, &QPushButton::clicked, this, [this] {
 		DialogCCM dialog(this);
 		dialog.setupParams(&params_->source);
@@ -131,7 +126,15 @@ void WidgetControl::setupParams(LFParams *params) {
 		return;
 	}
 
-	// calibrate
+	// Info
+	connect(ui->comboBoxBayer, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				params_->source.bayer = static_cast<BayerPattern>(index);
+			});
+	connect(ui->comboBoxBit, &QComboBox::currentIndexChanged, this,
+			[this](int index) { params_->source.bitDepth = 8 + 2 * index; });
+
+	// Calibrate
 	connect(ui->comboBoxCCA, &QComboBox::currentIndexChanged, this,
 			[this](int index) { params_->calibrate.useCCA = index; });
 	connect(ui->checkBoxGridFit, &QCheckBox::toggled, this,
@@ -141,7 +144,7 @@ void WidgetControl::setupParams(LFParams *params) {
 	connect(ui->spinBoxLUTViews, &QSpinBox::valueChanged, this,
 			[this](int value) { params_->calibrate.views = value; });
 
-	// isp
+	// ISP
 	connect(ui->checkBoxDPC, &QCheckBox::toggled, this,
 			[this](bool value) { params_->isp.enableDPC = value; });
 	connect(ui->checkBoxBLC, &QCheckBox::toggled, this,
@@ -162,6 +165,30 @@ void WidgetControl::setupParams(LFParams *params) {
 			[this](bool value) { params_->isp.enableDehex = value; });
 	connect(ui->checkBoxColorEq, &QCheckBox::toggled, this,
 			[this](bool value) { params_->isp.enableColorEq = value; });
+
+	// SAI
+	connect(ui->spinBoxHorz, &QSpinBox::valueChanged, this, [this](int value) {
+		params_->sai.col = value;
+		emit requestSAI(params_->sai.row, value);
+	});
+	connect(ui->spinBoxVert, &QSpinBox::valueChanged, this, [this](int value) {
+		params_->sai.row = value;
+		emit requestSAI(value, params_->sai.col);
+	});
+	connect(ui->pushButtonViewPlay, &QPushButton::toggled, this,
+			[this](bool value) {
+				params_->sai.isPlaying = value;
+
+				if (value) {
+					emit requestPlay();
+					ui->pushButtonViewPlay->setText("停止");
+				} else {
+					ui->pushButtonViewPlay->setText("播放");
+				}
+			});
+	connect(ui->pushButtonViewCenter, &QPushButton::clicked, this, [this] {
+		emit requestSAI((params_->sai.row + 1) / 2, (params_->sai.col + 1) / 2);
+	});
 
 	// Refocus
 	connect(ui->spinBoxRefocusCrop, &QSpinBox::valueChanged, this,
@@ -217,6 +244,22 @@ void WidgetControl::updateUI() {
 	setValSilent(ui->lineEditDehex, params_->source.pathDehex);
 
 	// ISP
+	setValSilent(ui->checkBoxDPC, params_->isp.enableDPC);
+	setValSilent(ui->checkBoxBLC, params_->isp.enableBLC);
+	setValSilent(ui->checkBoxLSC, params_->isp.enableLSC);
+	setValSilent(ui->checkBoxWB, params_->isp.enableAWB);
+	setValSilent(ui->checkBoxDemosaic, params_->isp.enableDemosaic);
+	setValSilent(ui->checkBoxCCM, params_->isp.enableCCM);
+	setValSilent(ui->checkBoxGamma, params_->isp.enableGamma);
+	setValSilent(ui->checkBoxExtract, params_->isp.enableExtract);
+	setValSilent(ui->checkBoxDehex, params_->isp.enableDehex);
+	setValSilent(ui->checkBoxColorEq, params_->isp.enableColorEq);
+
+	// SAI
+	setValSilent(ui->spinBoxHorz, params_->sai.col);
+	setValSilent(ui->spinBoxVert, params_->sai.row);
+	ui->spinBoxHorz->setMaximum(params_->sai.cols);
+	ui->spinBoxVert->setMaximum(params_->sai.rows);
 
 	// Refocus
 	setValSilent(ui->spinBoxRefocusCrop, params_->refocus.crop);

@@ -8,12 +8,14 @@
 #include "widgetimage.h"
 
 #include <QThreadPool>
+#include <chrono>
 #include <format>
 #include <memory>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/highgui.hpp>
 #include <qcontainerfwd.h>
 #include <qtmetamacros.h>
+#include <thread>
 
 LFControl::LFControl(QObject *parent) : QObject(parent) {
 	exit = false;
@@ -161,6 +163,15 @@ void LFControl::readSAI(const QString &path) {
 			// emit saiReady(cvMatToQImage(lf->getCenter()));
 			emit imageReady(ImageType::Center, cvMatToQImage(lf->getCenter()));
 			params.source.pathSAI = path.toStdString();
+			params.source.width = lf->width;
+			params.source.height = lf->height;
+			params.source.bitDepth = 8;
+			params.source.bayer = BayerPattern::NONE;
+			params.sai.row = (lf->rows + 1) / 2;
+			params.sai.col = (lf->cols + 1) / 2;
+			params.sai.rows = lf->rows;
+			params.sai.cols = lf->cols;
+
 			emit paramsChanged();
 			// LOG_INFO("Sub-aperture images loaded");
 		},
@@ -288,7 +299,6 @@ void LFControl::process() {
 			}
 			lf = std::make_shared<LFData>(isp->getSAIS());
 			emit imageReady(ImageType::Center, cvMatToQImage(lf->getCenter()));
-			emit imageReady(ImageType::SAI, cvMatToQImage(lf->getCenter()));
 			emit paramsChanged();
 		},
 		"ISP");
@@ -304,6 +314,80 @@ void LFControl::fast_preview() {
 		},
 		"Fast preview");
 }
+
+void LFControl::updateSAI(int row, int col) {
+	runAsync(
+		[this, row, col] {
+			emit imageReady(ImageType::Center,
+							cvMatToQImage(lf->getSAI(row - 1, col - 1)));
+		},
+		"SAI updated");
+}
+
+void LFControl::play() {
+	if (params.sai.isPlaying) {
+		runAsync(
+			[this] {
+				LOG_INFO("Playing...");
+
+				// 缓存一下边界，使代码更简洁
+				// 假设 params.sai.row/col 是 1-based 索引 (1 到 N)
+				const int maxR = params.sai.rows;
+				const int maxC = params.sai.cols;
+
+				while (params.sai.isPlaying) {
+					// --- TODO 开始: 计算下一帧坐标 ---
+					int r = params.sai.row;
+					int c = params.sai.col;
+
+					// 1. 上边缘 (Row=1): 向右走
+					if (r == 1 && c < maxC) {
+						c++;
+					}
+					// 2. 右边缘 (Col=Max): 向下走
+					else if (c == maxC && r < maxR) {
+						r++;
+					}
+					// 3. 下边缘 (Row=Max): 向左走
+					else if (r == maxR && c > 1) {
+						c--;
+					}
+					// 4. 左边缘 (Col=1): 向上走
+					else if (c == 1 && r > 1) {
+						r--;
+					}
+					// 5. 如果当前点不在边缘上（比如一开始就在中间），或者 1x1
+					// 的情况
+					else {
+						// 强制归位到左上角，开始循环
+						r = 1;
+						c = 1;
+						// 如果网格大于 1x1，下一步移动到 (1,2)
+						if (maxC > 1)
+							c = 2;
+						else if (maxR > 1)
+							r = 2;
+					}
+
+					// 更新状态
+					params.sai.row = r;
+					params.sai.col = c;
+					// --- TODO 结束 ---
+
+					// 发送信号更新界面
+					// 注意：getSAI 使用 0-based 索引，所以这里减 1
+					emit imageReady(
+						ImageType::Center,
+						cvMatToQImage(lf->getSAI(params.sai.row - 1,
+												 params.sai.col - 1)));
+
+					std::this_thread::sleep_for(std::chrono::milliseconds(50));
+				}
+			},
+			"SAI played");
+	}
+}
+
 void LFControl::refocus() {
 	runAsync(
 		[this] {
@@ -314,6 +398,7 @@ void LFControl::refocus() {
 		},
 		"Refocus");
 }
+
 void LFControl::upsample() {
 	runAsync(
 		[this] {
@@ -323,6 +408,7 @@ void LFControl::upsample() {
 		},
 		"Super resolution");
 }
+
 void LFControl::depth() {
 	runAsync(
 		[this] {

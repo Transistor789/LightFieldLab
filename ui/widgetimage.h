@@ -6,7 +6,7 @@
 #include <QMap>
 #include <QWidget>
 
-enum class ImageType { LFP, White, SAI, Center, Refocus, SR, Depth };
+enum class ImageType { LFP, White, Center, Refocus, SR, Depth };
 
 namespace Ui {
 class WidgetImage;

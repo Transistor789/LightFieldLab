@@ -100,6 +100,10 @@ if(UNIX)
     target_include_directories(test_lfcalibrate PRIVATE "/usr/include/eigen3")
     target_include_directories(test_isp PRIVATE "/usr/include/eigen3")
     target_include_directories(test_lfresample PRIVATE "/usr/include/eigen3")
+else()
+    target_include_directories(test_lfcalibrate PRIVATE "${Eigen_DIR}")
+    target_include_directories(test_isp PRIVATE "${Eigen_DIR}")
+    target_include_directories(test_lfresample PRIVATE "${Eigen_DIR}")
 endif()
 
 # ==============================================================================

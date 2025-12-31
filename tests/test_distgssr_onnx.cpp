@@ -1,4 +1,6 @@
-﻿#include <algorithm>
+﻿#include "utils.h"
+
+#include <algorithm>
 #include <chrono> // 用于计时
 #include <cmath>
 #include <iostream>
@@ -12,28 +14,6 @@
 #include <onnxruntime_cxx_api.h>
 
 // ==========================================
-// 0. 辅助工具类 (替代 utils.h)
-// ==========================================
-class Timer {
-public:
-	Timer() : start_time_(std::chrono::high_resolution_clock::now()) {}
-
-	void reset() { start_time_ = std::chrono::high_resolution_clock::now(); }
-
-	void stop() { end_time_ = std::chrono::high_resolution_clock::now(); }
-
-	void print_elapsed_ms() const {
-		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-			end_time_ - start_time_);
-		std::cout << duration.count() << " ms" << std::endl;
-	}
-
-private:
-	std::chrono::time_point<std::chrono::high_resolution_clock> start_time_;
-	std::chrono::time_point<std::chrono::high_resolution_clock> end_time_;
-};
-
-// ==========================================
 // 1. 配置参数 & 跨平台路径处理
 // ==========================================
 
@@ -41,7 +21,7 @@ private:
 #ifdef _WIN32
 // Windows: 使用宽字符
 const std::wstring MODEL_PATH = L"../data/DistgSSR_2x_5x5.onnx";
-using ORTCHAR_T = wchar_t;
+// using ORTCHAR_T = wchar_t;
 #else
 // Linux: 使用标准字符
 const std::string MODEL_PATH = "../data/DistgSSR_2x_5x5.onnx";

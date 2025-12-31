@@ -49,6 +49,8 @@ public slots:
 	void genLUT();
 	void process();
 	void fast_preview();
+	void updateSAI(int row, int col);
+	void play();
 	void refocus();
 	void upsample();
 	void depth();
