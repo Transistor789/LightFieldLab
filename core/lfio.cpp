@@ -33,7 +33,7 @@ cv::Mat LFIO::readImage(const std::string &path, json *lfp) {
 	return img;
 }
 
-LfPtr LFIO::readSAI(const std::string &path) {
+std::shared_ptr<LFData> LFIO::readSAI(const std::string &path) {
 	// 1. 检查路径
 	if (!std::filesystem::exists(path)) {
 		throw std::runtime_error("readSAI: file not exist! Path: " + path);

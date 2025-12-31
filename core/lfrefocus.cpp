@@ -4,7 +4,7 @@
 #include <omp.h>
 #include <thread>
 
-void LFRefocus::init(const LfPtr &ptr) {
+void LFRefocus::init(const std::shared_ptr<LFData> &ptr) {
 	if (ptr->data[0].size() == _size && ptr->data[0].type() == _type) {
 		return;
 	}
@@ -24,7 +24,7 @@ void LFRefocus::init(const LfPtr &ptr) {
 	_ymap = cv::repeat(_ymap, ptr->height, 1);
 }
 
-void LFRefocus::setLF(const LfPtr &ptr) {
+void LFRefocus::setLF(const std::shared_ptr<LFData> &ptr) {
 	lf = ptr;
 	init(lf);
 }

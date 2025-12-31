@@ -24,20 +24,20 @@ public:
 
 public:
 	explicit LFIsp();
-	explicit LFIsp(const LFParamsSource &config, const cv::Mat &lfp_img,
+	explicit LFIsp(const LFParamsISP &config, const cv::Mat &lfp_img,
 				   const cv::Mat &wht_img);
 	explicit LFIsp(const json &json_config, const cv::Mat &lfp_img,
 				   const cv::Mat &wht_img);
 
-	LFParamsSource getConfig() const { return config_; }
+	LFParamsISP getConfig() const { return config_; }
 	cv::Mat &getResult() { return lfp_img_; }
 	const cv::Mat &getPreviewResult() const { return preview_img_; }
 	const cv::Mat &getResult() const { return lfp_img_; }
 	const std::vector<cv::Mat> &getSAIS() const { return sais; }
 
-	LFParamsSource &get_config() { return config_; }
+	LFParamsISP &get_config() { return config_; }
 
-	LFIsp &set_config(const LFParamsSource &new_config);
+	LFIsp &set_config(const LFParamsISP &new_config);
 	LFIsp &set_config(const json &json_settings);
 	LFIsp &print_config();
 
@@ -75,7 +75,7 @@ public:
 
 private:
 	// 成员变量
-	LFParamsSource config_;
+	LFParamsISP config_;
 	cv::Mat preview_img_;
 	cv::Mat lfp_img_, wht_img_;
 	cv::Mat lsc_gain_map_, lsc_gain_map_int_;
@@ -148,7 +148,7 @@ private:
 
 // public:
 // 	explicit LFIsp() { cv::setNumThreads(cv::getNumberOfCPUs()); }
-// 	explicit LFIsp(const LFParamsSource &config, const cv::Mat &lfp_img,
+// 	explicit LFIsp(const LFParamsISP &config, const cv::Mat &lfp_img,
 // 				   const cv::Mat &wht_img) {
 // 		cv::setNumThreads(cv::getNumberOfCPUs());
 // 		set_lf_img(lfp_img);
@@ -163,15 +163,15 @@ private:
 // 		set_config(json_config);
 // 	}
 
-// 	LFParamsSource getConfig() const { return config_; }
+// 	LFParamsISP getConfig() const { return config_; }
 // 	cv::Mat &getResult() { return lfp_img_; }
 // 	const cv::Mat &getPreviewResult() const { return preview_img_; }
 // 	const cv::Mat &getResult() const { return lfp_img_; }
 // 	const std::vector<cv::Mat> &getSAIS() const { return sais; }
 
-// 	LFParamsSource &get_config() { return config_; }
+// 	LFParamsISP &get_config() { return config_; }
 
-// 	LFIsp &set_config(const LFParamsSource &new_config) {
+// 	LFIsp &set_config(const LFParamsISP &new_config) {
 // 		config_ = new_config;
 // 		prepare_ccm_fixed_point();
 
@@ -179,7 +179,7 @@ private:
 // 	}
 
 // 	LFIsp &set_config(const json &json_settings) {
-// 		LFParamsSource new_config; // 使用默认值初始化
+// 		LFParamsISP new_config; // 使用默认值初始化
 
 // 		// 1. 解析 Bayer 格式字符串转枚举
 // 		// filter_lfp_json 保证了只有 "BGGR" (Gen1) 或 "GRBG" (Gen2)
@@ -202,7 +202,7 @@ private:
 // 		}
 
 // 		// 3. 黑/白电平 (BLC)
-// 		// JSON 中提供的是 4 通道的数组 (vector)，但 LFParamsSource
+// 		// JSON 中提供的是 4 通道的数组 (vector)，但 LFParamsISP
 // 		// 目前用的是单一直流分量。 通常取第一个分量 (Gr) 或者做平均即可。对于
 // 		// Lytro 相机，4个通道通常是一致的。
 // 		if (json_settings.contains("blc")) {
@@ -241,7 +241,7 @@ private:
 // 		}
 
 // 		// 7. 曝光补偿 (可选)
-// 		// 虽然 LFParamsSource 目前没有 exposure
+// 		// 虽然 LFParamsISP 目前没有 exposure
 // 		// 字段，如果将来需要数字增益补偿，可以在这里处理 float exp_bias =
 // 		// json_settings.value("exp", 0.0f); new_config.digital_gain = pow(2.0f,
 // 		// exp_bias);
@@ -758,7 +758,7 @@ private:
 // 	}
 
 // private:
-// 	LFParamsSource config_;
+// 	LFParamsISP config_;
 
 // 	cv::Mat preview_img_;
 // 	cv::Mat lfp_img_, wht_img_;

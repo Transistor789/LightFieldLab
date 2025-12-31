@@ -49,6 +49,9 @@ signals:
 	void requestGenLUT();
 	void requestFastPreview();
 	void requestISP();
+	void requestDetectCamera();
+	void requestCapture(bool active);
+	void requestProcess(bool active);
 	void requestPlay();
 	void requestSAI(int row, int col);
 	void requestRefocus();

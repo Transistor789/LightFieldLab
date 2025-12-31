@@ -22,7 +22,7 @@ void test_isp() {
 	// lf_img.convertTo(lf_img, CV_8U, 255.0 / 1023.0);
 	// wht_img.convertTo(wht_img, CV_8U, 255.0 / 1023.0);
 
-	LFParamsSource config;
+	LFParamsISP config;
 	config.bitDepth = Config::Get().img_meta()["bit"].get<int>();
 	config.black_level = Config::Get()
 							 .img_meta()["blc"]["black"]

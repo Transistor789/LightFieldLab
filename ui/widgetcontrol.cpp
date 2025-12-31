@@ -3,14 +3,13 @@
 #include "dialogccm.h"
 #include "dialogwbgains.h"
 #include "lfparams.h"
-#include "lfsr.h"
-#include "logger.h"
 #include "ui_widgetcontrol.h"
 
 #include <QMenu>
 #include <format>
 #include <qcheckbox.h>
 #include <qcombobox.h>
+#include <qcontainerfwd.h>
 #include <qpushbutton.h>
 #include <qspinbox.h>
 #include <qtmetamacros.h>
@@ -19,25 +18,26 @@ WidgetControl::WidgetControl(QWidget *parent)
 	: QWidget(parent), ui(new Ui::WidgetControl) {
 	ui->setupUi(this);
 
+	// =========================================================================
+	// 1. 加载文件/文件夹
+	// =========================================================================
 	QMenu *menuOpenLFP = new QMenu(this);
 	menuOpenLFP->addAction("原图", this, [this] {
 		QString path = QFileDialog::getOpenFileName(
 			this, "打开光场图像", "",
 			"Lytro Files (*.lfp *.lfr *.raw);;Images (*.png *.bmp *jpeg "
 			"*.jpg)");
-
-		if (!path.isEmpty()) {
-			params_->source.pathLFP = path.toStdString();
+		if (!path.isEmpty() && params_) {
+			params_->path.lfp = path.toStdString();
 			emit requestLoadLFP(path);
 		}
 	});
-	menuOpenLFP->addAction("子孔径", this, [this] { // 1. 处理 UI 逻辑（弹窗）
+	menuOpenLFP->addAction("子孔径", this, [this] {
 		QString path = QFileDialog::getExistingDirectory(
 			this, "打开子孔径图像", "",
 			QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
-
-		if (!path.isEmpty()) {
-			params_->source.pathSAI = path.toStdString();
+		if (!path.isEmpty() && params_) {
+			params_->path.sai = path.toStdString();
 			emit requestLoadSAI(path);
 		}
 	});
@@ -49,201 +49,297 @@ WidgetControl::WidgetControl(QWidget *parent)
 			this, "打开白图像", "",
 			"Lytro Files (*.lfp *.lfr *.raw);;Images (*.png *.bmp *jpeg "
 			"*.jpg)");
-
-		if (!path.isEmpty()) {
-			params_->source.pathWhite = path.toStdString();
+		if (!path.isEmpty() && params_) {
+			params_->path.white = path.toStdString();
 			emit requestLoadWhite(path);
 		}
 	});
 
-	// 加载提取子孔径LUT
+	// 加载 LUT
 	connect(ui->toolButtonExtract, &QToolButton::clicked, this, [this] {
 		QString path = QFileDialog::getOpenFileName(this, "打开子孔径提取表",
 													"", "LUT (*.bin)");
-
-		if (!path.isEmpty()) {
-			params_->source.pathExtract = path.toStdString();
+		if (!path.isEmpty() && params_) {
+			params_->path.extractLUT = path.toStdString();
 			emit requestLoadExtractLUT(path);
 		}
 	});
-	// 加载六边形重采样LUT
 	connect(ui->toolButtonDehex, &QToolButton::clicked, this, [this] {
 		QString path = QFileDialog::getOpenFileName(this, "打开Dehex表", "",
 													"LUT (*.bin)");
-
-		if (!path.isEmpty()) {
-			params_->source.pathDehex = path.toStdString();
+		if (!path.isEmpty() && params_) {
+			params_->path.dehexLUT = path.toStdString();
 			emit requestLoadDehexLUT(path);
 		}
 	});
 
-	// 标定
+	// =========================================================================
+	// 2. 基础参数 (Info)
+	// =========================================================================
+	connect(ui->comboBoxBayer, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				if (params_)
+					params_->isp.bayer = static_cast<BayerPattern>(index);
+			});
+	connect(ui->comboBoxBit, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				if (params_)
+					params_->isp.bitDepth = 8 + 2 * index;
+			});
+
+	// =========================================================================
+	// 3. 标定与预处理 (Calibration)
+	// =========================================================================
+	connect(ui->comboBoxCCA, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				if (params_)
+					params_->calibrate.useCCA = index;
+			});
+	connect(ui->checkBoxGridFit, &QCheckBox::toggled, this, [this](bool value) {
+		if (params_)
+			params_->calibrate.gridFit = value;
+	});
+	connect(ui->checkBoxSaveLUT, &QCheckBox::toggled, this, [this](bool value) {
+		if (params_)
+			params_->calibrate.saveLUT = value;
+	});
+	connect(ui->spinBoxLUTViews, &QSpinBox::valueChanged, this,
+			[this](int value) {
+				if (params_)
+					params_->calibrate.views = value;
+			});
+
+	// 按钮动作
 	connect(ui->btnCalibrate, &QPushButton::clicked, this,
 			&WidgetControl::requestCalibrate);
-	// 生成LUT
 	connect(ui->btnGenLUT, &QPushButton::clicked, this,
 			&WidgetControl::requestGenLUT);
 
-	// SAI
-
-	// awb
-	connect(ui->btnSetWBGains, &QPushButton::clicked, this, [this] {
-		DialogWBGains dialog(this);
-		dialog.setupParams(&params_->source);
-		if (dialog.exec() == QDialog::Accepted) {
-			updateUI();
-		}
+	// =========================================================================
+	// 4. ISP 管道控制
+	// =========================================================================
+	connect(ui->checkBoxDPC, &QCheckBox::toggled, this, [this](bool val) {
+		if (params_)
+			params_->isp.enableDPC = val;
+	});
+	connect(ui->checkBoxBLC, &QCheckBox::toggled, this, [this](bool val) {
+		if (params_)
+			params_->isp.enableBLC = val;
+	});
+	connect(ui->checkBoxLSC, &QCheckBox::toggled, this, [this](bool val) {
+		if (params_)
+			params_->isp.enableLSC = val;
+	});
+	connect(ui->checkBoxWB, &QCheckBox::toggled, this, [this](bool val) {
+		if (params_)
+			params_->isp.enableAWB = val;
+	});
+	connect(ui->checkBoxDemosaic, &QCheckBox::toggled, this, [this](bool val) {
+		if (params_)
+			params_->isp.enableDemosaic = val;
+	});
+	connect(ui->checkBoxCCM, &QCheckBox::toggled, this, [this](bool val) {
+		if (params_)
+			params_->isp.enableCCM = val;
+	});
+	connect(ui->checkBoxGamma, &QCheckBox::toggled, this, [this](bool val) {
+		if (params_)
+			params_->isp.enableGamma = val;
+	});
+	connect(ui->checkBoxExtract, &QCheckBox::toggled, this, [this](bool val) {
+		if (params_)
+			params_->isp.enableExtract = val;
+	});
+	connect(ui->checkBoxDehex, &QCheckBox::toggled, this, [this](bool val) {
+		if (params_)
+			params_->isp.enableDehex = val;
+	});
+	connect(ui->checkBoxColorEq, &QCheckBox::toggled, this, [this](bool val) {
+		if (params_)
+			params_->isp.enableColorEq = val;
 	});
 
-	// ccm
+	connect(ui->doubleSpinBoxGain0, &QDoubleSpinBox::valueChanged, this,
+			[this](double value) {
+				params_->isp.awb_gains[0] = static_cast<float>(value);
+			});
+	connect(ui->doubleSpinBoxGain1, &QDoubleSpinBox::valueChanged, this,
+			[this](double value) {
+				params_->isp.awb_gains[1] = static_cast<float>(value);
+			});
+	connect(ui->doubleSpinBoxGain2, &QDoubleSpinBox::valueChanged, this,
+			[this](double value) {
+				params_->isp.awb_gains[2] = static_cast<float>(value);
+			});
+	connect(ui->doubleSpinBoxGain3, &QDoubleSpinBox::valueChanged, this,
+			[this](double value) {
+				params_->isp.awb_gains[3] = static_cast<float>(value);
+			});
 	connect(ui->btnSetCCM, &QPushButton::clicked, this, [this] {
-		DialogCCM dialog(this);
-		dialog.setupParams(&params_->source);
+		if (!params_)
+			return;
+		DialogCCM dialog(params_->isp.ccm_matrix, this);
 		if (dialog.exec() == QDialog::Accepted) {
 			updateUI();
 		}
 	});
-
 	connect(ui->btnFastPreview, &QPushButton::clicked, this,
 			&WidgetControl::requestFastPreview);
-
 	connect(ui->btnISP, &QPushButton::clicked, this,
 			&WidgetControl::requestISP);
 
-	// 重聚焦
+	// Dynamic
+	connect(ui->pushButtonDetectCamera, &QPushButton::clicked, this,
+			[this] { emit requestDetectCamera(); });
+	connect(
+		ui->pushButtonCapture, &QPushButton::toggled, this,
+		[this](bool active) {
+			params_->dynamic.isCapturing = active;
+			ui->pushButtonCapture->setText(active ? "停止采集" : "开始采集");
+			emit requestCapture(active);
+			if (!active) {
+				params_->dynamic.isProcessing = false;
+				ui->pushButtonProcess->setText("开始处理");
+				ui->pushButtonProcess->setChecked(false);
+				emit requestProcess(false);
+			}
+		});
+	connect(
+		ui->pushButtonProcess, &QPushButton::toggled, this,
+		[this](bool active) {
+			params_->dynamic.isProcessing =
+				active & params_->dynamic.isCapturing;
+			ui->pushButtonProcess->setText(
+				params_->dynamic.isProcessing ? "停止处理" : "开始处理");
+			ui->pushButtonProcess->setChecked(params_->dynamic.isProcessing);
+			emit requestProcess(params_->dynamic.isProcessing);
+		});
+
+	// =========================================================================
+	// 5. 子孔径与播放 (SAI)
+	// =========================================================================
+	connect(ui->spinBoxHorz, &QSpinBox::valueChanged, this, [this](int value) {
+		if (!params_)
+			return;
+		params_->sai.col = value;
+		emit requestSAI(params_->sai.row, value);
+	});
+	connect(ui->spinBoxVert, &QSpinBox::valueChanged, this, [this](int value) {
+		if (!params_)
+			return;
+		params_->sai.row = value;
+		emit requestSAI(value, params_->sai.col);
+	});
+	// 【关键修复】播放按钮连接移到这里，只会连接一次
+	connect(ui->pushButtonViewPlay, &QPushButton::toggled, this,
+			[this](bool value) {
+				if (!params_)
+					return;
+				params_->sai.isPlaying = value;
+				ui->pushButtonViewPlay->setText(value ? "停止" : "播放");
+				if (value) {
+					emit requestPlay();
+				}
+			});
+	connect(ui->pushButtonViewCenter, &QPushButton::clicked, this, [this] {
+		if (!params_)
+			return;
+		params_->sai.row = (params_->sai.rows + 1) / 2;
+		params_->sai.col = (params_->sai.cols + 1) / 2;
+		emit requestSAI(params_->sai.row, params_->sai.col);
+	});
+
+	// =========================================================================
+	// 6. 后处理 (Refocus, SR, DE)
+	// =========================================================================
+	// Refocus
+	connect(ui->spinBoxRefocusCrop, &QSpinBox::valueChanged, this,
+			[this](int value) {
+				if (params_)
+					params_->refocus.crop = value;
+			});
+	connect(ui->doubleSpinBoxRefocusAlpha, &QDoubleSpinBox::valueChanged, this,
+			[this](double value) {
+				if (params_)
+					params_->refocus.alpha = value;
+			});
 	connect(ui->btnRefocus, &QPushButton::clicked, this,
 			&WidgetControl::requestRefocus);
 
+	// SR
+	connect(ui->comboBoxSRAlgo, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				if (params_)
+					params_->sr.type = static_cast<LFParamsSR::Type>(index);
+			});
+	connect(ui->comboBoxSRScale, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				if (params_)
+					params_->sr.scale = index + 2;
+			});
+	connect(ui->comboBoxSRPatchSize, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				if (params_)
+					params_->sr.patchSize = index == 0 ? 128 : 196;
+			});
+	connect(ui->comboBoxSRViews, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				if (params_)
+					params_->sr.views = 5 + 2 * index;
+			});
 	connect(ui->btnSR, &QPushButton::clicked, this, &WidgetControl::requestSR);
+
+	// DE
+	connect(ui->comboBoxDepthAlgo, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				if (params_)
+					params_->de.type = static_cast<LFParamsDE::Type>(index);
+			});
+	connect(ui->comboBoxDepthPatchColor, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				if (params_)
+					params_->de.color = static_cast<LFParamsDE::Color>(index);
+			});
+	connect(ui->comboBoxDepthPatchSize, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				if (params_)
+					params_->de.patchSize = index == 0 ? 128 : 196;
+			});
+	connect(ui->comboBoxDepthViews, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				if (params_)
+					params_->de.views = params_->sr.views = 5 + 2 * index;
+			});
 	connect(ui->btnDE, &QPushButton::clicked, this, &WidgetControl::requestDE);
 }
 
 WidgetControl::~WidgetControl() { delete ui; }
 
+// setupParams 现在只负责设置指针和刷新 UI，不再进行信号连接
 void WidgetControl::setupParams(LFParams *params) {
 	params_ = params;
-	if (params_ == nullptr) {
-		return;
+	if (params_) {
+		updateUI();
 	}
-
-	// Info
-	connect(ui->comboBoxBayer, &QComboBox::currentIndexChanged, this,
-			[this](int index) {
-				params_->source.bayer = static_cast<BayerPattern>(index);
-			});
-	connect(ui->comboBoxBit, &QComboBox::currentIndexChanged, this,
-			[this](int index) { params_->source.bitDepth = 8 + 2 * index; });
-
-	// Calibrate
-	connect(ui->comboBoxCCA, &QComboBox::currentIndexChanged, this,
-			[this](int index) { params_->calibrate.useCCA = index; });
-	connect(ui->checkBoxGridFit, &QCheckBox::toggled, this,
-			[this](bool value) { params_->calibrate.gridfit = value; });
-	connect(ui->checkBoxSaveLUT, &QCheckBox::toggled, this,
-			[this](bool value) { params_->calibrate.saveLUT = value; });
-	connect(ui->spinBoxLUTViews, &QSpinBox::valueChanged, this,
-			[this](int value) { params_->calibrate.views = value; });
-
-	// ISP
-	connect(ui->checkBoxDPC, &QCheckBox::toggled, this,
-			[this](bool value) { params_->isp.enableDPC = value; });
-	connect(ui->checkBoxBLC, &QCheckBox::toggled, this,
-			[this](bool value) { params_->isp.enableBLC = value; });
-	connect(ui->checkBoxLSC, &QCheckBox::toggled, this,
-			[this](bool value) { params_->isp.enableLSC = value; });
-	connect(ui->checkBoxWB, &QCheckBox::toggled, this,
-			[this](bool value) { params_->isp.enableAWB = value; });
-	connect(ui->checkBoxDemosaic, &QCheckBox::toggled, this,
-			[this](bool value) { params_->isp.enableDemosaic = value; });
-	connect(ui->checkBoxCCM, &QCheckBox::toggled, this,
-			[this](bool value) { params_->isp.enableCCM = value; });
-	connect(ui->checkBoxGamma, &QCheckBox::toggled, this,
-			[this](bool value) { params_->isp.enableGamma = value; });
-	connect(ui->checkBoxExtract, &QCheckBox::toggled, this,
-			[this](bool value) { params_->isp.enableExtract = value; });
-	connect(ui->checkBoxDehex, &QCheckBox::toggled, this,
-			[this](bool value) { params_->isp.enableDehex = value; });
-	connect(ui->checkBoxColorEq, &QCheckBox::toggled, this,
-			[this](bool value) { params_->isp.enableColorEq = value; });
-
-	// SAI
-	connect(ui->spinBoxHorz, &QSpinBox::valueChanged, this, [this](int value) {
-		params_->sai.col = value;
-		emit requestSAI(params_->sai.row, value);
-	});
-	connect(ui->spinBoxVert, &QSpinBox::valueChanged, this, [this](int value) {
-		params_->sai.row = value;
-		emit requestSAI(value, params_->sai.col);
-	});
-	connect(ui->pushButtonViewPlay, &QPushButton::toggled, this,
-			[this](bool value) {
-				params_->sai.isPlaying = value;
-
-				if (value) {
-					emit requestPlay();
-					ui->pushButtonViewPlay->setText("停止");
-				} else {
-					ui->pushButtonViewPlay->setText("播放");
-				}
-			});
-	connect(ui->pushButtonViewCenter, &QPushButton::clicked, this, [this] {
-		emit requestSAI((params_->sai.row + 1) / 2, (params_->sai.col + 1) / 2);
-	});
-
-	// Refocus
-	connect(ui->spinBoxRefocusCrop, &QSpinBox::valueChanged, this,
-			[this](int value) { params_->refocus.crop = value; });
-	connect(ui->doubleSpinBoxRefocusAlpha, &QDoubleSpinBox::valueChanged, this,
-			[this](double value) { params_->refocus.alpha = value; });
-
-	// SR
-	connect(ui->comboBoxSRAlgo, &QComboBox::currentIndexChanged, this,
-			[this](int index) {
-				params_->sr.type = static_cast<LFParamsSR::Type>(index);
-			});
-	connect(ui->comboBoxSRScale, &QComboBox::currentIndexChanged, this,
-			[this](int index) { params_->sr.scale = index + 2; });
-	connect(
-		ui->comboBoxSRPatchSize, &QComboBox::currentIndexChanged, this,
-		[this](int index) { params_->sr.patchSize = index == 0 ? 128 : 196; });
-	connect(ui->comboBoxSRViews, &QComboBox::currentIndexChanged, this,
-			[this](int index) { params_->sr.views = 5 + 2 * index; });
-
-	// DE
-	connect(ui->comboBoxDepthAlgo, &QComboBox::currentIndexChanged, this,
-			[this](int index) {
-				params_->de.type = static_cast<LFParamsDE::Type>(index);
-			});
-	connect(ui->comboBoxDepthPatchColor, &QComboBox::currentIndexChanged, this,
-			[this](int index) {
-				params_->de.color = static_cast<LFParamsDE::Color>(index);
-			});
-	connect(
-		ui->comboBoxDepthPatchSize, &QComboBox::currentIndexChanged, this,
-		[this](int index) { params_->de.patchSize = index == 0 ? 128 : 196; });
-	connect(ui->comboBoxDepthViews, &QComboBox::currentIndexChanged, this,
-			[this](int index) {
-				params_->de.views = params_->sr.views = 5 + 2 * index;
-			});
 }
 
 void WidgetControl::updateUI() {
-	if (params_ == nullptr) {
+	if (params_ == nullptr)
 		return;
-	}
 
-	// 信息
-	setValSilent(ui->comboBoxBayer, params_->source.bayer);
-	setValSilent(ui->comboBoxBit, (params_->source.bitDepth - 8) / 2);
-	setValSilent(ui->labelResValue, std::format("{}x{}", params_->source.width,
-												params_->source.height));
-	// 加载
-	setValSilent(ui->lineEditLFP, params_->source.pathLFP);
-	setValSilent(ui->lineEditWhite, params_->source.pathWhite);
-	setValSilent(ui->lineEditExtract, params_->source.pathExtract);
-	setValSilent(ui->lineEditDehex, params_->source.pathDehex);
+	// Info
+	setValSilent(ui->comboBoxBayer, params_->isp.bayer);
+	setValSilent(ui->comboBoxBit, (params_->isp.bitDepth - 8) / 2);
+	setValSilent(ui->labelResValue,
+				 std::format("{}x{}", params_->isp.width, params_->isp.height));
 
-	// ISP
+	// File Paths
+	setValSilent(ui->lineEditLFP, params_->path.lfp);
+	setValSilent(ui->lineEditWhite, params_->path.white);
+	setValSilent(ui->lineEditExtract, params_->path.extractLUT);
+	setValSilent(ui->lineEditDehex, params_->path.dehexLUT);
+
+	// Static
 	setValSilent(ui->checkBoxDPC, params_->isp.enableDPC);
 	setValSilent(ui->checkBoxBLC, params_->isp.enableBLC);
 	setValSilent(ui->checkBoxLSC, params_->isp.enableLSC);
@@ -254,12 +350,27 @@ void WidgetControl::updateUI() {
 	setValSilent(ui->checkBoxExtract, params_->isp.enableExtract);
 	setValSilent(ui->checkBoxDehex, params_->isp.enableDehex);
 	setValSilent(ui->checkBoxColorEq, params_->isp.enableColorEq);
+	setValSilent(ui->doubleSpinBoxGain0, params_->isp.awb_gains[0]);
+	setValSilent(ui->doubleSpinBoxGain1, params_->isp.awb_gains[1]);
+	setValSilent(ui->doubleSpinBoxGain2, params_->isp.awb_gains[2]);
+	setValSilent(ui->doubleSpinBoxGain3, params_->isp.awb_gains[3]);
+
+	// Dynamic
+	ui->spinBoxCamera->setEnabled(!params_->dynamic.cameraID.empty());
+	if (!params_->dynamic.cameraID.empty()) {
+		ui->labelCamera->setText(
+			"检测到设备数: "
+			+ QString::number(params_->dynamic.cameraID.size()));
+	}
 
 	// SAI
-	setValSilent(ui->spinBoxHorz, params_->sai.col);
-	setValSilent(ui->spinBoxVert, params_->sai.row);
 	ui->spinBoxHorz->setMaximum(params_->sai.cols);
 	ui->spinBoxVert->setMaximum(params_->sai.rows);
+	setValSilent(ui->spinBoxHorz, params_->sai.col);
+	setValSilent(ui->spinBoxVert, params_->sai.row);
+	// 播放按钮状态
+	setValSilent(ui->pushButtonViewPlay, params_->sai.isPlaying);
+	ui->pushButtonViewPlay->setText(params_->sai.isPlaying ? "停止" : "播放");
 
 	// Refocus
 	setValSilent(ui->spinBoxRefocusCrop, params_->refocus.crop);

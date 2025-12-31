@@ -83,3 +83,22 @@ cv::Mat LFCapture::getFrame() {
 	// 取交集，确保安全
 	return gray_frame(roi & img_rect);
 }
+
+std::vector<int> LFCapture::getAvailableCameras(int maxSearch) {
+	std::vector<int> availableIndices;
+
+	// 尝试打开 0 到 maxSearch 的设备
+	// 注意：在 Linux 下这通常比较快，但在 Windows 下可能会有显著延迟
+	for (int i = 0; i < maxSearch; ++i) {
+		cv::VideoCapture tempCap;
+		// 使用 V4L2 后端 (Linux) 或 ANY (自动)
+		// 在 Linux 上显式指定 CAP_V4L2 通常更稳健
+		tempCap.open(i, cv::CAP_ANY);
+
+		if (tempCap.isOpened()) {
+			availableIndices.push_back(i);
+			tempCap.release(); // 记得立即释放
+		}
+	}
+	return availableIndices;
+}

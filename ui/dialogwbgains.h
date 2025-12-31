@@ -1,9 +1,8 @@
-#ifndef DIALOGWHITEGAIN_H
-#define DIALOGWHITEGAIN_H
+#ifndef DIALOGWBGAINS_H
+#define DIALOGWBGAINS_H
 
 #include <QDialog>
-// 前置声明，减少编译依赖
-struct LFParamsSource;
+#include <vector>
 
 namespace Ui {
 class DialogWBGains;
@@ -13,19 +12,21 @@ class DialogWBGains : public QDialog {
 	Q_OBJECT
 
 public:
-	explicit DialogWBGains(QWidget *parent = nullptr);
+	// 构造函数直接绑定引用
+	explicit DialogWBGains(std::vector<float> &data, QWidget *parent = nullptr);
 	~DialogWBGains();
 
-	// 核心接口：注入参数指针
-	void setupParams(LFParamsSource *params);
-
 protected:
-	// 覆写 accept 函数 (当用户点击 OK 时触发)
+	// 点击 OK 时保存
 	void accept() override;
 
 private:
+	// 辅助函数：加载数据到 UI
+	void loadDataToUI();
+
+private:
 	Ui::DialogWBGains *ui;
-	LFParamsSource *m_params = nullptr; // 保存指针
+	std::vector<float> &wbGains; // 引用成员：直接指向外部数据
 };
 
-#endif // DIALOGWHITEGAIN_H
+#endif // DIALOGWBGAINS_H

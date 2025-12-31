@@ -17,6 +17,12 @@ WidgetLogger::WidgetLogger(QWidget *parent)
 	connect(ui->btnClear, &QPushButton::clicked, this,
 			[this] { ui->textEdit->clear(); });
 	connect(ui->btnSave, &QPushButton::clicked, this, &WidgetLogger::save);
+
+	connect(ui->btnHide, &QPushButton::toggled, this, [this](bool value) {
+		ui->textEdit->setVisible(!value);
+		ui->btnHide->setText(value ? "显示日志" : "隐藏日志");
+	});
+	ui->btnHide->click();
 }
 
 WidgetLogger::~WidgetLogger() { delete ui; }

@@ -21,9 +21,9 @@ void fast_preview() {
 	// cv::waitKey();
 
 	LFCalibrate cali(wht_img_gray);
-	cali.run(false, false, false, 10);
+	cali.run(false, false, 10);
 
-	LFParamsSource config;
+	LFParamsISP config;
 	config.awb_gains =
 		Config::Get().img_meta()["awb"].get<std::vector<float>>();
 	LFIsp isp(config, lf_img, wht_img);

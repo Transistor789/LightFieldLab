@@ -2,7 +2,6 @@
 
 #include <cmath>
 
-
 // ============================================================================
 // 本地 Helper 模板函数 (用于标量处理的统一实现，避免代码重复)
 // ============================================================================
@@ -97,7 +96,7 @@ void awb_scalar_impl(cv::Mat &img, const std::vector<float> &gains) {
 
 LFIsp::LFIsp() { cv::setNumThreads(cv::getNumberOfCPUs()); }
 
-LFIsp::LFIsp(const LFParamsSource &config, const cv::Mat &lfp_img,
+LFIsp::LFIsp(const LFParamsISP &config, const cv::Mat &lfp_img,
 			 const cv::Mat &wht_img) {
 	cv::setNumThreads(cv::getNumberOfCPUs());
 	set_lf_img(lfp_img);
@@ -113,14 +112,14 @@ LFIsp::LFIsp(const json &json_config, const cv::Mat &lfp_img,
 	set_config(json_config);
 }
 
-LFIsp &LFIsp::set_config(const LFParamsSource &new_config) {
+LFIsp &LFIsp::set_config(const LFParamsISP &new_config) {
 	config_ = new_config;
 	prepare_ccm_fixed_point();
 	return *this;
 }
 
 LFIsp &LFIsp::set_config(const json &json_settings) {
-	LFParamsSource new_config;
+	LFParamsISP new_config;
 
 	if (json_settings.contains("bay")) {
 		std::string bay_str = json_settings["bay"].get<std::string>();

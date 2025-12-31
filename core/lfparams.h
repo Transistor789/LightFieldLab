@@ -1,6 +1,7 @@
 ﻿#ifndef LFPARAMS_H
 #define LFPARAMS_H
 
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -8,18 +9,6 @@ enum class BayerPattern { NONE, RGGB, GRBG, GBRG, BGGR };
 
 struct LFParamsPath {
 	std::string lfp, sai, white, extractLUT, dehexLUT;
-};
-
-struct LFParamsSource {
-	std::string pathLFP, pathSAI, pathWhite, pathExtract, pathDehex;
-	int width, height, bitDepth;
-	BayerPattern bayer = BayerPattern::GRBG;
-
-	int white_level = 1023, black_level = 64;
-	std::vector<float> awb_gains = {1.0f, 1.0f, 1.0f, 1.0f};
-	std::vector<float> ccm_matrix = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-									 0.0f, 0.0f, 0.0f, 1.0f};
-	float gamma = 2.2f;
 };
 
 struct LFParamsSAI {
@@ -32,12 +21,25 @@ struct LFParamsSAI {
 
 struct LFParamsCalibrate {
 	bool useCCA = false;
+	bool autoEstimate = false;
 	bool saveLUT = false;
-	bool gridfit = false;
+	bool gridFit = false;
 	int views = 9;
 };
 
 struct LFParamsISP {
+	enum class DPCType { Dirctional, COUNT };
+	enum class DemosaicType { Bilinear, Gray, VGN, EA };
+
+	int width, height, bitDepth;
+	BayerPattern bayer = BayerPattern::GRBG;
+
+	int white_level = 1023, black_level = 64;
+	std::vector<float> awb_gains = {1.0f, 1.0f, 1.0f, 1.0f};
+	std::vector<float> ccm_matrix = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+									 0.0f, 0.0f, 0.0f, 1.0f};
+	float gamma = 2.2f;
+
 	bool enableDPC = true;
 	bool enableBLC = true;
 	bool enableLSC = true;
@@ -49,12 +51,16 @@ struct LFParamsISP {
 	bool enableDehex = true;
 	bool enableColorEq = true;
 
-	enum class DPCType { Dirctional, COUNT };
 	DPCType dpcType = DPCType::Dirctional;
 	int dpcThreshold = 100;
 	float lscExp = 1.0;
-	enum class DemosaicType { Bilinear, Gray, VGN, EA };
 	DemosaicType demosaicType = DemosaicType::Bilinear;
+};
+
+struct LFParamsDynamic {
+	std::vector<int> cameraID;
+	std::atomic_bool isCapturing = false;
+	std::atomic_bool isProcessing = false;
 };
 
 struct LFParamsRefocus {
@@ -89,9 +95,10 @@ struct LFParamsDE {
 };
 
 struct LFParams {
-	LFParamsSource source;
+	LFParamsPath path;
 	LFParamsCalibrate calibrate;
 	LFParamsISP isp;
+	LFParamsDynamic dynamic;
 	LFParamsSAI sai;
 	LFParamsRefocus refocus;
 	LFParamsSR sr;

@@ -2,9 +2,12 @@
 #define LFCALIBRATE_H
 
 #include "json.hpp"
+#include "lfparams.h"
 
 #include <opencv2/opencv.hpp>
 #include <vector>
+
+class LFParamsCalibrate;
 
 namespace nlohmann {
 template <>
@@ -21,8 +24,8 @@ class LFCalibrate {
 public:
 	explicit LFCalibrate() = default;
 	explicit LFCalibrate(const cv::Mat &white_img);
-	std::vector<std::vector<cv::Point2f>> run(bool use_cca, bool save,
-											  bool demosaic, int bit);
+	std::vector<std::vector<cv::Point2f>> run(bool use_cca, bool demosaic,
+											  int bit);
 	void setImage(const cv::Mat &img);
 	void savePoints(const std::string &filename);
 
@@ -48,6 +51,7 @@ private:
 
 	std::vector<cv::Mat> _slice_maps;
 	std::vector<cv::Mat> _dehex_maps;
+	LFParamsCalibrate *params_ = nullptr;
 };
 
 #endif

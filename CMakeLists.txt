@@ -142,7 +142,7 @@ set(SRCS_UI
     ui/widgetcontrol.cpp ui/widgetcontrol.h ui/widgetcontrol.ui
     ui/widgetlogger.cpp ui/widgetlogger.h ui/widgetlogger.ui
     ui/widgetimage.cpp ui/widgetimage.h ui/widgetimage.ui
-    ui/dialogwbgains.cpp ui/dialogwbgains.h ui/dialogwbgains.ui
+
     ui/dialogccm.cpp ui/dialogccm.h ui/dialogccm.ui
     ui/interactiveview.cpp ui/interactiveview.h
     ui/smartimageviewer.cpp ui/smartimageviewer.h ui/smartimageviewer.ui

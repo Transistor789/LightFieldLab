@@ -14,7 +14,7 @@ public:
 	explicit LFIO();
 
 	static cv::Mat readImage(const std::string &path, json *lfp = nullptr);
-	static LfPtr readSAI(const std::string &path);
+	static std::shared_ptr<LFData> readSAI(const std::string &path);
 
 	static bool saveLookUpTables(const std::string &path,
 								 const std::vector<cv::Mat> &maps, int winSize);

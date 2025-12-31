@@ -95,26 +95,27 @@ void LFControl::setProcessing(bool active) {
 }
 
 void LFControl::captureTask() {
-	// 检查硬件指针安全性
 	if (!cap)
 		return;
 
-	while (!exit) { // atomic read，线程安全
-		if (!isCapturing) {
+	while (!exit.load()) {
+		if (!isCapturing.load()) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			continue;
 		}
 
 		cv::Mat img = cap->getFrame();
-
+		// cv::Mat img;
+		LOG_INFO("Capturing ...");
 		if (img.empty()) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			LOG_WARN("Image is empty!");
 			continue;
 		}
 
 		{
 			std::lock_guard<std::mutex> lock(m_queueMtx);
-			if (data_queue.size() > 5) {
+			if (data_queue.size() > 2) {
 				data_queue.pop();
 			}
 			data_queue.push(std::move(img));
@@ -135,6 +136,9 @@ void LFControl::processTask() {
 					   || (!data_queue.empty() && isProcessing.load());
 			});
 
+			LOG_INFO("Processing");
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
 			if (exit) {
 				return;
 			}
@@ -144,6 +148,10 @@ void LFControl::processTask() {
 
 			img = std::move(data_queue.front());
 			data_queue.pop();
+
+			isp->set_lf_img(img);
+			isp->preview().resample(true);
+			lf = std::make_shared<LFData>(isp->getSAIS());
 		}
 	}
 }
@@ -152,7 +160,7 @@ void LFControl::readSAI(const QString &path) {
 	runAsync(
 		[this, path] {
 			// 1. 耗时操作
-			LfPtr tempLF = LFIO::readSAI(path.toStdString());
+			std::shared_ptr<LFData> tempLF = LFIO::readSAI(path.toStdString());
 
 			// 2. 加锁赋值
 			{
@@ -162,11 +170,11 @@ void LFControl::readSAI(const QString &path) {
 
 			// emit saiReady(cvMatToQImage(lf->getCenter()));
 			emit imageReady(ImageType::Center, cvMatToQImage(lf->getCenter()));
-			params.source.pathSAI = path.toStdString();
-			params.source.width = lf->width;
-			params.source.height = lf->height;
-			params.source.bitDepth = 8;
-			params.source.bayer = BayerPattern::NONE;
+			params.path.sai = path.toStdString();
+			params.isp.width = lf->width;
+			params.isp.height = lf->height;
+			params.isp.bitDepth = 8;
+			params.isp.bayer = BayerPattern::NONE;
 			params.sai.row = (lf->rows + 1) / 2;
 			params.sai.col = (lf->cols + 1) / 2;
 			params.sai.rows = lf->rows;
@@ -191,17 +199,17 @@ void LFControl::readImage(const QString &path, bool isWhite) {
 				if (!isWhite) {
 					lfraw = img;
 					isp->set_config(Config::Get().img_meta());
-					params.source = isp->get_config();
-					params.source.pathLFP = path.toStdString();
+					params.isp = isp->get_config();
+					params.path.lfp = path.toStdString();
 					emit imageReady(ImageType::LFP, cvMatToQImage(lfraw));
 				} else {
 					white = img;
 					isp->set_white_img(white.clone());
-					params.source.pathWhite = path.toStdString();
+					params.path.white = path.toStdString();
 					emit imageReady(ImageType::White, cvMatToQImage(white));
 				}
-				params.source.height = img.size().height;
-				params.source.width = img.size().width;
+				params.isp.height = img.size().height;
+				params.isp.width = img.size().width;
 			}
 			emit paramsChanged();
 		},
@@ -214,7 +222,7 @@ void LFControl::readExtractLUT(const QString &path) {
 		[this, path] {
 			LFIO::loadLookUpTables(path.toStdString(), isp->maps.extract,
 								   params.calibrate.views);
-			params.source.pathExtract = path.toStdString();
+			params.path.extractLUT = path.toStdString();
 			emit paramsChanged();
 		},
 		"Load extract-lut");
@@ -225,7 +233,7 @@ void LFControl::readDehexLUT(const QString &path) {
 		[this, path] {
 			int _;
 			LFIO::loadLookUpTables(path.toStdString(), isp->maps.dehex, _);
-			params.source.pathDehex = path.toStdString();
+			params.path.dehexLUT = path.toStdString();
 			emit paramsChanged();
 		},
 		"Load dehex-lut");
@@ -235,10 +243,9 @@ void LFControl::calibrate() {
 	runAsync(
 		[this] {
 			cal->setImage(white);
-			auto points =
-				cal->run(params.calibrate.useCCA, params.calibrate.saveLUT,
-						 params.source.bayer != BayerPattern::NONE,
-						 params.source.bitDepth);
+			auto points = cal->run(params.calibrate.useCCA,
+								   params.isp.bayer != BayerPattern::NONE,
+								   params.isp.bitDepth);
 			cv::Mat draw =
 				draw_points(white, points, "", 2, cv::Scalar(0), false);
 
@@ -304,12 +311,29 @@ void LFControl::process() {
 		"ISP");
 }
 
+void LFControl::detectCamera() {
+	runAsync(
+		[this] {
+			params.dynamic.cameraID = cap->getAvailableCameras(3);
+			emit paramsChanged();
+		},
+		"Detecting camera");
+}
+
 void LFControl::fast_preview() {
 	runAsync(
 		[this] {
 			isp->set_lf_img(lfraw.clone());
 			auto img = isp->preview().getPreviewResult();
 			emit imageReady(ImageType::LFP, cvMatToQImage(img));
+			if (params.isp.enableExtract) {
+				isp->resample(params.isp.enableDehex);
+			}
+			if (params.isp.enableColorEq) {
+				isp->color_equalize();
+			}
+			lf = std::make_shared<LFData>(isp->getSAIS());
+			emit imageReady(ImageType::Center, cvMatToQImage(lf->getCenter()));
 			emit paramsChanged();
 		},
 		"Fast preview");
@@ -320,72 +344,73 @@ void LFControl::updateSAI(int row, int col) {
 		[this, row, col] {
 			emit imageReady(ImageType::Center,
 							cvMatToQImage(lf->getSAI(row - 1, col - 1)));
+			emit paramsChanged();
 		},
 		"SAI updated");
 }
 
 void LFControl::play() {
-	if (params.sai.isPlaying) {
-		runAsync(
-			[this] {
-				LOG_INFO("Playing...");
-
-				// 缓存一下边界，使代码更简洁
-				// 假设 params.sai.row/col 是 1-based 索引 (1 到 N)
-				const int maxR = params.sai.rows;
-				const int maxC = params.sai.cols;
-
-				while (params.sai.isPlaying) {
-					// --- TODO 开始: 计算下一帧坐标 ---
-					int r = params.sai.row;
-					int c = params.sai.col;
-
-					// 1. 上边缘 (Row=1): 向右走
-					if (r == 1 && c < maxC) {
-						c++;
-					}
-					// 2. 右边缘 (Col=Max): 向下走
-					else if (c == maxC && r < maxR) {
-						r++;
-					}
-					// 3. 下边缘 (Row=Max): 向左走
-					else if (r == maxR && c > 1) {
-						c--;
-					}
-					// 4. 左边缘 (Col=1): 向上走
-					else if (c == 1 && r > 1) {
-						r--;
-					}
-					// 5. 如果当前点不在边缘上（比如一开始就在中间），或者 1x1
-					// 的情况
-					else {
-						// 强制归位到左上角，开始循环
-						r = 1;
-						c = 1;
-						// 如果网格大于 1x1，下一步移动到 (1,2)
-						if (maxC > 1)
-							c = 2;
-						else if (maxR > 1)
-							r = 2;
-					}
-
-					// 更新状态
-					params.sai.row = r;
-					params.sai.col = c;
-					// --- TODO 结束 ---
-
-					// 发送信号更新界面
-					// 注意：getSAI 使用 0-based 索引，所以这里减 1
-					emit imageReady(
-						ImageType::Center,
-						cvMatToQImage(lf->getSAI(params.sai.row - 1,
-												 params.sai.col - 1)));
-
-					std::this_thread::sleep_for(std::chrono::milliseconds(50));
-				}
-			},
-			"SAI played");
+	if (!params.sai.isPlaying) {
+		return;
 	}
+	runAsync(
+		[this] {
+			LOG_INFO("Playing...");
+
+			// 缓存一下边界，使代码更简洁
+			// 假设 params.sai.row/col 是 1-based 索引 (1 到 N)
+			const int maxR = params.sai.rows;
+			const int maxC = params.sai.cols;
+
+			while (params.sai.isPlaying) {
+				// --- TODO 开始: 计算下一帧坐标 ---
+				int r = params.sai.row;
+				int c = params.sai.col;
+
+				// 1. 上边缘 (Row=1): 向右走
+				if (r == 1 && c < maxC) {
+					c++;
+				}
+				// 2. 右边缘 (Col=Max): 向下走
+				else if (c == maxC && r < maxR) {
+					r++;
+				}
+				// 3. 下边缘 (Row=Max): 向左走
+				else if (r == maxR && c > 1) {
+					c--;
+				}
+				// 4. 左边缘 (Col=1): 向上走
+				else if (c == 1 && r > 1) {
+					r--;
+				}
+				// 5. 如果当前点不在边缘上（比如一开始就在中间），或者 1x1
+				// 的情况
+				else {
+					// 强制归位到左上角，开始循环
+					r = 1;
+					c = 1;
+					// 如果网格大于 1x1，下一步移动到 (1,2)
+					if (maxC > 1)
+						c = 2;
+					else if (maxR > 1)
+						r = 2;
+				}
+
+				// 更新状态
+				params.sai.row = r;
+				params.sai.col = c;
+				// --- TODO 结束 ---
+
+				// 发送信号更新界面
+				// 注意：getSAI 使用 0-based 索引，所以这里减 1
+				emit imageReady(ImageType::Center,
+								cvMatToQImage(lf->getSAI(params.sai.row - 1,
+														 params.sai.col - 1)));
+				emit paramsChanged();
+				std::this_thread::sleep_for(std::chrono::milliseconds(50));
+			}
+		},
+		"SAI played");
 }
 
 void LFControl::refocus() {
@@ -468,9 +493,9 @@ QImage LFControl::cvMatToQImage(const cv::Mat &inMat) {
 		}
 
 		// 情况 B: 整数型 (CV_16U / CV_16S)
-		// 这里必须用到 params.source.bitDepth
+		// 这里必须用到 params.isp.bitDepth
 		else if (inMat.depth() == CV_16U || inMat.depth() == CV_16S) {
-			int validBits = params.source.bitDepth;
+			int validBits = params.isp.bitDepth;
 
 			// 防御性编程：如果用户没设置或者乱设置，给个默认值
 			if (validBits <= 0)

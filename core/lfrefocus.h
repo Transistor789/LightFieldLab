@@ -8,11 +8,11 @@ public:
 	LFRefocus() = default;
 	~LFRefocus() = default;
 
-	void init(const LfPtr &ptr);
+	void init(const std::shared_ptr<LFData> &ptr);
 	cv::Mat refocus(float alpha, int crop = 0);
-	void setLF(const LfPtr &ptr);
+	void setLF(const std::shared_ptr<LFData> &ptr);
 
-	LfPtr lf;
+	std::shared_ptr<LFData> lf;
 
 private:
 	int _views, _len, _center, _type;

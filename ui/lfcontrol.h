@@ -49,6 +49,7 @@ public slots:
 	void genLUT();
 	void process();
 	void fast_preview();
+	void detectCamera();
 	void updateSAI(int row, int col);
 	void play();
 	void refocus();
@@ -91,19 +92,15 @@ public:
 	LFParams params;
 
 private:
-	LfPtr lf;
+	std::shared_ptr<LFData> lf;
 	cv::Mat lfraw, white;
 	mutable std::mutex m_dataMtx; // 保护上述数据
 
 	// --- 模块实例 ---
 	std::unique_ptr<LFIO> io;
-
 	std::unique_ptr<LFCalibrate> cal;
-
 	std::unique_ptr<LFIsp> isp;
-
 	std::unique_ptr<LFRefocus> ref;
-
 	std::unique_ptr<LFSuperRes> sr;
 	std::unique_ptr<LFDisp> dep;
 	std::unique_ptr<LFCapture> cap;

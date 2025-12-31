@@ -135,7 +135,7 @@ void test_calibrate() {
 
 	LFCalibrate cali(img);
 	timer.start();
-	auto pts_cali = cali.run(false, false, true, 10);
+	auto pts_cali = cali.run(false, true, 10);
 	timer.stop();
 	std::cout << "--- Calibrate ---" << std::endl;
 	std::cout << "pts_cali size: " << pts_cali.size() << " "
@@ -164,7 +164,7 @@ void test_lut() {
 	cv::Mat img = cv::imread("../../data/gray.png", cv::IMREAD_GRAYSCALE);
 	LFCalibrate cali(img);
 	Timer timer;
-	auto pts_cali = cali.run(false, false, false, 8);
+	auto pts_cali = cali.run(false, false, 8);
 	timer.stop();
 	timer.print_elapsed_ms();
 

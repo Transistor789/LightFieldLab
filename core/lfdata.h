@@ -163,6 +163,4 @@ private:
 	}
 };
 
-using LfPtr = std::shared_ptr<LFData>;
-
 #endif

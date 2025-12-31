@@ -22,7 +22,7 @@ MainWindow::MainWindow(QWidget *parent)
 			&WidgetControl::updateUI);
 
 	// 连接日志
-	connect(&QLogger::instance(), &QLogger::newLog, ui->widgetLog,
+	connect(&QLogger::instance(), &QLogger::newLog, ui->widgetLogger,
 			&WidgetLogger::appendLog);
 
 	// 按键响应
@@ -45,6 +45,12 @@ MainWindow::MainWindow(QWidget *parent)
 			[this] { ctrl->fast_preview(); });
 	connect(ui->widgetControl, &WidgetControl::requestISP, this,
 			[this] { ctrl->process(); });
+	connect(ui->widgetControl, &WidgetControl::requestDetectCamera, this,
+			[this] { ctrl->detectCamera(); });
+	connect(ui->widgetControl, &WidgetControl::requestCapture, this,
+			[this](bool active) { ctrl->setCapturing(active); });
+	connect(ui->widgetControl, &WidgetControl::requestProcess, this,
+			[this](bool active) { ctrl->setProcessing(active); });
 	connect(ui->widgetControl, &WidgetControl::requestPlay, this,
 			[this] { ctrl->play(); });
 	connect(ui->widgetControl, &WidgetControl::requestSAI, this,
@@ -71,7 +77,7 @@ MainWindow::MainWindow(QWidget *parent)
 	std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	ctrl->readImage("data/MOD_0015.RAW", true);
 	std::this_thread::sleep_for(std::chrono::milliseconds(500));
-	ctrl->calibrate();
+	// ctrl->calibrate();
 	ctrl->refocus();
 	ctrl->upsample();
 	ctrl->depth();

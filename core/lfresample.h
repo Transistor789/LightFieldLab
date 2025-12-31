@@ -6,9 +6,9 @@
 class LFResample {
 public:
 	explicit LFResample();
-	LfPtr run(const cv::Mat &);
+	std::shared_ptr<LFData> run(const cv::Mat &);
 
-	LfPtr lf;
+	std::shared_ptr<LFData> lf;
 };
 
 #endif
