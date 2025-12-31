@@ -1,7 +1,8 @@
 ﻿#ifndef CONFIG_H
 #define CONFIG_H
 
-#include <json.hpp>
+#include "json.hpp"
+
 #include <string>
 
 // 使用 nlohmann::json 作为核心类型

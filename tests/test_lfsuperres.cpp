@@ -1,4 +1,5 @@
 #include "lfio.h"
+#include "lfparams.h"
 #include "lfsr.h"
 #include "utils.h"
 
@@ -18,16 +19,16 @@ int main() {
 
 	LFSuperRes sr;
 	sr.setScale(2);
-	sr.setType(SRType::CUBIC);
+	sr.setType(LFParamsSR::Type::CUBIC);
 
 	auto res_cubic = sr.upsample(center);
 	cv::imshow("res_cubic", res_cubic);
 
-	sr.setType(SRType::ESPCN);
+	sr.setType(LFParamsSR::Type::ESPCN);
 	auto res_espcn = sr.upsample(center);
 	cv::imshow("res_espcn", res_espcn);
 
-	sr.setType(SRType::DISTGSSR);
+	sr.setType(LFParamsSR::Type::DISTGSSR);
 	sr.setPatchSize(196);
 	sr.setScale(2);
 	auto res_distgssrx2 = sr.upsample(lf->data);

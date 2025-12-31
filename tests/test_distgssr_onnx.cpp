@@ -1,23 +1,57 @@
-﻿#include "utils.h"
-
-#include <algorithm>
+﻿#include <algorithm>
+#include <chrono> // 用于计时
 #include <cmath>
 #include <iostream>
-#include <onnxruntime_cxx_api.h>
-#include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
 
+// OpenCV
+#include <opencv2/opencv.hpp>
+
+// ONNX Runtime
+#include <onnxruntime_cxx_api.h>
+
 // ==========================================
-// 1. 配置参数
+// 0. 辅助工具类 (替代 utils.h)
 // ==========================================
+class Timer {
+public:
+	Timer() : start_time_(std::chrono::high_resolution_clock::now()) {}
+
+	void reset() { start_time_ = std::chrono::high_resolution_clock::now(); }
+
+	void stop() { end_time_ = std::chrono::high_resolution_clock::now(); }
+
+	void print_elapsed_ms() const {
+		auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+			end_time_ - start_time_);
+		std::cout << duration.count() << " ms" << std::endl;
+	}
+
+private:
+	std::chrono::time_point<std::chrono::high_resolution_clock> start_time_;
+	std::chrono::time_point<std::chrono::high_resolution_clock> end_time_;
+};
+
+// ==========================================
+// 1. 配置参数 & 跨平台路径处理
+// ==========================================
+
+// 【修复点】：根据操作系统定义模型路径类型
+#ifdef _WIN32
+// Windows: 使用宽字符
 const std::wstring MODEL_PATH = L"../data/DistgSSR_2x_5x5.onnx";
+using ORTCHAR_T = wchar_t;
+#else
+// Linux: 使用标准字符
+const std::string MODEL_PATH = "../data/DistgSSR_2x_5x5.onnx";
+// using ORTCHAR_T = char;
+#endif
 
 // 数据路径
-// const std::string SRC_IMG_DIR = "../data/bedroom/";
-// const std::string SRC_IMG_PREFIX = "input_Cam";
 const std::string SRC_IMG_DIR = "../data/INRIA_Lytro_Hublais__Decoded/";
 const std::string SRC_IMG_PREFIX = "view";
+
 // 维度参数
 const int SOURCE_GRID_SIZE = 9; // 原始数据 9x9
 const int MODEL_ANG_RES = 5;	// 模型需要 5x5
@@ -28,21 +62,20 @@ const int PATCH_SIZE = 196;
 const int PADDING = 8;
 
 // ==========================================
-// 【新功能】推理后端选择开关
+// 推理后端选择开关
 // ==========================================
 // true  = 使用 TensorRT (第一次启动慢，后续极快，需 fp16 支持)
 // false = 使用 CUDA (启动快，速度稳定)
-const bool USE_TENSORRT = false;
+const bool USE_TENSORRT =
+	false; // 如果你在 Linux 且没配好 TRT 环境变量，建议先设为 false 测试 CUDA
 
 // ==========================================
-// 2. 推理引擎类 (保持不变)
+// 2. 推理引擎类
 // ==========================================
 class DistgSSRInferencer {
 public:
 	DistgSSRInferencer(Ort::Session &session) : session_(session) {}
 
-	// ... (Infer 函数保持完全不变，省略以节省篇幅，逻辑与你提供的一致) ...
-	// ... 请直接使用你原来代码中的 Infer 函数逻辑 ...
 	cv::Mat Infer(const std::vector<cv::Mat> &yViews) {
 		// 校验输入
 		if (yViews.size() != MODEL_ANG_RES * MODEL_ANG_RES) {
@@ -184,10 +217,10 @@ int main() {
 			OrtTensorRTProviderOptions trt_options{};
 			trt_options.device_id = 0;
 
-			// FP16 加速 (RTX 显卡建议开启)
+			// FP16 加速
 			trt_options.trt_fp16_enable = 1;
 
-			// Engine 缓存 (避免每次启动都慢)
+			// Engine 缓存
 			trt_options.trt_engine_cache_enable = 1;
 			trt_options.trt_engine_cache_path = "./trt_cache";
 
@@ -196,7 +229,7 @@ int main() {
 
 			sessionOptions.AppendExecutionProvider_TensorRT(trt_options);
 
-			// 添加 CUDA 作为回退 (防止 TRT 不支持某些算子)
+			// 添加 CUDA 作为回退
 			OrtCUDAProviderOptions cuda_options;
 			cuda_options.device_id = 0;
 			sessionOptions.AppendExecutionProvider_CUDA(cuda_options);
@@ -210,9 +243,6 @@ int main() {
 
 			OrtCUDAProviderOptions cuda_options;
 			cuda_options.device_id = 0;
-			// 可选：限制 CUDA 显存策略
-			// cuda_options.arena_extend_strategy = 1;
-
 			sessionOptions.AppendExecutionProvider_CUDA(cuda_options);
 			printf("[Info] CUDA enabled.\n");
 		}
@@ -229,12 +259,14 @@ int main() {
 			"may take a few minutes.\n");
 	}
 
-	// 创建 Session
+	// 【修复点】：使用 .c_str()，它会根据 MODEL_PATH 的类型返回 char* (Linux)
+	// 或 wchar_t* (Windows)
+	//  Ort::Session 构造函数会自动重载匹配正确的类型
 	Ort::Session session(env, MODEL_PATH.c_str(), sessionOptions);
 	printf("Session created successfully.\n");
 
 	// ------------------------------------------
-	// B. 读取离散的 25 张图像 (保持不变)
+	// B. 读取离散的 25 张图像
 	// ------------------------------------------
 	std::vector<cv::Mat> y_views;
 	cv::Mat centerCb, centerCr;
@@ -247,13 +279,12 @@ int main() {
 		for (int v = 0; v < MODEL_ANG_RES; ++v) {
 			int src_u = start_idx + u;
 			int src_v = start_idx + v;
-			int file_idx = src_u * SOURCE_GRID_SIZE + src_v;
 
-			char filename[128];
+			// 构造文件名
+			char filename[256];
+			// 注意：这里请确保你的文件名格式与实际图片一致
 			sprintf(filename, "%s%s_%02d_%02d.png", SRC_IMG_DIR.c_str(),
 					SRC_IMG_PREFIX.c_str(), u + 1, v + 1);
-			// sprintf(filename, "%s%s%03d.png", SRC_IMG_DIR.c_str(),
-			// 		SRC_IMG_PREFIX.c_str(), file_idx);
 
 			cv::Mat img = cv::imread(filename);
 			if (img.empty()) {
@@ -308,7 +339,7 @@ int main() {
 	cv::merge(outChans, srYCrCb);
 	cv::cvtColor(srYCrCb, srBGR, cv::COLOR_YCrCb2BGR);
 
-	// 根据模式修改文件名，防止混淆
+	// 根据模式修改文件名
 	std::string suffix = USE_TENSORRT ? "_TRT" : "_CUDA";
 	std::string savePath = "result_DistgSSR" + suffix + ".png";
 

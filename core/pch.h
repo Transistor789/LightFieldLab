@@ -29,9 +29,12 @@
 #include <QVariant>
 #include <QWidget>
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <chrono>
+#include <condition_variable>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <future> // std::async, std::future
 #include <iostream>
@@ -40,6 +43,8 @@
 #include <opencv2/dnn_superres.hpp>
 #include <opencv2/opencv.hpp>
 #include <ostream>
+#include <queue>
 #include <ratio>
 #include <string>
+#include <thread>
 #include <vector>

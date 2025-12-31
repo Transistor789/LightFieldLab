@@ -2,6 +2,7 @@
 
 #include <algorithm> // 用于 std::max
 #include <omp.h>
+#include <thread>
 
 void LFRefocus::init(const LfPtr &ptr) {
 	if (ptr->data[0].size() == _size && ptr->data[0].type() == _type) {

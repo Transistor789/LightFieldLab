@@ -1,11 +1,11 @@
 ﻿#ifndef LFISP_H
 #define LFISP_H
 
+#include "json.hpp"
 #include "lfparams.h"
 #include "utils.h"
 
 #include <immintrin.h>
-#include <json.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/types.hpp>
@@ -125,7 +125,7 @@ private:
 
 // #include <algorithm>
 // #include <immintrin.h>
-// #include <json.hpp>
+// #include "json.hpp"
 // #include <limits> // 必须包含，用于 numeric_limits
 // #include <opencv2/core.hpp>
 // #include <opencv2/core/hal/interface.h>

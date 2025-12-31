@@ -20,6 +20,7 @@
 #include <format>
 #include <qimage.h>
 #include <qtmetamacros.h>
+#include <queue>
 
 enum class ImageType;
 

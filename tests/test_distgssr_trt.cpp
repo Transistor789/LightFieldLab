@@ -34,11 +34,7 @@ void test() {
 	std::cout << "Builder          : Created successfully." << std::endl;
 
 	// --- 4. 创建 Network (显式 Batch) ---
-	const auto explicitBatch =
-		1U << static_cast<uint32_t>(
-			NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
-	auto network = std::unique_ptr<INetworkDefinition>(
-		builder->createNetworkV2(explicitBatch));
+	auto network = builder->createNetworkV2(0);
 	if (!network) {
 		std::cerr << "[Error] Failed to create Network!" << std::endl;
 		return;

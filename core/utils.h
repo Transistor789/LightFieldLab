@@ -1,10 +1,10 @@
 ﻿#ifndef UTILS_H
 #define UTILS_H
 
+#include "json.hpp"
 #include "lfparams.h"
 
 #include <chrono>
-#include <json.hpp>
 #include <opencv2/opencv.hpp>
 #include <string>
 

@@ -61,15 +61,15 @@ MainWindow::MainWindow(QWidget *parent)
 			&WidgetImage::updateImage);
 
 // 启动业务
-#ifdef _DEBUG
+#ifdef NDEBUG
+	ctrl->readExtractLUT("data/calibration/lut_extract_9.bin");
+	ctrl->readDehexLUT("data/calibration/lut_dehex.bin");
 	ctrl->readSAI("data/bedroom");
 	ctrl->readImage("data/toy.lfr", false);
 	std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	ctrl->readImage("data/MOD_0015.RAW", true);
 	std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	ctrl->calibrate();
-	ctrl->readExtractLUT("data/calibration/lut_extract_9.bin");
-	ctrl->readDehexLUT("data/calibration/lut_dehex.bin");
 	ctrl->refocus();
 	ctrl->upsample();
 	ctrl->depth();

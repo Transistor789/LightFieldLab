@@ -1,6 +1,9 @@
 ﻿#ifndef LFPARAMS_H
 #define LFPARAMS_H
 
+#include <string>
+#include <vector>
+
 enum class BayerPattern { NONE, RGGB, GRBG, GBRG, BGGR };
 
 struct LFParamsSource {
