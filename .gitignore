@@ -18,3 +18,4 @@ data/toy
 data/calibration
 git_diff_export.sh
 git_diff_output
+cloc-2.06.exe
