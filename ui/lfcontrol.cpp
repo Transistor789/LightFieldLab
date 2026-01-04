@@ -18,10 +18,6 @@
 #include <thread>
 
 LFControl::LFControl(QObject *parent) : QObject(parent) {
-	exit = false;
-	isCapturing = false;
-	isProcessing = false;
-
 	cal = std::make_unique<LFCalibrate>();
 	ref = std::make_unique<LFRefocus>();
 	sr = std::make_unique<LFSuperRes>();
@@ -46,23 +42,21 @@ LFControl::~LFControl() {
 }
 
 void LFControl::stopAll() {
-	isCapturing = false;
-	isProcessing = false;
-
-	// 设置退出标志
-	exit = true;
+	params.dynamic.isCapturing = false;
+	params.dynamic.isProcessing = false;
+	params.dynamic.exit = true;
 
 	m_queueCv.notify_all();
 }
 
 void LFControl::setCapturing(bool active) {
-	bool wasCapturing = isCapturing.load();
+	bool wasCapturing = params.dynamic.isCapturing.load();
 
 	// 状态未改变则直接返回
 	if (wasCapturing == active)
 		return;
 
-	isCapturing.store(active);
+	params.dynamic.isCapturing.store(active);
 
 	if (active) {
 		LOG_INFO("Capture Started");
@@ -73,21 +67,21 @@ void LFControl::setCapturing(bool active) {
 }
 
 void LFControl::setProcessing(bool active) {
-	bool wasProcessing = isProcessing.load();
+	bool wasProcessing = params.dynamic.isProcessing.load();
 
 	// 状态未改变则直接返回
 	if (wasProcessing == active)
 		return;
 
-	isProcessing.store(active);
+	params.dynamic.isProcessing.store(active);
 
 	if (active) {
 		LOG_INFO("Processing Resumed");
 		// 【关键点】！！！
 		// 消费者线程可能正卡在 cv.wait() 等待。
-		// 如果不 notify，即使 isProcessing 变成了
+		// 如果不 notify，即使 params.dynamic.isProcessing 变成了
 		// true，线程也不会醒来检查条件， 只能等到下一帧数据入队时才会被唤醒。
-		// 强制唤醒它，让它立即检查 (data_queue && isProcessing)
+		// 强制唤醒它，让它立即检查 (data_queue && params.dynamic.isProcessing)
 		m_queueCv.notify_all();
 	} else {
 		LOG_INFO("Processing Paused");
@@ -98,8 +92,8 @@ void LFControl::captureTask() {
 	if (!cap)
 		return;
 
-	while (!exit.load()) {
-		if (!isCapturing.load()) {
+	while (!params.dynamic.exit.load()) {
+		if (!params.dynamic.isCapturing.load()) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			continue;
 		}
@@ -126,24 +120,25 @@ void LFControl::captureTask() {
 }
 
 void LFControl::processTask() {
-	while (!exit) {
+	while (!params.dynamic.exit) {
 		cv::Mat img;
 		{
 			std::unique_lock<std::mutex> lock(m_queueMtx);
 
 			m_queueCv.wait(lock, [this] {
-				return exit.load()
-					   || (!data_queue.empty() && isProcessing.load());
+				return params.dynamic.exit.load()
+					   || (!data_queue.empty()
+						   && params.dynamic.isProcessing.load());
 			});
 
 			LOG_INFO("Processing");
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-			if (exit) {
+			if (params.dynamic.exit) {
 				return;
 			}
 
-			if (data_queue.empty() || !isProcessing)
+			if (data_queue.empty() || !params.dynamic.isProcessing)
 				continue;
 
 			img = std::move(data_queue.front());

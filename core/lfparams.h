@@ -30,16 +30,10 @@ struct LFParamsCalibrate {
 struct LFParamsISP {
 	enum class DPCType { Dirctional, COUNT };
 	enum class DemosaicType { Bilinear, Gray, VGN, EA };
+	enum class ColorEqType { Reinhard };
 
-	int width, height, bitDepth;
 	BayerPattern bayer = BayerPattern::GRBG;
-
-	int white_level = 1023, black_level = 64;
-	std::vector<float> awb_gains = {1.0f, 1.0f, 1.0f, 1.0f};
-	std::vector<float> ccm_matrix = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-									 0.0f, 0.0f, 0.0f, 1.0f};
-	float gamma = 2.2f;
-
+	int width, height, bitDepth;
 	bool enableDPC = true;
 	bool enableBLC = true;
 	bool enableLSC = true;
@@ -53,14 +47,21 @@ struct LFParamsISP {
 
 	DPCType dpcType = DPCType::Dirctional;
 	int dpcThreshold = 100;
+	int white_level = 1023, black_level = 64;
 	float lscExp = 1.0;
+	std::vector<float> awb_gains = {1.0f, 1.0f, 1.0f, 1.0f};
 	DemosaicType demosaicType = DemosaicType::Bilinear;
+	std::vector<float> ccm_matrix = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+									 0.0f, 0.0f, 0.0f, 1.0f};
+	float gamma = 2.2f;
+	ColorEqType colorEqType = ColorEqType::Reinhard;
 };
 
 struct LFParamsDynamic {
 	std::vector<int> cameraID;
-	std::atomic_bool isCapturing = false;
-	std::atomic_bool isProcessing = false;
+	std::atomic<bool> exit = false;
+	std::atomic<bool> isCapturing = false;
+	std::atomic<bool> isProcessing = false;
 };
 
 struct LFParamsRefocus {

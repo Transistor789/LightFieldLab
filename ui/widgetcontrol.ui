@@ -9,8 +9,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>525</width>
-    <height>1116</height>
+    <width>596</width>
+    <height>1257</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -765,6 +765,11 @@
                <verstretch>0</verstretch>
               </sizepolicy>
              </property>
+             <property name="font">
+              <font>
+               <bold>true</bold>
+              </font>
+             </property>
              <property name="text">
               <string>去马赛克</string>
              </property>
@@ -792,7 +797,7 @@
               </widget>
              </item>
              <item>
-              <widget class="QComboBox" name="comboBox_ColorEq">
+              <widget class="QComboBox" name="comboBoxColorEq">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
                  <horstretch>0</horstretch>
@@ -957,9 +962,9 @@
             </widget>
            </item>
            <item row="6" column="1">
-            <layout class="QHBoxLayout" name="horizontalLayout_8">
+            <layout class="QHBoxLayout" name="horizontalLayoutGamma">
              <item>
-              <widget class="QLabel" name="label_8">
+              <widget class="QLabel" name="labelGamma">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
                  <horstretch>0</horstretch>
@@ -1038,6 +1043,11 @@
                <verstretch>0</verstretch>
               </sizepolicy>
              </property>
+             <property name="font">
+              <font>
+               <bold>true</bold>
+              </font>
+             </property>
              <property name="text">
               <string>子孔径提取</string>
              </property>
@@ -1081,7 +1091,7 @@
               </widget>
              </item>
              <item>
-              <widget class="QComboBox" name="comboBox">
+              <widget class="QComboBox" name="comboBoxDemosaicAlgo">
                <property name="sizePolicy">
                 <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
                  <horstretch>0</horstretch>

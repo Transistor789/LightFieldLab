@@ -37,8 +37,8 @@ public:
 public slots:
 	void setCapturing(bool active);
 	void setProcessing(bool active);
-	bool getIsCapturing() const { return isCapturing.load(); }
-	bool getIsProcessing() const { return isProcessing.load(); }
+	bool getIsCapturing() const { return params.dynamic.isCapturing.load(); }
+	bool getIsProcessing() const { return params.dynamic.isProcessing.load(); }
 
 	void readSAI(const QString &path);
 	void readImage(const QString &path, bool isWhite);
@@ -108,11 +108,6 @@ private:
 	// --- 线程与同步 ---
 	std::thread cap_thread;
 	std::thread isp_thread;
-
-	// 控制标志
-	std::atomic<bool> exit;
-	std::atomic<bool> isCapturing;
-	std::atomic<bool> isProcessing;
 
 	// 生产者-消费者队列
 	std::queue<cv::Mat> data_queue;

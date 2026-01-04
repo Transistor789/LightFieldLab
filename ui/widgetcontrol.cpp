@@ -1,7 +1,6 @@
 #include "widgetcontrol.h"
 
 #include "dialogccm.h"
-#include "dialogwbgains.h"
 #include "lfparams.h"
 #include "ui_widgetcontrol.h"
 
@@ -134,10 +133,27 @@ WidgetControl::WidgetControl(QWidget *parent)
 		if (params_)
 			params_->isp.enableAWB = val;
 	});
+
 	connect(ui->checkBoxDemosaic, &QCheckBox::toggled, this, [this](bool val) {
 		if (params_)
 			params_->isp.enableDemosaic = val;
+
+		// 1. 控制直接隶属于 Demosaic 的子项
+		ui->checkBoxCCM->setEnabled(val);
+		ui->btnSetCCM->setEnabled(val);
+		ui->checkBoxGamma->setEnabled(val);
+		ui->doubleSpinBoxGamma->setEnabled(val);
+
+		// 2. 控制中间层 Extract 的可用性
+		ui->checkBoxExtract->setEnabled(val);
+
+		bool subEnable = val && ui->checkBoxExtract->isChecked();
+
+		ui->checkBoxDehex->setEnabled(subEnable);
+		ui->checkBoxColorEq->setEnabled(subEnable);
+		ui->comboBoxColorEq->setEnabled(subEnable);
 	});
+
 	connect(ui->checkBoxCCM, &QCheckBox::toggled, this, [this](bool val) {
 		if (params_)
 			params_->isp.enableCCM = val;
@@ -146,9 +162,14 @@ WidgetControl::WidgetControl(QWidget *parent)
 		if (params_)
 			params_->isp.enableGamma = val;
 	});
+
 	connect(ui->checkBoxExtract, &QCheckBox::toggled, this, [this](bool val) {
 		if (params_)
 			params_->isp.enableExtract = val;
+
+		ui->checkBoxDehex->setEnabled(val);
+		ui->checkBoxColorEq->setEnabled(val);
+		ui->comboBoxColorEq->setEnabled(val);
 	});
 	connect(ui->checkBoxDehex, &QCheckBox::toggled, this, [this](bool val) {
 		if (params_)
@@ -159,6 +180,24 @@ WidgetControl::WidgetControl(QWidget *parent)
 			params_->isp.enableColorEq = val;
 	});
 
+	connect(ui->comboBoxDPCAlgo, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				params_->isp.dpcType = static_cast<LFParamsISP::DPCType>(index);
+			});
+	connect(ui->spinBoxThreshold, &QSpinBox::valueChanged, this,
+			[this](int value) {
+				params_->isp.dpcThreshold = static_cast<int>(value);
+			});
+	connect(ui->spinBoxBL, &QSpinBox::valueChanged, this, [this](int value) {
+		params_->isp.black_level = static_cast<int>(value);
+	});
+	connect(ui->spinBoxWL, &QSpinBox::valueChanged, this, [this](int value) {
+		params_->isp.white_level = static_cast<int>(value);
+	});
+	connect(ui->doubleSpinBoxExpo, &QDoubleSpinBox::valueChanged, this,
+			[this](double value) {
+				params_->isp.lscExp = static_cast<float>(value);
+			});
 	connect(ui->doubleSpinBoxGain0, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) {
 				params_->isp.awb_gains[0] = static_cast<float>(value);
@@ -175,6 +214,11 @@ WidgetControl::WidgetControl(QWidget *parent)
 			[this](double value) {
 				params_->isp.awb_gains[3] = static_cast<float>(value);
 			});
+	connect(ui->comboBoxDemosaicAlgo, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				params_->isp.demosaicType =
+					static_cast<LFParamsISP::DemosaicType>(index);
+			});
 	connect(ui->btnSetCCM, &QPushButton::clicked, this, [this] {
 		if (!params_)
 			return;
@@ -183,6 +227,15 @@ WidgetControl::WidgetControl(QWidget *parent)
 			updateUI();
 		}
 	});
+	connect(ui->doubleSpinBoxGamma, &QDoubleSpinBox::valueChanged, this,
+			[this](double value) {
+				params_->isp.gamma = static_cast<float>(value);
+			});
+	connect(ui->comboBoxColorEq, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				params_->isp.colorEqType =
+					static_cast<LFParamsISP::ColorEqType>(index);
+			});
 	connect(ui->btnFastPreview, &QPushButton::clicked, this,
 			&WidgetControl::requestFastPreview);
 	connect(ui->btnISP, &QPushButton::clicked, this,
@@ -350,10 +403,18 @@ void WidgetControl::updateUI() {
 	setValSilent(ui->checkBoxExtract, params_->isp.enableExtract);
 	setValSilent(ui->checkBoxDehex, params_->isp.enableDehex);
 	setValSilent(ui->checkBoxColorEq, params_->isp.enableColorEq);
+	setValSilent(ui->comboBoxDPCAlgo, params_->isp.dpcType);
+	setValSilent(ui->spinBoxThreshold, params_->isp.dpcThreshold);
+	setValSilent(ui->spinBoxBL, params_->isp.black_level);
+	setValSilent(ui->spinBoxWL, params_->isp.white_level);
+	setValSilent(ui->doubleSpinBoxExpo, params_->isp.lscExp);
 	setValSilent(ui->doubleSpinBoxGain0, params_->isp.awb_gains[0]);
 	setValSilent(ui->doubleSpinBoxGain1, params_->isp.awb_gains[1]);
 	setValSilent(ui->doubleSpinBoxGain2, params_->isp.awb_gains[2]);
 	setValSilent(ui->doubleSpinBoxGain3, params_->isp.awb_gains[3]);
+	setValSilent(ui->comboBoxDemosaicAlgo, params_->isp.demosaicType);
+	setValSilent(ui->doubleSpinBoxGamma, params_->isp.gamma);
+	setValSilent(ui->comboBoxColorEq, params_->isp.colorEqType);
 
 	// Dynamic
 	ui->spinBoxCamera->setEnabled(!params_->dynamic.cameraID.empty());
