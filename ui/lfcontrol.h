@@ -10,6 +10,7 @@
 #include "lfrefocus.h"
 #include "lfsr.h"
 #include "logger.h"
+#include "utils.h"
 
 #include <QImage>
 #include <QMetaType>
@@ -53,6 +54,7 @@ public slots:
 	void updateSAI(int row, int col);
 	void play();
 	void refocus();
+	void processAllInFocus();
 	void upsample();
 	void depth();
 
@@ -66,18 +68,29 @@ private:
 
 	template <typename Func>
 	void runAsync(Func &&task, const QString &taskName) {
-		// 使用 QRunnable::create 包装任务
 		QThreadPool::globalInstance()->start(
 			QRunnable::create([this, task, taskName]() mutable {
+				// 1. 创建计时器 (构造时自动 start)
+				Timer timer;
+
 				try {
-					// 执行具体业务逻辑
+					// 2. 执行任务
 					task();
 
-					// 统一打成功日志 (可选，防止日志泛滥)
-					LOG_INFO(
-						std::format("{} finished.", taskName.toStdString()));
+					// 3. 任务结束，停止计时
+					timer.stop();
+					double costMs = timer.elapsed_ms();
+
+					// 4. 打印日志 (包含耗时)
+					// {:.2f} 保留两位小数，看起来更整洁
+					LOG_INFO(std::format("{} finished. (Time: {:.2f} ms)",
+										 taskName.toStdString(), costMs));
+
+					// 5. (进阶) 如果你在 UI
+					// 上做了状态栏显示，可以在这里发射信号 emit
+					// taskFinished(taskName, costMs);
+
 				} catch (const std::exception &e) {
-					// 统一异常处理
 					LOG_ERROR(std::format("{} failed: {}",
 										  taskName.toStdString(), e.what()));
 
@@ -107,7 +120,7 @@ private:
 
 	// --- 线程与同步 ---
 	std::thread cap_thread;
-	std::thread isp_thread;
+	std::thread proc_thread;
 
 	// 生产者-消费者队列
 	std::queue<cv::Mat> data_queue;

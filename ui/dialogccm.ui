@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>346</width>
-    <height>183</height>
+    <width>334</width>
+    <height>171</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -18,8 +18,8 @@
   </property>
   <property name="minimumSize">
    <size>
-    <width>346</width>
-    <height>183</height>
+    <width>0</width>
+    <height>0</height>
    </size>
   </property>
   <property name="maximumSize">
@@ -32,6 +32,21 @@
    <string>Dialog</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="sizeConstraint">
+    <enum>QLayout::SizeConstraint::SetFixedSize</enum>
+   </property>
+   <property name="leftMargin">
+    <number>5</number>
+   </property>
+   <property name="topMargin">
+    <number>5</number>
+   </property>
+   <property name="rightMargin">
+    <number>5</number>
+   </property>
+   <property name="bottomMargin">
+    <number>5</number>
+   </property>
    <item>
     <layout class="QGridLayout" name="gridLayout">
      <property name="sizeConstraint">

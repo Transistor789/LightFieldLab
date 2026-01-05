@@ -21,6 +21,11 @@ public:
 
 	void updateImage(ImageType type, const QImage &img);
 
+signals:
+	void imageMouseMoved(int x, int y, QColor color, double scale, int w,
+						 int h);
+	void imageZoomChanged(double scale);
+
 private:
 	Ui::WidgetImage *ui;
 

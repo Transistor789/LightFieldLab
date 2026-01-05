@@ -2,6 +2,7 @@
 #define LFDEPTH_
 
 #include "distgdisp.h"
+#include "lfparams.h"
 
 #include <opencv2/opencv.hpp>
 #include <string>
@@ -18,6 +19,7 @@ public:
 	cv::Mat getJetVisual() const;
 	cv::Mat getPlasmaVisual() const;
 
+	void setType(LFParamsDE::Type value) { type = value; }
 	void setAngRes(int angRes) { m_targetAngRes = angRes; }
 	void setPatchSize(int patchSize) { m_targetPatchSize = patchSize; }
 
@@ -27,13 +29,15 @@ private:
 
 private:
 	DistgDisp distg_;
+	LFParamsDE::Type type = LFParamsDE::Type::DistgSSR;
+	LFParamsDE::Type m_loadedType = LFParamsDE::Type::DistgSSR;
 	cv::Mat m_rawMap;
 
 	// --- 参数状态管理 ---
 	int m_targetAngRes = 9;		 // 用户设定的目标角度分辨率
 	int m_targetPatchSize = 196; // 用户设定的目标 Patch 大小
 
-	int m_loadedAngRes = -1; // 当前已加载模型的参数 (-1 表示未加载)
+	int m_loadedAngRes = -1;	// 当前已加载模型的参数 (-1 表示未加载)
 	int m_loadedPatchSize = -1; // 当前已加载模型的参数
 };
 

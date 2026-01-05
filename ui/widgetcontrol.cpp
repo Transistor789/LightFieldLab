@@ -89,15 +89,23 @@ WidgetControl::WidgetControl(QWidget *parent)
 	// =========================================================================
 	// 3. 标定与预处理 (Calibration)
 	// =========================================================================
-	connect(ui->comboBoxCCA, &QComboBox::currentIndexChanged, this,
+	connect(ui->checkBoxDiameter, &QCheckBox::toggled, this,
+			[this](bool active) {
+				ui->spinBoxDiameter->setEnabled(active);
+				if (!active) {
+					params_->calibrate.diameter = 0;
+				}
+			});
+	connect(ui->spinBoxDiameter, &QSpinBox::valueChanged, this,
+			[this](int value) {
+				if (params_)
+					params_->calibrate.diameter = value;
+			});
+	connect(ui->comboBoxDetectAlgo, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
 				if (params_)
 					params_->calibrate.useCCA = index;
 			});
-	connect(ui->checkBoxGridFit, &QCheckBox::toggled, this, [this](bool value) {
-		if (params_)
-			params_->calibrate.gridFit = value;
-	});
 	connect(ui->checkBoxSaveLUT, &QCheckBox::toggled, this, [this](bool value) {
 		if (params_)
 			params_->calibrate.saveLUT = value;
@@ -247,26 +255,32 @@ WidgetControl::WidgetControl(QWidget *parent)
 	connect(
 		ui->pushButtonCapture, &QPushButton::toggled, this,
 		[this](bool active) {
-			params_->dynamic.isCapturing = active;
 			ui->pushButtonCapture->setText(active ? "停止采集" : "开始采集");
 			emit requestCapture(active);
 			if (!active) {
-				params_->dynamic.isProcessing = false;
-				ui->pushButtonProcess->setText("开始处理");
-				ui->pushButtonProcess->setChecked(false);
-				emit requestProcess(false);
+				if (ui->pushButtonProcess->isChecked()) {
+					ui->pushButtonProcess->setChecked(false);
+				} else {
+					ui->pushButtonProcess->setText("开始处理");
+				}
 			}
 		});
-	connect(
-		ui->pushButtonProcess, &QPushButton::toggled, this,
-		[this](bool active) {
-			params_->dynamic.isProcessing =
-				active & params_->dynamic.isCapturing;
-			ui->pushButtonProcess->setText(
-				params_->dynamic.isProcessing ? "停止处理" : "开始处理");
-			ui->pushButtonProcess->setChecked(params_->dynamic.isProcessing);
-			emit requestProcess(params_->dynamic.isProcessing);
-		});
+	connect(ui->pushButtonProcess, &QPushButton::toggled, this,
+			[this](bool active) {
+				bool canProcess = active;
+				if (active && !ui->pushButtonCapture->isChecked()) {
+					canProcess = false;
+					{
+						QSignalBlocker blocker(
+							ui->pushButtonProcess); // 防止递归触发信号
+						ui->pushButtonProcess->setChecked(false);
+					}
+				}
+				ui->pushButtonProcess->setText(canProcess ? "停止处理"
+														  : "开始处理");
+
+				emit requestProcess(canProcess);
+			});
 
 	// =========================================================================
 	// 5. 子孔径与播放 (SAI)
@@ -311,10 +325,10 @@ WidgetControl::WidgetControl(QWidget *parent)
 				if (params_)
 					params_->refocus.crop = value;
 			});
-	connect(ui->doubleSpinBoxRefocusAlpha, &QDoubleSpinBox::valueChanged, this,
+	connect(ui->doubleSpinBoxRefocusShift, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) {
 				if (params_)
-					params_->refocus.alpha = value;
+					params_->refocus.shift = static_cast<float>(value);
 			});
 	connect(ui->btnRefocus, &QPushButton::clicked, this,
 			&WidgetControl::requestRefocus);
@@ -330,16 +344,6 @@ WidgetControl::WidgetControl(QWidget *parent)
 				if (params_)
 					params_->sr.scale = index + 2;
 			});
-	connect(ui->comboBoxSRPatchSize, &QComboBox::currentIndexChanged, this,
-			[this](int index) {
-				if (params_)
-					params_->sr.patchSize = index == 0 ? 128 : 196;
-			});
-	connect(ui->comboBoxSRViews, &QComboBox::currentIndexChanged, this,
-			[this](int index) {
-				if (params_)
-					params_->sr.views = 5 + 2 * index;
-			});
 	connect(ui->btnSR, &QPushButton::clicked, this, &WidgetControl::requestSR);
 
 	// DE
@@ -352,16 +356,6 @@ WidgetControl::WidgetControl(QWidget *parent)
 			[this](int index) {
 				if (params_)
 					params_->de.color = static_cast<LFParamsDE::Color>(index);
-			});
-	connect(ui->comboBoxDepthPatchSize, &QComboBox::currentIndexChanged, this,
-			[this](int index) {
-				if (params_)
-					params_->de.patchSize = index == 0 ? 128 : 196;
-			});
-	connect(ui->comboBoxDepthViews, &QComboBox::currentIndexChanged, this,
-			[this](int index) {
-				if (params_)
-					params_->de.views = params_->sr.views = 5 + 2 * index;
 			});
 	connect(ui->btnDE, &QPushButton::clicked, this, &WidgetControl::requestDE);
 }
@@ -381,13 +375,14 @@ void WidgetControl::updateUI() {
 		return;
 
 	// Info
+	setValSilent(ui->lineEditLFP, params_->path.lfp);
 	setValSilent(ui->comboBoxBayer, params_->isp.bayer);
 	setValSilent(ui->comboBoxBit, (params_->isp.bitDepth - 8) / 2);
 	setValSilent(ui->labelResValue,
 				 std::format("{}x{}", params_->isp.width, params_->isp.height));
 
-	// File Paths
-	setValSilent(ui->lineEditLFP, params_->path.lfp);
+	// Calibrate
+	setValSilent(ui->spinBoxDiameter, params_->calibrate.diameter);
 	setValSilent(ui->lineEditWhite, params_->path.white);
 	setValSilent(ui->lineEditExtract, params_->path.extractLUT);
 	setValSilent(ui->lineEditDehex, params_->path.dehexLUT);
@@ -435,20 +430,14 @@ void WidgetControl::updateUI() {
 
 	// Refocus
 	setValSilent(ui->spinBoxRefocusCrop, params_->refocus.crop);
-	setValSilent(ui->doubleSpinBoxRefocusAlpha, params_->refocus.alpha);
+	setValSilent(ui->doubleSpinBoxRefocusShift, params_->refocus.shift);
 
 	// SR
 	setValSilent(ui->comboBoxSRAlgo, params_->sr.type);
 	setValSilent(ui->comboBoxSRScale, params_->sr.scale - 2);
-	setValSilent(ui->comboBoxSRPatchSize,
-				 (params_->sr.patchSize == 128) ? 0 : 1);
-	setValSilent(ui->comboBoxSRViews, (params_->sr.views - 5) / 2);
 
 	// DE
 	setValSilent(ui->comboBoxDepthAlgo, params_->de.type);
 	setValSilent(ui->comboBoxDepthPatchColor,
 				 static_cast<int>(params_->de.color));
-	setValSilent(ui->comboBoxDepthPatchSize,
-				 (params_->de.patchSize == 128) ? 0 : 1);
-	setValSilent(ui->comboBoxDepthViews, (params_->de.views - 5) / 2);
 }

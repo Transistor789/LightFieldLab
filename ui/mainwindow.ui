@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>797</width>
-    <height>838</height>
+    <height>820</height>
    </rect>
   </property>
   <property name="minimumSize">
@@ -20,7 +20,7 @@
    <string>LightFieldLab</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QHBoxLayout" name="horizontalLayout">
+   <layout class="QVBoxLayout" name="verticalLayout_2">
     <item>
      <widget class="QWidget" name="widgetMain" native="true">
       <layout class="QHBoxLayout" name="horizontalLayout_2" stretch="1,0">
@@ -75,7 +75,14 @@
     </item>
    </layout>
   </widget>
-  <widget class="QStatusBar" name="statusbar"/>
+  <widget class="QStatusBar" name="statusbar">
+   <property name="sizePolicy">
+    <sizepolicy hsizetype="Maximum" vsizetype="Maximum">
+     <horstretch>0</horstretch>
+     <verstretch>0</verstretch>
+    </sizepolicy>
+   </property>
+  </widget>
  </widget>
  <customwidgets>
   <customwidget>

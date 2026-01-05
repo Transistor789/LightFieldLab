@@ -22,7 +22,7 @@ WidgetLogger::WidgetLogger(QWidget *parent)
 		ui->textEdit->setVisible(!value);
 		ui->btnHide->setText(value ? "显示日志" : "隐藏日志");
 	});
-	ui->btnHide->click();
+	// ui->btnHide->click();
 }
 
 WidgetLogger::~WidgetLogger() { delete ui; }

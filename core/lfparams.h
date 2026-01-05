@@ -20,10 +20,10 @@ struct LFParamsSAI {
 };
 
 struct LFParamsCalibrate {
+	int diameter = 0;
 	bool useCCA = false;
 	bool autoEstimate = false;
 	bool saveLUT = false;
-	bool gridFit = false;
 	int views = 9;
 };
 
@@ -62,11 +62,14 @@ struct LFParamsDynamic {
 	std::atomic<bool> exit = false;
 	std::atomic<bool> isCapturing = false;
 	std::atomic<bool> isProcessing = false;
+	std::atomic<int> capFrameCount{0};
+	std::atomic<int> procFrameCount{0};
 };
 
 struct LFParamsRefocus {
 	int crop = 0;
-	float alpha = 1.0;
+	float alpha = 1.0f;
+	float shift = 0.0f;
 };
 
 struct LFParamsSR {
@@ -86,7 +89,7 @@ struct LFParamsSR {
 };
 
 struct LFParamsDE {
-	enum class Type { DistgSSR };
+	enum class Type { DistgSSR, OACC };
 	enum class Color { Gray, Jet, Plasma };
 
 	Type type = Type::DistgSSR;

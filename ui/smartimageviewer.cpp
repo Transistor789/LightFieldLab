@@ -12,29 +12,28 @@ SmartImageViewer::SmartImageViewer(QWidget *parent)
 	: QWidget(parent), ui(new Ui::SmartImageViewer) {
 	ui->setupUi(this);
 
-	// 1. 初始化场景
+	// ... (原有初始化场景代码保持不变) ...
 	m_scene = new QGraphicsScene(this);
-	m_scene->setBackgroundBrush(QColor(50, 50, 50)); // 深灰色背景
-
+	m_scene->setBackgroundBrush(QColor(50, 50, 50));
 	m_scene->setBackgroundBrush(Qt::NoBrush);
-	// ui->viewMain->setStyleSheet("background: transparent; border: none;");
-	// ui->viewMain->setFrameShape(QFrame::NoFrame); // 去掉凹陷的边框
-
-	// ui->viewMain 已经被提升为 InteractiveView 类型了
 	ui->viewMain->setScene(m_scene);
 
-	// 2. 连接信号 (UI 按钮的信号通过 "on_..._clicked" 自动连接，这里只连 View
-	// 的)
+	// ... (原有信号连接保持不变) ...
 	connect(ui->viewMain, &InteractiveView::mouseMoved, this,
 			&SmartImageViewer::onMouseMoved);
 	connect(ui->viewMain, &InteractiveView::zoomChanged, this,
 			&SmartImageViewer::onZoomChanged);
 
-	// 3. (可选) 给按钮设置一些系统自带的图标，好看点
-	// ui->btnSave->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
-	// ui->btnFit->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
-	// ui->btnOrig->setIcon(
-	// 	style()->standardIcon(QStyle::SP_TitleBarNormalButton));
+	// ================== [新增部分] ==================
+
+	// 1. 设置 View 的菜单策略为自定义
+	ui->viewMain->setContextMenuPolicy(Qt::CustomContextMenu);
+
+	// 2. 连接右键请求信号到槽函数
+	connect(ui->viewMain, &InteractiveView::customContextMenuRequested, this,
+			&SmartImageViewer::onShowContextMenu);
+
+	// ===============================================
 }
 
 SmartImageViewer::~SmartImageViewer() { delete ui; }
@@ -84,21 +83,27 @@ void SmartImageViewer::on_btnOrig_clicked() {
 }
 
 void SmartImageViewer::onMouseMoved(QPoint pos, QColor color) {
-	if (pos.x() < 0) {
-		ui->lblCoords->setText("X: -- Y: --");
-		ui->lblPixel->setText("RGB: [--, --, --]");
-	} else {
-		ui->lblCoords->setText(
-			QString("X: %1 Y: %2").arg(pos.x()).arg(pos.y()));
-		ui->lblPixel->setText(QString("R:%1 G:%2 B:%3")
-								  .arg(color.red())
-								  .arg(color.green())
-								  .arg(color.blue()));
+	// 1. 获取缩放比例
+	// viewMain 的 transform().m11() 就是水平缩放系数
+	double scale = ui->viewMain->transform().m11();
+
+	// 2. 获取图像分辨率
+	int w = 0, h = 0;
+	if (!m_currentImage.isNull()) {
+		w = m_currentImage.width();
+		h = m_currentImage.height();
 	}
+
+	// 3. [修改] 打包发送所有数据
+	emit mouseMoved(pos.x(), pos.y(), color, scale, w, h);
 }
 
 void SmartImageViewer::onZoomChanged(double scale) {
-	ui->lblZoom->setText(QString::number(int(scale * 100)) + "%");
+	// 1. (可选) 更新自己的 UI
+	// ui->lblZoom->setText(QString::number(int(scale * 100)) + "%");
+
+	// 2. [新增] 转发信号
+	emit zoomChanged(scale);
 }
 
 void SmartImageViewer::showEvent(QShowEvent *event) {
@@ -119,4 +124,36 @@ void SmartImageViewer::resizeEvent(QResizeEvent *event) {
 	if (!m_scene->items().isEmpty()) {
 		on_btnFit_clicked();
 	}
+}
+
+void SmartImageViewer::onShowContextMenu(const QPoint &pos) {
+	QMenu contextMenu(this);
+
+	// 添加动作
+	QAction *actionFit =
+		contextMenu.addAction(QIcon::fromTheme("zoom-fit-best"), "适应窗口");
+	QAction *actionOrig = contextMenu.addAction(
+		QIcon::fromTheme("zoom-original"), "原始大小 (1:1)");
+	contextMenu.addSeparator(); // 分隔线
+	QAction *actionSave =
+		contextMenu.addAction(QIcon::fromTheme("document-save"), "另存为...");
+
+	// 连接动作到已有的槽函数 (复用逻辑)
+	connect(actionFit, &QAction::triggered, this,
+			&SmartImageViewer::on_btnFit_clicked);
+	connect(actionOrig, &QAction::triggered, this,
+			&SmartImageViewer::on_btnOrig_clicked);
+	connect(actionSave, &QAction::triggered, this,
+			&SmartImageViewer::on_btnSave_clicked);
+
+	// 状态检查：如果没有图片，禁用某些选项
+	if (m_scene->items().isEmpty()) {
+		actionFit->setEnabled(false);
+		actionOrig->setEnabled(false);
+		actionSave->setEnabled(false);
+	}
+
+	// 在鼠标点击位置显示菜单
+	// 注意：pos 是 viewMain 的局部坐标，需要映射到全局屏幕坐标
+	contextMenu.exec(ui->viewMain->mapToGlobal(pos));
 }

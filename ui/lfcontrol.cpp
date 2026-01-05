@@ -26,7 +26,7 @@ LFControl::LFControl(QObject *parent) : QObject(parent) {
 	isp = std::make_unique<LFIsp>();
 
 	cap_thread = std::thread(&LFControl::captureTask, this);
-	isp_thread = std::thread(&LFControl::processTask, this);
+	proc_thread = std::thread(&LFControl::processTask, this);
 }
 
 LFControl::~LFControl() {
@@ -36,8 +36,8 @@ LFControl::~LFControl() {
 		cap_thread.join();
 	}
 
-	if (isp_thread.joinable()) {
-		isp_thread.join();
+	if (proc_thread.joinable()) {
+		proc_thread.join();
 	}
 }
 
@@ -101,6 +101,8 @@ void LFControl::captureTask() {
 		cv::Mat img = cap->getFrame();
 		// cv::Mat img;
 		LOG_INFO("Capturing ...");
+
+		params.dynamic.capFrameCount++;
 		if (img.empty()) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 			LOG_WARN("Image is empty!");
@@ -147,6 +149,7 @@ void LFControl::processTask() {
 			isp->set_lf_img(img);
 			isp->preview().resample(true);
 			lf = std::make_shared<LFData>(isp->getSAIS());
+			params.dynamic.procFrameCount++;
 		}
 	}
 }
@@ -412,16 +415,33 @@ void LFControl::refocus() {
 	runAsync(
 		[this] {
 			ref->setLF(lf);
-			auto img = ref->refocus(params.refocus.alpha, params.refocus.crop);
+			auto img =
+				ref->refocusByShift(params.refocus.shift, params.refocus.crop);
+			// auto img =
+			// 	ref->refocusByAlpha(params.refocus.alpha, params.refocus.crop);
 			emit imageReady(ImageType::Refocus, cvMatToQImage(img));
 			emit paramsChanged();
 		},
 		"Refocus");
 }
 
+void LFControl::processAllInFocus() {
+	runAsync(
+		[this] {
+			ref->setLF(lf);
+			// auto img = ref->generateAllInFocus(-2.0f, 0.0f, 0.05f);
+			auto img =
+				ref->refocusByShift(params.refocus.shift, params.refocus.crop);
+			emit imageReady(ImageType::Refocus, cvMatToQImage(img));
+			emit paramsChanged();
+		},
+		"processAllInFocus");
+}
+
 void LFControl::upsample() {
 	runAsync(
 		[this] {
+			sr->setType(params.sr.type);
 			auto img = sr->upsample(lf->getCenter());
 			emit imageReady(ImageType::SR, cvMatToQImage(img));
 			emit paramsChanged();
@@ -432,6 +452,7 @@ void LFControl::upsample() {
 void LFControl::depth() {
 	runAsync(
 		[this] {
+			dep->setType(params.de.type);
 			auto img = dep->depth(lf->data);
 			if (params.de.color == LFParamsDE::Color::Gray) {
 				emit imageReady(ImageType::Depth,

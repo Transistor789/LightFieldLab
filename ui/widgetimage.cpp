@@ -14,6 +14,14 @@ WidgetImage::WidgetImage(QWidget *parent)
 				 {ImageType::Refocus, ui->widgetRefocus},
 				 {ImageType::SR, ui->widgetSR},
 				 {ImageType::Depth, ui->widgetDepth}};
+
+	QList<SmartImageViewer *> allViewers = findChildren<SmartImageViewer *>();
+	for (SmartImageViewer *viewer : allViewers) {
+		connect(viewer, &SmartImageViewer::mouseMoved, this,
+				&WidgetImage::imageMouseMoved);
+		connect(viewer, &SmartImageViewer::zoomChanged, this,
+				&WidgetImage::imageZoomChanged);
+	}
 }
 
 WidgetImage::~WidgetImage() { delete ui; }

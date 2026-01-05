@@ -3,6 +3,7 @@
 
 #include <QGraphicsScene>
 #include <QImage>
+#include <QMenu>
 #include <QWidget>
 
 namespace Ui {
@@ -16,23 +17,26 @@ public:
 	explicit SmartImageViewer(QWidget *parent = nullptr);
 	~SmartImageViewer();
 
-	// 公开接口
 	void setImage(const QImage &img);
 	void setImage(const QString &path);
 
+signals:
+	void mouseMoved(int x, int y, QColor color, double scale, int w, int h);
+	void zoomChanged(double scale);
+
 protected:
-	void showEvent(QShowEvent *event) override;		// 窗口显示时触发
-	void resizeEvent(QResizeEvent *event) override; // 窗口大小改变时触发
+	void showEvent(QShowEvent *event) override;
+	void resizeEvent(QResizeEvent *event) override;
 
 private slots:
-	// UI 按钮的槽函数
+	void onShowContextMenu(const QPoint &pos);
+	void onMouseMoved(QPoint pos, QColor color);
+	void onZoomChanged(double scale);
+
+private:
 	void on_btnSave_clicked();
 	void on_btnFit_clicked();
 	void on_btnOrig_clicked();
-
-	// 接收内部 View 的信号
-	void onMouseMoved(QPoint pos, QColor color);
-	void onZoomChanged(double scale);
 
 private:
 	Ui::SmartImageViewer *ui;

@@ -7,6 +7,7 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/opencv.hpp>
+
 void test() {
 	// 1. 设置参数
 	int patchSize = 196; // Engine 的输出尺寸
@@ -15,7 +16,9 @@ void test() {
 	// 2. 初始化
 	DistgDisp dispenser;
 	std::string enginePath =
-		std::format("../data/DistgDisp_9x9_{}_FP16_Windows.engine", patchSize);
+		std::format("../data/OACC-Net_9x9_{}_FP16_Windows.engine", patchSize);
+	// std::string enginePath =
+	// 	std::format("../data/DistgDisp_9x9_{}_FP16_Windows.engine", patchSize);
 	dispenser.readEngine(enginePath);
 
 	// 【关键】配置类
@@ -62,13 +65,13 @@ void patch_test() {
 	disp.setPatchSize(128);
 
 	timer.start();
-	disp.run(lf->data);
+	cv::Mat depth = disp.run(lf->data);
 	timer.stop();
 	timer.print_elapsed_ms();
 }
 int main() {
-	// test();
-	patch_test();
+	test();
+	// patch_test();
 
 	return 0;
 }

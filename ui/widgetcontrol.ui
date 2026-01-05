@@ -9,8 +9,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>596</width>
-    <height>1257</height>
+    <width>501</width>
+    <height>1243</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -360,31 +360,6 @@
              </property>
             </widget>
            </item>
-           <item row="0" column="0">
-            <widget class="QLabel" name="labelWhite">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Fixed" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="minimumSize">
-              <size>
-               <width>50</width>
-               <height>0</height>
-              </size>
-             </property>
-             <property name="maximumSize">
-              <size>
-               <width>60</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <property name="text">
-              <string>白图像</string>
-             </property>
-            </widget>
-           </item>
            <item row="2" column="0">
             <widget class="QLabel" name="labelDehex">
              <property name="sizePolicy">
@@ -407,22 +382,6 @@
              </property>
              <property name="text">
               <string>Dehex表</string>
-             </property>
-            </widget>
-           </item>
-           <item row="0" column="3">
-            <widget class="QToolButton" name="toolButtonWhite">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Fixed" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="text">
-              <string>...</string>
-             </property>
-             <property name="popupMode">
-              <enum>QToolButton::ToolButtonPopupMode::InstantPopup</enum>
              </property>
             </widget>
            </item>
@@ -461,16 +420,6 @@
              </property>
             </widget>
            </item>
-           <item row="0" column="2">
-            <widget class="QLineEdit" name="lineEditWhite">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-            </widget>
-           </item>
            <item row="2" column="3">
             <widget class="QToolButton" name="toolButtonDehex">
              <property name="sizePolicy">
@@ -497,111 +446,156 @@
              </property>
             </widget>
            </item>
-          </layout>
-         </item>
-         <item>
-          <layout class="QHBoxLayout" name="horizontalLayoutOpt">
-           <property name="sizeConstraint">
-            <enum>QLayout::SizeConstraint::SetMinimumSize</enum>
-           </property>
-           <property name="leftMargin">
-            <number>5</number>
-           </property>
-           <property name="topMargin">
-            <number>5</number>
-           </property>
-           <property name="rightMargin">
-            <number>5</number>
-           </property>
-           <property name="bottomMargin">
-            <number>5</number>
-           </property>
-           <item>
-            <widget class="QCheckBox" name="checkBoxDiameter">
+           <item row="0" column="2">
+            <widget class="QLineEdit" name="lineEditWhite">
              <property name="sizePolicy">
               <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="3">
+            <widget class="QToolButton" name="toolButtonWhite">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Fixed" vsizetype="Minimum">
                <horstretch>0</horstretch>
                <verstretch>0</verstretch>
               </sizepolicy>
              </property>
              <property name="text">
-              <string>微透镜直径</string>
+              <string>...</string>
+             </property>
+             <property name="popupMode">
+              <enum>QToolButton::ToolButtonPopupMode::InstantPopup</enum>
              </property>
             </widget>
            </item>
-           <item>
-            <widget class="QSpinBox" name="spinBoxDiameter">
+           <item row="0" column="0">
+            <widget class="QLabel" name="labelWhite">
              <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+              <sizepolicy hsizetype="Fixed" vsizetype="Minimum">
                <horstretch>0</horstretch>
                <verstretch>0</verstretch>
               </sizepolicy>
              </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QLabel" name="labelCenterDetectAlgo">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
+             <property name="minimumSize">
+              <size>
+               <width>50</width>
+               <height>0</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>60</width>
+               <height>16777215</height>
+              </size>
              </property>
              <property name="text">
-              <string>检测方法</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QComboBox" name="comboBoxCCA">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <item>
-              <property name="text">
-               <string>Contour</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>CCA</string>
-              </property>
-             </item>
-            </widget>
-           </item>
-           <item>
-            <widget class="QCheckBox" name="checkBoxGridFit">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="text">
-              <string>网格拟合</string>
+              <string>白图像</string>
              </property>
             </widget>
            </item>
           </layout>
          </item>
          <item>
-          <layout class="QHBoxLayout" name="horizontalLayoutGenLUT">
+          <layout class="QGridLayout" name="gridLayoutCali_2">
            <property name="leftMargin">
-            <number>5</number>
+            <number>0</number>
            </property>
            <property name="topMargin">
-            <number>5</number>
+            <number>0</number>
            </property>
            <property name="rightMargin">
-            <number>5</number>
+            <number>0</number>
            </property>
            <property name="bottomMargin">
-            <number>5</number>
+            <number>0</number>
            </property>
-           <item>
+           <item row="0" column="0">
+            <layout class="QHBoxLayout" name="horizontalLayoutOpt">
+             <property name="sizeConstraint">
+              <enum>QLayout::SizeConstraint::SetMinimumSize</enum>
+             </property>
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="labelDiameter">
+               <property name="text">
+                <string>微透镜尺寸</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QSpinBox" name="spinBoxDiameter">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QCheckBox" name="checkBoxDiameter">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="text">
+                <string>自动</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="labelCenterDetectAlgo">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="text">
+                <string>标定方法</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QComboBox" name="comboBoxDetectAlgo">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <item>
+                <property name="text">
+                 <string>Contour</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>CCA</string>
+                </property>
+               </item>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item row="1" column="1">
             <widget class="QPushButton" name="btnGenLUT">
              <property name="sizePolicy">
               <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
@@ -614,49 +608,72 @@
              </property>
             </widget>
            </item>
-           <item>
-            <widget class="QLabel" name="label">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
+           <item row="1" column="0">
+            <layout class="QHBoxLayout" name="horizontalLayoutGenLUT">
+             <property name="leftMargin">
+              <number>0</number>
              </property>
-             <property name="text">
-              <string>视角数</string>
+             <property name="topMargin">
+              <number>0</number>
              </property>
-            </widget>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="label">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="text">
+                <string>视角数</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QSpinBox" name="spinBoxLUTViews">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="maximum">
+                <number>20</number>
+               </property>
+               <property name="value">
+                <number>9</number>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QCheckBox" name="checkBox">
+               <property name="text">
+                <string>跟随直径</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QCheckBox" name="checkBoxSaveLUT">
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
+               </property>
+               <property name="text">
+                <string>保存</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
            </item>
-           <item>
-            <widget class="QSpinBox" name="spinBoxLUTViews">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="maximum">
-              <number>20</number>
-             </property>
-             <property name="value">
-              <number>9</number>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QCheckBox" name="checkBoxSaveLUT">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="text">
-              <string>保存</string>
-             </property>
-            </widget>
-           </item>
-           <item>
+           <item row="0" column="1">
             <widget class="QPushButton" name="btnCalibrate">
              <property name="sizePolicy">
               <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
@@ -1633,7 +1650,7 @@
             </widget>
            </item>
            <item>
-            <widget class="QLabel" name="labelRefocusAlpha">
+            <widget class="QLabel" name="labelRefocusShift">
              <property name="sizePolicy">
               <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
                <horstretch>0</horstretch>
@@ -1641,28 +1658,16 @@
               </sizepolicy>
              </property>
              <property name="text">
-              <string>alpha</string>
+              <string>Shift</string>
              </property>
             </widget>
            </item>
            <item>
-            <widget class="QDoubleSpinBox" name="doubleSpinBoxRefocusAlpha">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="decimals">
-              <number>3</number>
+            <widget class="QDoubleSpinBox" name="doubleSpinBoxRefocusShift">
+             <property name="minimum">
+              <double>-10.000000000000000</double>
              </property>
              <property name="maximum">
-              <double>5.000000000000000</double>
-             </property>
-             <property name="singleStep">
-              <double>0.010000000000000</double>
-             </property>
-             <property name="value">
               <double>1.000000000000000</double>
              </property>
             </widget>
@@ -1862,125 +1867,6 @@
             </widget>
            </item>
            <item>
-            <widget class="QLabel" name="labelSRPatchSize">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="minimumSize">
-              <size>
-               <width>0</width>
-               <height>0</height>
-              </size>
-             </property>
-             <property name="maximumSize">
-              <size>
-               <width>16777215</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <property name="text">
-              <string>Patch</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QComboBox" name="comboBoxSRPatchSize">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="minimumSize">
-              <size>
-               <width>0</width>
-               <height>0</height>
-              </size>
-             </property>
-             <property name="maximumSize">
-              <size>
-               <width>16777215</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <item>
-              <property name="text">
-               <string>128</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>196</string>
-              </property>
-             </item>
-            </widget>
-           </item>
-           <item>
-            <widget class="QLabel" name="labelSRViews">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="minimumSize">
-              <size>
-               <width>0</width>
-               <height>0</height>
-              </size>
-             </property>
-             <property name="maximumSize">
-              <size>
-               <width>16777215</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <property name="text">
-              <string>视角</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QComboBox" name="comboBoxSRViews">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="minimumSize">
-              <size>
-               <width>0</width>
-               <height>0</height>
-              </size>
-             </property>
-             <property name="maximumSize">
-              <size>
-               <width>16777215</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <item>
-              <property name="text">
-               <string>5</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>7</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>9</string>
-              </property>
-             </item>
-            </widget>
-           </item>
-           <item>
             <widget class="QPushButton" name="btnSR">
              <property name="sizePolicy">
               <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
@@ -2068,6 +1954,11 @@
                <string>DistgDisp</string>
               </property>
              </item>
+             <item>
+              <property name="text">
+               <string>OACC</string>
+              </property>
+             </item>
             </widget>
            </item>
            <item>
@@ -2110,89 +2001,6 @@
              <item>
               <property name="text">
                <string>Plasma</string>
-              </property>
-             </item>
-            </widget>
-           </item>
-           <item>
-            <widget class="QLabel" name="labelDepthPatchSize">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="text">
-              <string>Patch</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QComboBox" name="comboBoxDepthPatchSize">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="maximumSize">
-              <size>
-               <width>16777215</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <item>
-              <property name="text">
-               <string>128</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>196</string>
-              </property>
-             </item>
-            </widget>
-           </item>
-           <item>
-            <widget class="QLabel" name="labelDepthViews">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="text">
-              <string>视角</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QComboBox" name="comboBoxDepthViews">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="maximumSize">
-              <size>
-               <width>16777215</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <item>
-              <property name="text">
-               <string>5</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>7</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string>9</string>
               </property>
              </item>
             </widget>

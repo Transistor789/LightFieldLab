@@ -1,5 +1,7 @@
 ﻿#include "lfdepth.h"
 
+#include "lfparams.h"
+
 bool LFDisp::depth(const std::vector<cv::Mat> &views) {
 	if (views.empty())
 		return false;
@@ -59,54 +61,78 @@ cv::Mat LFDisp::getPlasmaVisual() const {
 }
 
 bool LFDisp::checkAndLoadModel() {
-	// 1. 检查是否需要重新加载
-	// 条件：模型未加载 OR 参数发生了变更
+	// 【修复步骤 2】将“类型是否变化”加入判断条件
+	bool typeChanged = (m_loadedType != type);
+
+	// 重新加载的条件（满足任意一条即可）：
+	// 1. 引擎本身未加载
+	// 2. 角度分辨率变了
+	// 3. PatchSize 变了
+	// 4. 【新增】算法类型变了 (DistgSSR <-> OACC)
 	bool needReload = !distg_.isEngineLoaded()
 					  || (m_loadedAngRes != m_targetAngRes)
-					  || (m_loadedPatchSize != m_targetPatchSize);
+					  || (m_loadedPatchSize != m_targetPatchSize)
+					  || typeChanged; // <--- 关键修改
 
 	if (!needReload) {
-		return true; // 状态一致，无需操作
+		return true; // 状态完全一致，无需重新加载
 	}
 
-	// 2. 生成模型路径
-	// 假设模型都在 data/ 目录下，命名规则如:
-	// DistgDisp_9x9_128_FP16_Windows.engine
+	// 生成模型路径 (getModelPath 内部已经用了最新的 type，所以路径是对的)
 	std::string modelPath = getModelPath(m_targetAngRes, m_targetPatchSize);
 
-	// 3. 加载模型
-	// 注意：这里需要捕获可能的异常，或者检查文件是否存在
+	// 打印调试信息，方便你看清楚是不是真的切了
+	std::cout << "[LFDisp] Model change detected. Reloading..." << std::endl;
+	std::cout << "   Target Type: "
+			  << (type == LFParamsDE::Type::DistgSSR ? "DistgSSR" : "OACC")
+			  << std::endl;
+	std::cout << "   Target Path: " << modelPath << std::endl;
+
 	try {
 		distg_.readEngine(modelPath);
 
-		// 4. 同步参数给底层算法
+		// 同步参数给底层算法
 		distg_.setAngRes(m_targetAngRes);
 		distg_.setPatchSize(m_targetPatchSize);
-		// distg_.setPadding(...); // 如果 padding 跟 patchSize
-		// 有关，也需要在这里更新
 
-		// 5. 更新“已加载”状态
+		// 【修复步骤 3】更新所有“已加载”状态，包括 Type
 		m_loadedAngRes = m_targetAngRes;
 		m_loadedPatchSize = m_targetPatchSize;
+		m_loadedType = type; // <--- 关键：记录下当前加载的是 OACC 还是 DistgSSR
 
-		std::cout << "[LFDisp] Model loaded successfully: " << modelPath
-				  << std::endl;
+		std::cout << "[LFDisp] Model loaded successfully." << std::endl;
 		return true;
 
 	} catch (const std::exception &e) {
 		std::cerr << "[LFDisp] Failed to load model: " << modelPath
 				  << "\nReason: " << e.what() << std::endl;
+
+		// 如果加载失败，重置状态，强制下次重试
+		m_loadedAngRes = -1;
 		return false;
 	}
 }
 
 std::string LFDisp::getModelPath(int angRes, int patchSize) const {
-// C++20 写法
+	std::string path;
+
 #ifdef _WIN32
-	return std::format("data/DistgDisp_{}x{}_{}_FP16_Windows.engine", angRes,
-					   angRes, patchSize);
+	if (type == LFParamsDE::Type::DistgSSR) {
+		path = std::format("data/DistgDisp_{}x{}_{}_FP16_Windows.engine",
+						   angRes, angRes, patchSize);
+	} else if (type == LFParamsDE::Type::OACC) {
+		path = std::format("data/OACC-Net_{}x{}_{}_FP16_Windows.engine", angRes,
+						   angRes, patchSize);
+	}
+
 #elif __linux__
-	return std::format("data/DistgDisp_{}x{}_{}_FP16_Linux.engine", angRes,
-					   angRes, patchSize);
+	if (type == LFParamsDE::Type::DistgSSR) {
+		path = std::format("data/DistgDisp_{}x{}_{}_FP16_Linux.engine", angRes,
+						   angRes, patchSize);
+	} else if (type == LFParamsDE::Type::OACC) {
+		path = std::format("data/OACC-Net_{}x{}_{}_FP16_Linux.engine", angRes,
+						   angRes, patchSize);
+	}
 #endif
+	return path;
 }
