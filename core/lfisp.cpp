@@ -96,7 +96,7 @@ void awb_scalar_impl(cv::Mat &img, const std::vector<float> &gains) {
 
 LFIsp::LFIsp() { cv::setNumThreads(cv::getNumberOfCPUs()); }
 
-LFIsp::LFIsp(const LFParamsISP &config, const cv::Mat &lfp_img,
+LFIsp::LFIsp(const IspConfig &config, const cv::Mat &lfp_img,
 			 const cv::Mat &wht_img) {
 	cv::setNumThreads(cv::getNumberOfCPUs());
 	set_lf_img(lfp_img);
@@ -112,14 +112,14 @@ LFIsp::LFIsp(const json &json_config, const cv::Mat &lfp_img,
 	set_config(json_config);
 }
 
-LFIsp &LFIsp::set_config(const LFParamsISP &new_config) {
+LFIsp &LFIsp::set_config(const IspConfig &new_config) {
 	config_ = new_config;
 	prepare_ccm_fixed_point();
 	return *this;
 }
 
 LFIsp &LFIsp::set_config(const json &json_settings) {
-	LFParamsISP new_config;
+	IspConfig new_config;
 
 	if (json_settings.contains("bay")) {
 		std::string bay_str = json_settings["bay"].get<std::string>();
@@ -1445,6 +1445,26 @@ LFIsp &LFIsp::resample(bool dehex) {
 		sais[i] = temp;
 	}
 	return *this;
+}
+
+int LFIsp::get_demosaic_code(BayerPattern pattern, bool gray) {
+	switch (pattern) {
+		case BayerPattern::GRBG:
+			return gray ? cv::COLOR_BayerGR2GRAY
+						: cv::COLOR_BayerGR2RGB; // 第0行是 G, R
+		case BayerPattern::RGGB:
+			return gray ? cv::COLOR_BayerRG2GRAY
+						: cv::COLOR_BayerRG2RGB; // 第0行是 R, G
+		case BayerPattern::GBRG:
+			return gray ? cv::COLOR_BayerGB2GRAY
+						: cv::COLOR_BayerGB2RGB; // 第0行是 G, B
+		case BayerPattern::BGGR:
+			return gray ? cv::COLOR_BayerBG2GRAY
+						: cv::COLOR_BayerBG2RGB; // 第0行是 B, G
+		default:
+			// 默认处理
+			return gray ? cv::COLOR_BayerGR2GRAY : cv::COLOR_BayerGR2RGB;
+	}
 }
 
 LFIsp &LFIsp::compute_lab_stats(const cv::Mat &src, cv::Scalar &mean,

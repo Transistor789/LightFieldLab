@@ -9,15 +9,16 @@
 void test_read() {
 	LFIO lfpreader = LFIO();
 
-	auto white_img = lfpreader.readImage("../data/MOD_0015.RAW");
+	auto white_img = lfpreader.readLFP("../data/MOD_0015.RAW");
 	std::cout << white_img.at<float>(0, 0) << std::endl;
 
-	auto lf_img = lfpreader.readImage("../data/toy.lfr");
+	json j;
+	auto lf_img = lfpreader.readLFP("../data/toy.lfr", &j);
 	std::cout << lf_img.at<float>(0, 0) << std::endl;
 	std::cout << Config::Get().img_meta()["camera"]["serialNumber"]
 			  << std::endl;
 
-	auto test_img = lfpreader.readImage("../data/zutomayo.jpg");
+	auto test_img = lfpreader.readStandardImage("../data/zutomayo.jpg");
 
 	auto lfptr = lfpreader.readSAI("../data/toy");
 	cv::Mat center = lfptr->getCenter();

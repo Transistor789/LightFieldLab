@@ -2,12 +2,9 @@
 #define LFCALIBRATE_H
 
 #include "json.hpp"
-#include "lfparams.h"
 
 #include <opencv2/opencv.hpp>
 #include <vector>
-
-class LFParamsCalibrate;
 
 namespace nlohmann {
 template <>
@@ -51,7 +48,6 @@ private:
 
 	std::vector<cv::Mat> _slice_maps;
 	std::vector<cv::Mat> _dehex_maps;
-	LFParamsCalibrate *params_ = nullptr;
 };
 
 #endif

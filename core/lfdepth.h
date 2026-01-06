@@ -2,7 +2,7 @@
 #define LFDEPTH_
 
 #include "distgdisp.h"
-#include "lfparams.h"
+// [移除] #include "lfparams.h" -> 不再依赖外部参数定义
 
 #include <opencv2/opencv.hpp>
 #include <string>
@@ -10,35 +10,48 @@
 
 class LFDisp {
 public:
-	explicit LFDisp() {}
+	// [新增] 内部定义枚举，自包含
+	enum class Method { DistgDisp, OACC };
 
-	bool depth(const std::vector<cv::Mat> &views);
+	explicit LFDisp() = default;
+
+	/**
+	 * @brief 计算深度图
+	 * @param views 输入的多视角图像列表
+	 * @param method 选择的算法模型 (DistgDisp 或 OACC)
+	 * @return 成功返回 true，失败返回 false
+	 */
+	bool depth(const std::vector<cv::Mat> &views, Method method);
+
+	// 结果获取与可视化
 	bool hasResult() const { return !m_rawMap.empty(); }
 	const cv::Mat &getRawMap() const;
 	cv::Mat getGrayVisual() const;
 	cv::Mat getJetVisual() const;
 	cv::Mat getPlasmaVisual() const;
 
-	void setType(LFParamsDE::Type value) { type = value; }
+	// 参数设置 (分辨率和PatchSize通常是全局配置，保留Setter)
 	void setAngRes(int angRes) { m_targetAngRes = angRes; }
 	void setPatchSize(int patchSize) { m_targetPatchSize = patchSize; }
 
 private:
-	bool checkAndLoadModel();
-	std::string getModelPath(int angRes, int patchSize) const;
+	// 检查状态并在必要时加载模型
+	bool checkAndLoadModel(Method targetMethod);
+	// 根据参数生成路径
+	std::string getModelPath(Method method, int angRes, int patchSize) const;
 
 private:
 	DistgDisp distg_;
-	LFParamsDE::Type type = LFParamsDE::Type::DistgSSR;
-	LFParamsDE::Type m_loadedType = LFParamsDE::Type::DistgSSR;
 	cv::Mat m_rawMap;
 
 	// --- 参数状态管理 ---
 	int m_targetAngRes = 9;		 // 用户设定的目标角度分辨率
 	int m_targetPatchSize = 196; // 用户设定的目标 Patch 大小
 
-	int m_loadedAngRes = -1;	// 当前已加载模型的参数 (-1 表示未加载)
-	int m_loadedPatchSize = -1; // 当前已加载模型的参数
+	// --- 当前已加载的模型状态 (缓存) ---
+	int m_loadedAngRes = -1;				   // 当前引擎的角度分辨率
+	int m_loadedPatchSize = -1;				   // 当前引擎的 Patch 大小
+	Method m_loadedMethod = Method::DistgDisp; // 当前引擎的算法类型
 };
 
-#endif
+#endif // LFDEPTH_

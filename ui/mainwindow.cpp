@@ -77,9 +77,9 @@ MainWindow::MainWindow(QWidget *parent)
 	connect(ui->widgetControl, &WidgetControl::requestLoadSAI, this,
 			[this](const QString &path) { ctrl->readSAI(path); });
 	connect(ui->widgetControl, &WidgetControl::requestLoadLFP, this,
-			[this](const QString &path) { ctrl->readImage(path, false); });
+			[this](const QString &path) { ctrl->readLFP(path); });
 	connect(ui->widgetControl, &WidgetControl::requestLoadWhite, this,
-			[this](const QString &path) { ctrl->readImage(path, true); });
+			[this](const QString &path) { ctrl->readWhite(path); });
 	connect(ui->widgetControl, &WidgetControl::requestLoadExtractLUT, this,
 			[this](const QString &path) { ctrl->readExtractLUT(path); });
 	connect(ui->widgetControl, &WidgetControl::requestLoadDehexLUT, this,
@@ -123,9 +123,9 @@ MainWindow::MainWindow(QWidget *parent)
 	ctrl->readExtractLUT("data/calibration/lut_extract_9.bin");
 	ctrl->readDehexLUT("data/calibration/lut_dehex.bin");
 	ctrl->readSAI("data/bedroom");
-	ctrl->readImage("data/toy.lfr", false);
+	ctrl->readLFP("data/toy.lfr");
 	std::this_thread::sleep_for(std::chrono::milliseconds(100));
-	ctrl->readImage("data/MOD_0015.RAW", true);
+	ctrl->readWhite("data/MOD_0015.RAW");
 	std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	// ctrl->calibrate();
 	ctrl->refocus();

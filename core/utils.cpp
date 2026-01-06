@@ -327,22 +327,15 @@ cv::Mat gamma_convert(const cv::Mat &src, bool inverse) {
 	return result;
 }
 
-int get_demosaic_code(BayerPattern pattern, bool gray) {
-	switch (pattern) {
-		case BayerPattern::GRBG:
-			return gray ? cv::COLOR_BayerGR2GRAY
-						: cv::COLOR_BayerGR2RGB; // 第0行是 G, R
-		case BayerPattern::RGGB:
-			return gray ? cv::COLOR_BayerRG2GRAY
-						: cv::COLOR_BayerRG2RGB; // 第0行是 R, G
-		case BayerPattern::GBRG:
-			return gray ? cv::COLOR_BayerGB2GRAY
-						: cv::COLOR_BayerGB2RGB; // 第0行是 G, B
-		case BayerPattern::BGGR:
-			return gray ? cv::COLOR_BayerBG2GRAY
-						: cv::COLOR_BayerBG2RGB; // 第0行是 B, G
-		default:
-			// 默认处理
-			return gray ? cv::COLOR_BayerGR2GRAY : cv::COLOR_BayerGR2RGB;
-	}
+bool isRawFormat(const std::string &path) {
+	namespace fs = std::filesystem;
+	fs::path p(path);
+	if (!p.has_extension())
+		return false;
+
+	std::string ext = p.extension().string();
+
+	// 严格按照您的要求匹配这 6 种
+	return (ext == ".raw" || ext == ".RAW" || ext == ".lfr" || ext == ".LFR"
+			|| ext == ".lfp" || ext == ".LFP");
 }

@@ -109,8 +109,7 @@ std::vector<std::string> RawDecoder::read_lytro_file(
 		file.seekg(pos); // rewind
 
 		try {
-			std::string section = read_section(file);
-			sections.push_back(std::move(section));
+			sections.emplace_back(read_section(file));
 		} catch (const std::exception &e) {
 			throw std::runtime_error(
 				std::string("readLytroFile: Failed to read section: ")

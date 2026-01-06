@@ -9,8 +9,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>501</width>
-    <height>1243</height>
+    <width>596</width>
+    <height>1263</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -96,7 +96,7 @@
           <number>5</number>
          </property>
          <item>
-          <layout class="QGridLayout" name="gridLayoutLFP">
+          <layout class="QGridLayout" name="gridLayoutInfo" columnstretch="0,1,0">
            <property name="leftMargin">
             <number>5</number>
            </property>
@@ -109,6 +109,41 @@
            <property name="bottomMargin">
             <number>5</number>
            </property>
+           <item row="0" column="1">
+            <widget class="QLineEdit" name="lineEditLFP">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="0">
+            <widget class="QLabel" name="labelLFP">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="minimumSize">
+              <size>
+               <width>60</width>
+               <height>0</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>16777215</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>光场图像</string>
+             </property>
+            </widget>
+           </item>
            <item row="0" column="2">
             <widget class="QToolButton" name="toolButtonLF">
              <property name="sizePolicy">
@@ -128,56 +163,21 @@
              </property>
             </widget>
            </item>
-           <item row="0" column="1">
-            <widget class="QLineEdit" name="lineEditLFP">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-            </widget>
-           </item>
-           <item row="0" column="0">
-            <widget class="QLabel" name="labelLFP">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Fixed" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="minimumSize">
-              <size>
-               <width>50</width>
-               <height>0</height>
-              </size>
-             </property>
-             <property name="maximumSize">
-              <size>
-               <width>60</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <property name="text">
-              <string>光场图像</string>
-             </property>
-            </widget>
-           </item>
           </layout>
          </item>
          <item>
           <layout class="QHBoxLayout" name="horizontalLayoutInfo" stretch="0,0,0,0,0,0">
            <property name="leftMargin">
-            <number>5</number>
+            <number>0</number>
            </property>
            <property name="topMargin">
-            <number>5</number>
+            <number>0</number>
            </property>
            <property name="rightMargin">
-            <number>5</number>
+            <number>0</number>
            </property>
            <property name="bottomMargin">
-            <number>5</number>
+            <number>0</number>
            </property>
            <item>
             <widget class="QLabel" name="labelBayer">
@@ -410,8 +410,8 @@
              </property>
             </widget>
            </item>
-           <item row="1" column="2">
-            <widget class="QLineEdit" name="lineEditExtract">
+           <item row="2" column="2">
+            <widget class="QLineEdit" name="lineEditDehex">
              <property name="sizePolicy">
               <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
                <horstretch>0</horstretch>
@@ -436,13 +436,38 @@
              </property>
             </widget>
            </item>
-           <item row="2" column="2">
-            <widget class="QLineEdit" name="lineEditDehex">
+           <item row="1" column="2">
+            <widget class="QLineEdit" name="lineEditExtract">
              <property name="sizePolicy">
               <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
                <horstretch>0</horstretch>
                <verstretch>0</verstretch>
               </sizepolicy>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="0">
+            <widget class="QLabel" name="labelWhite">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="minimumSize">
+              <size>
+               <width>60</width>
+               <height>0</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>16777215</width>
+               <height>16777215</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>白图像</string>
              </property>
             </widget>
            </item>
@@ -472,35 +497,10 @@
              </property>
             </widget>
            </item>
-           <item row="0" column="0">
-            <widget class="QLabel" name="labelWhite">
-             <property name="sizePolicy">
-              <sizepolicy hsizetype="Fixed" vsizetype="Minimum">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
-              </sizepolicy>
-             </property>
-             <property name="minimumSize">
-              <size>
-               <width>50</width>
-               <height>0</height>
-              </size>
-             </property>
-             <property name="maximumSize">
-              <size>
-               <width>60</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <property name="text">
-              <string>白图像</string>
-             </property>
-            </widget>
-           </item>
           </layout>
          </item>
          <item>
-          <layout class="QGridLayout" name="gridLayoutCali_2">
+          <layout class="QGridLayout" name="gridLayoutCali2">
            <property name="leftMargin">
             <number>0</number>
            </property>
@@ -530,6 +530,16 @@
              <property name="bottomMargin">
               <number>0</number>
              </property>
+             <item>
+              <widget class="QCheckBox" name="checkBoxCaliDemosaic">
+               <property name="text">
+                <string>去马赛克</string>
+               </property>
+               <property name="checked">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
              <item>
               <widget class="QLabel" name="labelDiameter">
                <property name="text">
@@ -765,7 +775,7 @@
                 <double>5.000000000000000</double>
                </property>
                <property name="singleStep">
-                <double>0.010000000000000</double>
+                <double>0.001000000000000</double>
                </property>
                <property name="value">
                 <double>1.000000000000000</double>
@@ -826,6 +836,11 @@
                  <string>Reinhard</string>
                 </property>
                </item>
+               <item>
+                <property name="text">
+                 <string>HistMatch</string>
+                </property>
+               </item>
               </widget>
              </item>
             </layout>
@@ -862,6 +877,9 @@
                <property name="maximum">
                 <double>5.000000000000000</double>
                </property>
+               <property name="singleStep">
+                <double>0.001000000000000</double>
+               </property>
                <property name="value">
                 <double>1.000000000000000</double>
                </property>
@@ -880,6 +898,9 @@
                </property>
                <property name="maximum">
                 <double>5.000000000000000</double>
+               </property>
+               <property name="singleStep">
+                <double>0.001000000000000</double>
                </property>
                <property name="value">
                 <double>1.000000000000000</double>
@@ -900,6 +921,9 @@
                <property name="maximum">
                 <double>5.000000000000000</double>
                </property>
+               <property name="singleStep">
+                <double>0.001000000000000</double>
+               </property>
                <property name="value">
                 <double>1.000000000000000</double>
                </property>
@@ -918,6 +942,9 @@
                </property>
                <property name="maximum">
                 <double>5.000000000000000</double>
+               </property>
+               <property name="singleStep">
+                <double>0.001000000000000</double>
                </property>
                <property name="value">
                 <double>1.000000000000000</double>
@@ -1011,7 +1038,7 @@
                 <double>10.000000000000000</double>
                </property>
                <property name="singleStep">
-                <double>0.010000000000000</double>
+                <double>0.001000000000000</double>
                </property>
                <property name="value">
                 <double>1.000000000000000</double>
@@ -1669,6 +1696,9 @@
              </property>
              <property name="maximum">
               <double>1.000000000000000</double>
+             </property>
+             <property name="singleStep">
+              <double>0.010000000000000</double>
              </property>
             </widget>
            </item>

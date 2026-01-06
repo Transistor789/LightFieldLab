@@ -1,19 +1,25 @@
 ﻿#include "lfdepth.h"
 
-#include "lfparams.h"
+#include <format> // C++20 std::format
+#include <iostream>
 
-bool LFDisp::depth(const std::vector<cv::Mat> &views) {
-	if (views.empty())
-		return false;
+// [移除] #include "lfparams.h"
 
-	// --- 【新增】 运行前检查 ---
-	if (!checkAndLoadModel()) {
-		std::cerr << "[LFDisp] Abort: Model check failed." << std::endl;
+bool LFDisp::depth(const std::vector<cv::Mat> &views, Method method) {
+	if (views.empty()) {
+		std::cerr << "[LFDisp] Error: Empty views input." << std::endl;
 		return false;
 	}
 
-	// 调用核心算法 (此时模型一定已就绪)
-	// 注意：distg_.run 返回的是 vector，根据你之前的代码，这里取第一个
+	// --- 智能加载：检查并按需加载模型 ---
+	// 将 method 传入，与内部状态比对
+	if (!checkAndLoadModel(method)) {
+		std::cerr << "[LFDisp] Abort: Model check/load failed." << std::endl;
+		return false;
+	}
+
+	// 调用核心算法 (此时模型一定已就绪且匹配)
+	// 注意：distg_.run 返回 vector，这里取第一个结果
 	cv::Mat results = distg_.run(views);
 
 	if (results.empty()) {
@@ -38,13 +44,12 @@ cv::Mat LFDisp::getGrayVisual() const {
 }
 
 cv::Mat LFDisp::getJetVisual() const {
-	// 复用 getGrayVisual 的归一化逻辑
 	cv::Mat gray = getGrayVisual();
 	if (gray.empty())
 		return cv::Mat();
 
 	cv::Mat colorMap;
-	// 应用 Jet Colormap (经典的彩虹色：蓝-青-黄-红)
+	// Jet Colormap (蓝-青-黄-红)
 	cv::applyColorMap(gray, colorMap, cv::COLORMAP_JET);
 	return colorMap;
 }
@@ -55,50 +60,46 @@ cv::Mat LFDisp::getPlasmaVisual() const {
 		return cv::Mat();
 
 	cv::Mat colorMap;
-	// Plasma 是一种感知更均匀的色阶 (紫-橙-黄)，看起来更“现代”
+	// Plasma (紫-橙-黄)
 	cv::applyColorMap(gray, colorMap, cv::COLORMAP_PLASMA);
 	return colorMap;
 }
 
-bool LFDisp::checkAndLoadModel() {
-	// 【修复步骤 2】将“类型是否变化”加入判断条件
-	bool typeChanged = (m_loadedType != type);
+bool LFDisp::checkAndLoadModel(Method targetMethod) {
+	// 1. 检查状态是否发生变化
+	bool methodChanged = (m_loadedMethod != targetMethod);
+	bool paramChanged = (m_loadedAngRes != m_targetAngRes)
+						|| (m_loadedPatchSize != m_targetPatchSize);
+	bool engineNotLoaded = !distg_.isEngineLoaded();
 
-	// 重新加载的条件（满足任意一条即可）：
-	// 1. 引擎本身未加载
-	// 2. 角度分辨率变了
-	// 3. PatchSize 变了
-	// 4. 【新增】算法类型变了 (DistgSSR <-> OACC)
-	bool needReload = !distg_.isEngineLoaded()
-					  || (m_loadedAngRes != m_targetAngRes)
-					  || (m_loadedPatchSize != m_targetPatchSize)
-					  || typeChanged; // <--- 关键修改
-
-	if (!needReload) {
-		return true; // 状态完全一致，无需重新加载
+	// 如果所有状态一致且引擎已加载，直接跳过，复用现有模型
+	if (!engineNotLoaded && !methodChanged && !paramChanged) {
+		return true;
 	}
 
-	// 生成模型路径 (getModelPath 内部已经用了最新的 type，所以路径是对的)
-	std::string modelPath = getModelPath(m_targetAngRes, m_targetPatchSize);
+	// 2. 准备加载
+	std::string modelPath =
+		getModelPath(targetMethod, m_targetAngRes, m_targetPatchSize);
 
-	// 打印调试信息，方便你看清楚是不是真的切了
+	// 打印调试信息
+	std::string methodName =
+		(targetMethod == Method::DistgDisp) ? "DistgDisp" : "OACC";
 	std::cout << "[LFDisp] Model change detected. Reloading..." << std::endl;
-	std::cout << "   Target Type: "
-			  << (type == LFParamsDE::Type::DistgSSR ? "DistgSSR" : "OACC")
-			  << std::endl;
-	std::cout << "   Target Path: " << modelPath << std::endl;
+	std::cout << "   Target Method: " << methodName << std::endl;
+	std::cout << "   Target Path:   " << modelPath << std::endl;
 
 	try {
+		// 读取引擎文件
 		distg_.readEngine(modelPath);
 
 		// 同步参数给底层算法
 		distg_.setAngRes(m_targetAngRes);
 		distg_.setPatchSize(m_targetPatchSize);
 
-		// 【修复步骤 3】更新所有“已加载”状态，包括 Type
+		// 3. 更新缓存状态 (关键步骤)
 		m_loadedAngRes = m_targetAngRes;
 		m_loadedPatchSize = m_targetPatchSize;
-		m_loadedType = type; // <--- 关键：记录下当前加载的是 OACC 还是 DistgSSR
+		m_loadedMethod = targetMethod; // 记录当前加载的是哪种方法
 
 		std::cout << "[LFDisp] Model loaded successfully." << std::endl;
 		return true;
@@ -107,32 +108,35 @@ bool LFDisp::checkAndLoadModel() {
 		std::cerr << "[LFDisp] Failed to load model: " << modelPath
 				  << "\nReason: " << e.what() << std::endl;
 
-		// 如果加载失败，重置状态，强制下次重试
+		// 如果加载失败，重置状态为无效，强制下次必须重试
 		m_loadedAngRes = -1;
 		return false;
 	}
 }
 
-std::string LFDisp::getModelPath(int angRes, int patchSize) const {
-	std::string path;
+std::string LFDisp::getModelPath(Method method, int angRes,
+								 int patchSize) const {
+	// 基础名称前缀
+	std::string prefix;
+	if (method == Method::DistgDisp) {
+		prefix = "DistgDisp";
+	} else if (method == Method::OACC) {
+		prefix = "OACC-Net";
+	} else {
+		return ""; // Should not happen
+	}
 
+	// 平台后缀
 #ifdef _WIN32
-	if (type == LFParamsDE::Type::DistgSSR) {
-		path = std::format("data/DistgDisp_{}x{}_{}_FP16_Windows.engine",
-						   angRes, angRes, patchSize);
-	} else if (type == LFParamsDE::Type::OACC) {
-		path = std::format("data/OACC-Net_{}x{}_{}_FP16_Windows.engine", angRes,
-						   angRes, patchSize);
-	}
-
+	std::string osSuffix = "Windows";
 #elif __linux__
-	if (type == LFParamsDE::Type::DistgSSR) {
-		path = std::format("data/DistgDisp_{}x{}_{}_FP16_Linux.engine", angRes,
-						   angRes, patchSize);
-	} else if (type == LFParamsDE::Type::OACC) {
-		path = std::format("data/OACC-Net_{}x{}_{}_FP16_Linux.engine", angRes,
-						   angRes, patchSize);
-	}
+	std::string osSuffix = "Linux";
+#else
+	std::string osSuffix = "Unknown";
 #endif
-	return path;
+
+	// 使用 format 拼接路径
+	// 格式: data/{Method}_{Ang}x{Ang}_{Patch}_FP16_{OS}.engine
+	return std::format("data/{}_{}x{}_{}_FP16_{}.engine", prefix, angRes,
+					   angRes, patchSize, osSuffix);
 }

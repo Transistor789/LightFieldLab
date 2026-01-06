@@ -12,7 +12,7 @@ int main(int argc, char *argv[]) {
 	rfc.setLF(lf);
 
 	Timer timer;
-	auto result = rfc.refocus(1);
+	auto result = rfc.refocusByAlpha(1);
 	timer.stop();
 	timer.print_elapsed_ms();
 	cv::imshow("result", result);

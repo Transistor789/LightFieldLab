@@ -131,6 +131,7 @@ set(SRCS_CORE
     core/lfsr.cpp
     core/distgssr.cpp
     core/lfisp.cpp
+    core/colormatcher.cpp
     core/trtwrapper.cpp
 )
 

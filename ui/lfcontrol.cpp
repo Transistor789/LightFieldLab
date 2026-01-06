@@ -1,8 +1,12 @@
 ﻿#include "lfcontrol.h"
 
+#include "colormatcher.h"
 #include "config.h"
 #include "lfdata.h"
+#include "lfdepth.h"
+#include "lfisp.h"
 #include "lfparams.h"
+#include "lfsr.h"
 #include "logger.h"
 #include "utils.h"
 #include "widgetimage.h"
@@ -24,6 +28,7 @@ LFControl::LFControl(QObject *parent) : QObject(parent) {
 	dep = std::make_unique<LFDisp>();
 	cap = std::make_unique<LFCapture>();
 	isp = std::make_unique<LFIsp>();
+	io = std::make_unique<LFIO>();
 
 	cap_thread = std::thread(&LFControl::captureTask, this);
 	proc_thread = std::thread(&LFControl::processTask, this);
@@ -166,53 +171,60 @@ void LFControl::readSAI(const QString &path) {
 				lf = tempLF;
 			}
 
-			// emit saiReady(cvMatToQImage(lf->getCenter()));
 			emit imageReady(ImageType::Center, cvMatToQImage(lf->getCenter()));
 			params.path.sai = path.toStdString();
-			params.isp.width = lf->width;
-			params.isp.height = lf->height;
-			params.isp.bitDepth = 8;
-			params.isp.bayer = BayerPattern::NONE;
+			params.sai.width = lf->width;
+			params.sai.height = lf->height;
 			params.sai.row = (lf->rows + 1) / 2;
 			params.sai.col = (lf->cols + 1) / 2;
 			params.sai.rows = lf->rows;
 			params.sai.cols = lf->cols;
 
 			emit paramsChanged();
-			// LOG_INFO("Sub-aperture images loaded");
 		},
 		"Loading sub-aperture images");
 }
 
-void LFControl::readImage(const QString &path, bool isWhite) {
+void LFControl::readStandardImage(const QString &path) {
 	runAsync(
-		[this, path, isWhite] {
-			// 1. 耗时操作 (无锁)
-			auto img =
-				io->readImage(path.toStdString(), &Config::Get().img_meta());
+		[this, path] {
 
-			// 2. 赋值 (加锁)
-			{
-				std::lock_guard<std::mutex> lock(m_dataMtx);
-				if (!isWhite) {
-					lfraw = img;
-					isp->set_config(Config::Get().img_meta());
-					params.isp = isp->get_config();
-					params.path.lfp = path.toStdString();
-					emit imageReady(ImageType::LFP, cvMatToQImage(lfraw));
-				} else {
-					white = img;
-					isp->set_white_img(white.clone());
-					params.path.white = path.toStdString();
-					emit imageReady(ImageType::White, cvMatToQImage(white));
-				}
-				params.isp.height = img.size().height;
-				params.isp.width = img.size().width;
+		},
+		nullptr);
+}
+
+void LFControl::readLFP(const QString &path) {
+	runAsync(
+		[this, path] {
+			if (isRawFormat(path.toStdString())) {
+				json j;
+				auto img = LFIO::readLFP(path.toStdString(), &j);
+				lfraw = img;
+				isp->set_config(j);
+			} else {
+				lfraw = io->readStandardImage(path.toStdString());
+				isp->set_config(LFIsp::IspConfig());
 			}
+			params.isp.config = isp->get_config();
+			params.isp.config.height = lfraw.size().height;
+			params.isp.config.width = lfraw.size().width;
+			params.path.lfp = path.toStdString();
+			emit imageReady(ImageType::LFP, cvMatToQImage(lfraw));
 			emit paramsChanged();
 		},
-		isWhite ? "Loading white image"
-				: "Loading light field image"); // 传入任务名用于报错
+		"Loading light field image");
+}
+
+void LFControl::readWhite(const QString &path) {
+	runAsync(
+		[this, path] {
+			auto img = LFIO::readLFP(path.toStdString(), nullptr);
+			white = img;
+			params.path.white = path.toStdString();
+			emit imageReady(ImageType::White, cvMatToQImage(white));
+			emit paramsChanged();
+		},
+		"Loading white image");
 }
 
 void LFControl::readExtractLUT(const QString &path) {
@@ -241,12 +253,13 @@ void LFControl::calibrate() {
 	runAsync(
 		[this] {
 			cal->setImage(white);
-			auto points = cal->run(params.calibrate.useCCA,
-								   params.isp.bayer != BayerPattern::NONE,
-								   params.isp.bitDepth);
+			auto points =
+				cal->run(params.calibrate.useCCA,
+						 params.isp.config.bayer != BayerPattern::NONE,
+						 params.isp.config.bitDepth);
 			cv::Mat draw =
 				draw_points(white, points, "", 2, cv::Scalar(0), false);
-
+			params.sai.cols = params.sai.rows = params.calibrate.views;
 			emit imageReady(ImageType::White, cvMatToQImage(draw));
 			emit paramsChanged();
 		},
@@ -300,7 +313,8 @@ void LFControl::process() {
 				isp->resample(params.isp.enableDehex);
 			}
 			if (params.isp.enableColorEq) {
-				isp->color_equalize();
+				ColorMatcher::equalize(isp->getSAIS(),
+									   params.isp.colorEqMethod);
 			}
 			lf = std::make_shared<LFData>(isp->getSAIS());
 			emit imageReady(ImageType::Center, cvMatToQImage(lf->getCenter()));
@@ -328,7 +342,8 @@ void LFControl::fast_preview() {
 				isp->resample(params.isp.enableDehex);
 			}
 			if (params.isp.enableColorEq) {
-				isp->color_equalize();
+				ColorMatcher::equalize(isp->getSAIS(),
+									   params.isp.colorEqMethod);
 			}
 			lf = std::make_shared<LFData>(isp->getSAIS());
 			emit imageReady(ImageType::Center, cvMatToQImage(lf->getCenter()));
@@ -441,9 +456,15 @@ void LFControl::processAllInFocus() {
 void LFControl::upsample() {
 	runAsync(
 		[this] {
-			sr->setType(params.sr.type);
-			auto img = sr->upsample(lf->getCenter());
-			emit imageReady(ImageType::SR, cvMatToQImage(img));
+			if (params.sr.method < LFSuperRes::Method::DISTGSSR) {
+				auto img = sr->upsample(lf->getCenter(), params.sr.method);
+				emit imageReady(ImageType::SR, cvMatToQImage(img));
+			} else {
+				auto views = sr->upsample(lf->data, params.sr.method);
+				emit imageReady(ImageType::SR,
+								cvMatToQImage(views[views.size() / 2]));
+			}
+
 			emit paramsChanged();
 		},
 		"Super resolution");
@@ -452,8 +473,7 @@ void LFControl::upsample() {
 void LFControl::depth() {
 	runAsync(
 		[this] {
-			dep->setType(params.de.type);
-			auto img = dep->depth(lf->data);
+			auto img = dep->depth(lf->data, params.de.method);
 			if (params.de.color == LFParamsDE::Color::Gray) {
 				emit imageReady(ImageType::Depth,
 								cvMatToQImage(dep->getGrayVisual()));
@@ -511,7 +531,7 @@ QImage LFControl::cvMatToQImage(const cv::Mat &inMat) {
 		// 情况 B: 整数型 (CV_16U / CV_16S)
 		// 这里必须用到 params.isp.bitDepth
 		else if (inMat.depth() == CV_16U || inMat.depth() == CV_16S) {
-			int validBits = params.isp.bitDepth;
+			int validBits = params.isp.config.bitDepth;
 
 			// 防御性编程：如果用户没设置或者乱设置，给个默认值
 			if (validBits <= 0)

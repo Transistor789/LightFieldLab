@@ -42,7 +42,9 @@ public slots:
 	bool getIsProcessing() const { return params.dynamic.isProcessing.load(); }
 
 	void readSAI(const QString &path);
-	void readImage(const QString &path, bool isWhite);
+	void readStandardImage(const QString &path);
+	void readLFP(const QString &path);
+	void readWhite(const QString &path);
 	void readExtractLUT(const QString &path);
 	void readDehexLUT(const QString &path);
 

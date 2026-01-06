@@ -126,7 +126,7 @@ void test_module() {
 
 void test_calibrate() {
 	// cv::Mat img = cv::imread("../../data/gray.png", cv::IMREAD_GRAYSCALE);
-	cv::Mat img = LFIO::readImage("../../data/MOD_0015.RAW");
+	cv::Mat img = LFIO::readLFP("../../data/MOD_0015.RAW");
 	Timer timer;
 
 	// cv::Mat demosic;

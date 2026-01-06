@@ -11,12 +11,12 @@ int main() {
 
 	disp.setPatchSize(196);
 	Timer timer;
-	disp.depth(lf->data);
+	disp.depth(lf->data, LFDisp::Method::DistgDisp);
 	timer.stop();
 	timer.print_elapsed_ms();
 
 	timer.start();
-	disp.depth(lf->data);
+	disp.depth(lf->data, LFDisp::Method::DistgDisp);
 	timer.stop();
 	timer.print_elapsed_ms();
 
@@ -35,12 +35,12 @@ int main() {
 
 	disp.setPatchSize(128);
 	timer.start();
-	disp.depth(lf->data);
+	disp.depth(lf->data, LFDisp::Method::DistgDisp);
 	timer.stop();
 	timer.print_elapsed_ms();
 
 	timer.start();
-	disp.depth(lf->data);
+	disp.depth(lf->data, LFDisp::Method::DistgDisp);
 	timer.stop();
 	timer.print_elapsed_ms();
 

@@ -1,4 +1,4 @@
-#ifndef LFREFOCUS_H
+﻿#ifndef LFREFOCUS_H
 #define LFREFOCUS_H
 
 #include "lfdata.h"

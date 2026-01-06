@@ -13,22 +13,25 @@
 
 LFIO::LFIO() { cv::setNumThreads(cv::getNumberOfCPUs()); }
 
-cv::Mat LFIO::readImage(const std::string &path, json *lfp) {
-	cv::Mat img;
-	std::filesystem::path fs_path(path);
-	std::string ext = fs_path.extension().string();
-	std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+cv::Mat LFIO::readStandardImage(const std::string &path) {
+	// 读取普通图片 (Unchanged 以保留可能的 Alpha 通道或原始深度)
+	cv::Mat img = cv::imread(path, cv::IMREAD_UNCHANGED);
+	if (img.empty()) {
+		std::cerr << "[LFIO] Error: Failed to load standard image: " << path
+				  << std::endl;
+		return cv::Mat();
+	}
+	// TODO
+	// return gamma_convert(img, false);
+	return img;
+}
 
-	if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp"
-		|| ext == ".tif" || ext == ".tiff") {
-		img = cv::imread(path, cv::IMREAD_UNCHANGED);
-		img = gamma_convert(img, true);
-	} else {
-		RawDecoder decoder;
-		img = decoder.decode(path);
-		if (lfp != nullptr) {
-			*lfp = decoder.lfp;
-		}
+cv::Mat LFIO::readLFP(const std::string &path, json *j) {
+	RawDecoder decoder;
+	cv::Mat img = decoder.decode(path);
+
+	if (!img.empty() && j != nullptr) {
+		*j = decoder.lfp;
 	}
 	return img;
 }
