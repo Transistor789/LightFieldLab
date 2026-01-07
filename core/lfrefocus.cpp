@@ -289,7 +289,8 @@ cv::Mat LFRefocus::refocusByShift(float shift, int crop) {
 	// 不需要手动乘以 255，因为累加的是原始像素值 (0-255)，除以数量后还是
 	// (0-255) 如果你之前的逻辑是 归一化到0-1了，请检查这里 假设输入是 0-255 的
 	// 8U，则直接除以数量即可
-	global_sum.convertTo(result, CV_8UC(channels), 1.0 / count_views);
+	// global_sum.convertTo(result, CV_8UC(channels), 1.0 / count_views);
+	global_sum.convertTo(result, _type, 1.0 / count_views);
 
 	return result;
 }

@@ -46,6 +46,26 @@ void Timer::print_elapsed_ms(const std::string &message) {
 	}
 }
 
+int get_demosaic_code(BayerPattern pattern, bool gray) {
+	switch (pattern) {
+		case BayerPattern::GRBG:
+			return gray ? cv::COLOR_BayerGR2GRAY
+						: cv::COLOR_BayerGR2RGB; // 第0行是 G, R
+		case BayerPattern::RGGB:
+			return gray ? cv::COLOR_BayerRG2GRAY
+						: cv::COLOR_BayerRG2RGB; // 第0行是 R, G
+		case BayerPattern::GBRG:
+			return gray ? cv::COLOR_BayerGB2GRAY
+						: cv::COLOR_BayerGB2RGB; // 第0行是 G, B
+		case BayerPattern::BGGR:
+			return gray ? cv::COLOR_BayerBG2GRAY
+						: cv::COLOR_BayerBG2RGB; // 第0行是 B, G
+		default:
+			// 默认处理
+			return gray ? cv::COLOR_BayerGR2GRAY : cv::COLOR_BayerGR2RGB;
+	}
+}
+
 cv::Mat draw_points(const cv::Mat &img, const std::vector<cv::Point2f> &points,
 					const std::string &output_path, int radius,
 					const cv::Scalar &color, bool save) {
@@ -327,15 +347,29 @@ cv::Mat gamma_convert(const cv::Mat &src, bool inverse) {
 	return result;
 }
 
-bool isRawFormat(const std::string &path) {
+ImageFileType checkImageType(const std::string &path) {
 	namespace fs = std::filesystem;
 	fs::path p(path);
-	if (!p.has_extension())
-		return false;
 
+	// 如果没有后缀，默认当做普通图像处理，或者您可以定义一个 Unknown
+	if (!p.has_extension())
+		return ImageFileType::Normal;
+
+	// 1. 获取后缀
 	std::string ext = p.extension().string();
 
-	// 严格按照您的要求匹配这 6 种
-	return (ext == ".raw" || ext == ".RAW" || ext == ".lfr" || ext == ".LFR"
-			|| ext == ".lfp" || ext == ".LFP");
+	// 2. 统一转为小写 (这样就自动覆盖了 .RAW, .LFP, .Lfr 等情况)
+	std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+	// 3. 分类判断
+	if (ext == ".lfp" || ext == ".lfr") {
+		return ImageFileType::Lytro;
+	}
+
+	if (ext == ".raw") {
+		return ImageFileType::Raw;
+	}
+
+	// 其他所有情况 (png, jpg, tif, bmp, etc.)
+	return ImageFileType::Normal;
 }

@@ -96,7 +96,7 @@ void awb_scalar_impl(cv::Mat &img, const std::vector<float> &gains) {
 
 LFIsp::LFIsp() { cv::setNumThreads(cv::getNumberOfCPUs()); }
 
-LFIsp::LFIsp(const IspConfig &config, const cv::Mat &lfp_img,
+LFIsp::LFIsp(const LFIsp::Config &config, const cv::Mat &lfp_img,
 			 const cv::Mat &wht_img) {
 	cv::setNumThreads(cv::getNumberOfCPUs());
 	set_lf_img(lfp_img);
@@ -112,14 +112,14 @@ LFIsp::LFIsp(const json &json_config, const cv::Mat &lfp_img,
 	set_config(json_config);
 }
 
-LFIsp &LFIsp::set_config(const IspConfig &new_config) {
+LFIsp &LFIsp::set_config(const LFIsp::Config &new_config) {
 	config_ = new_config;
 	prepare_ccm_fixed_point();
 	return *this;
 }
 
 LFIsp &LFIsp::set_config(const json &json_settings) {
-	IspConfig new_config;
+	LFIsp::Config new_config;
 
 	if (json_settings.contains("bay")) {
 		std::string bay_str = json_settings["bay"].get<std::string>();
@@ -442,7 +442,7 @@ LFIsp &LFIsp::preview(float exposure) {
 	}
 
 	int code = get_demosaic_code(config_.bayer, false);
-	cv::demosaicing(raw_8u, preview_img_, code);
+	cv::demosaicing(raw_8u, lfp_img_, code);
 
 	return *this;
 }
@@ -1429,14 +1429,13 @@ LFIsp &LFIsp::prepare_ccm_fixed_point() {
 
 LFIsp &LFIsp::resample(bool dehex) {
 	int num_views = maps.extract.size() / 2;
-	cv::Mat src = preview_img_.empty() ? lfp_img_ : preview_img_;
 	sais.clear();
 	sais.resize(num_views);
 
 #pragma omp parallel for schedule(dynamic)
 	for (int i = 0; i < num_views; ++i) {
 		cv::Mat temp;
-		cv::remap(src, temp, maps.extract[i * 2], maps.extract[i * 2 + 1],
+		cv::remap(lfp_img_, temp, maps.extract[i * 2], maps.extract[i * 2 + 1],
 				  cv::INTER_LINEAR, cv::BORDER_REPLICATE);
 		if (dehex) {
 			cv::remap(temp, temp, maps.dehex[0], maps.dehex[1],
@@ -1445,26 +1444,6 @@ LFIsp &LFIsp::resample(bool dehex) {
 		sais[i] = temp;
 	}
 	return *this;
-}
-
-int LFIsp::get_demosaic_code(BayerPattern pattern, bool gray) {
-	switch (pattern) {
-		case BayerPattern::GRBG:
-			return gray ? cv::COLOR_BayerGR2GRAY
-						: cv::COLOR_BayerGR2RGB; // 第0行是 G, R
-		case BayerPattern::RGGB:
-			return gray ? cv::COLOR_BayerRG2GRAY
-						: cv::COLOR_BayerRG2RGB; // 第0行是 R, G
-		case BayerPattern::GBRG:
-			return gray ? cv::COLOR_BayerGB2GRAY
-						: cv::COLOR_BayerGB2RGB; // 第0行是 G, B
-		case BayerPattern::BGGR:
-			return gray ? cv::COLOR_BayerBG2GRAY
-						: cv::COLOR_BayerBG2RGB; // 第0行是 B, G
-		default:
-			// 默认处理
-			return gray ? cv::COLOR_BayerGR2GRAY : cv::COLOR_BayerGR2RGB;
-	}
 }
 
 LFIsp &LFIsp::compute_lab_stats(const cv::Mat &src, cv::Scalar &mean,

@@ -19,6 +19,7 @@
 #include <QString>
 #include <QtConcurrent/QtConcurrent>
 #include <format>
+#include <memory>
 #include <qimage.h>
 #include <qtmetamacros.h>
 #include <queue>
@@ -38,11 +39,10 @@ public:
 public slots:
 	void setCapturing(bool active);
 	void setProcessing(bool active);
-	bool getIsCapturing() const { return params.dynamic.isCapturing.load(); }
-	bool getIsProcessing() const { return params.dynamic.isProcessing.load(); }
+	bool getIsCapturing() const { return params->dynamic.isCapturing.load(); }
+	bool getIsProcessing() const { return params->dynamic.isProcessing.load(); }
 
 	void readSAI(const QString &path);
-	void readStandardImage(const QString &path);
 	void readLFP(const QString &path);
 	void readWhite(const QString &path);
 	void readExtractLUT(const QString &path);
@@ -59,6 +59,7 @@ public slots:
 	void processAllInFocus();
 	void upsample();
 	void depth();
+	void colorChanged(int index);
 
 signals:
 	void updateSAI(const cv::Mat &img);
@@ -66,7 +67,7 @@ signals:
 	void paramsChanged();
 
 private:
-	QImage cvMatToQImage(const cv::Mat &inMat);
+	QImage cvMatToQImage(const cv::Mat &inMat, int bitDepth = 0);
 
 	template <typename Func>
 	void runAsync(Func &&task, const QString &taskName) {
@@ -104,7 +105,7 @@ private:
 	}
 
 public:
-	LFParams params;
+	std::unique_ptr<LFParams> params;
 
 private:
 	std::shared_ptr<LFData> lf;

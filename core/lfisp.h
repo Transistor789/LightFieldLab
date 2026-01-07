@@ -14,8 +14,6 @@
 
 using json = nlohmann::json;
 
-enum class BayerPattern { NONE, RGGB, GRBG, GBRG, BGGR };
-
 class LFIsp {
 public:
 	struct ResampleMaps {
@@ -28,7 +26,7 @@ public:
 		enum class DPC { Diretional };
 		enum class Demosaic { Bilinear, Gray, VGN, EA };
 	};
-	struct IspConfig {
+	struct Config {
 		BayerPattern bayer = BayerPattern::NONE;
 		int width;
 		int height;
@@ -43,21 +41,20 @@ public:
 	};
 
 	explicit LFIsp();
-	explicit LFIsp(const IspConfig &config, const cv::Mat &lfp_img,
+	explicit LFIsp(const LFIsp::Config &config, const cv::Mat &lfp_img,
 				   const cv::Mat &wht_img);
 	explicit LFIsp(const json &json_config, const cv::Mat &lfp_img,
 				   const cv::Mat &wht_img);
 
-	IspConfig getConfig() const { return config_; }
+	LFIsp::Config getConfig() const { return config_; }
 	cv::Mat &getResult() { return lfp_img_; }
-	const cv::Mat &getPreviewResult() const { return preview_img_; }
 	const cv::Mat &getResult() const { return lfp_img_; }
 	const std::vector<cv::Mat> &getSAIS() const { return sais; }
 	std::vector<cv::Mat> &getSAIS() { return sais; }
+	LFIsp::Config &get_config() { return config_; }
+	bool isLutEmpty() { return maps.extract.empty() || maps.dehex.empty(); }
 
-	IspConfig &get_config() { return config_; }
-
-	LFIsp &set_config(const IspConfig &new_config);
+	LFIsp &set_config(const LFIsp::Config &new_config);
 	LFIsp &set_config(const json &json_settings);
 	LFIsp &print_config();
 
@@ -95,9 +92,8 @@ public:
 
 private:
 	// 成员变量
-	IspConfig config_;
-	cv::Mat preview_img_;
-	cv::Mat lfp_img_, wht_img_;
+	LFIsp::Config config_;
+	cv::Mat lfp_img_;
 	cv::Mat lsc_gain_map_, lsc_gain_map_int_;
 	std::vector<int32_t> ccm_matrix_int_;
 	std::vector<cv::Mat> sais;
@@ -111,7 +107,6 @@ private:
 							 cv::Scalar &stddev);
 	LFIsp &apply_reinhard_transfer(cv::Mat &target, const cv::Scalar &ref_mean,
 								   const cv::Scalar &ref_std);
-	int get_demosaic_code(BayerPattern pattern, bool gray = false);
 
 	// SIMD 实现的具体版本
 	LFIsp &blc_simd_u16(cv::Mat &img);

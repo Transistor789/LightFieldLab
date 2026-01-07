@@ -89,6 +89,13 @@ std::vector<std::vector<cv::Point2f>> HexGridFitter::predict() const {
 		}
 	}
 
+	GridInfo info = get_grid_info();
+	std::cout << "[HexGridFitter] Results:" << std::endl;
+	std::cout << "  > Grid Size: " << _rows << " x " << _cols << std::endl;
+	std::cout << "  > Pitch: [" << info.pitch_col << ", " << info.pitch_row
+			  << "]" << std::endl;
+	std::cout << "  > RMSE:      " << info.rmse << std::endl;
+
 	return grid;
 }
 

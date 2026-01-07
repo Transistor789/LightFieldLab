@@ -45,6 +45,25 @@ CentroidsSort::CentroidsSort(const std::vector<cv::Point2f> &points,
 void CentroidsSort::run() {
 	search_clock_diag();
 	assign_index();
+
+	// --- 输出调试信息 ---
+	std::cout << "[CentroidsSort] Results:" << std::endl;
+
+	// 1. 输出 _hex_odd (布尔值)
+	std::cout << "  > Hex Odd: " << (_hex_odd ? "true" : "false") << std::endl;
+
+	// 2. 输出 _centroids_list 数量
+	std::cout << "  > Centroids Count: " << _centroids_list.size() << std::endl;
+
+	// 3. 输出 _size 尺寸 (遍历 vector<int>)
+	std::cout << "  > Grid Size: [";
+	for (size_t i = 0; i < _size.size(); ++i) {
+		std::cout << _size[i];
+		if (i < _size.size() - 1) {
+			std::cout << ", ";
+		}
+	}
+	std::cout << "]" << std::endl;
 }
 
 std::vector<cv::Point2f> CentroidsSort::neighbors_by_idx(const IntIndex &idx,

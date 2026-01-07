@@ -13,6 +13,7 @@
 #include <qcheckbox.h>
 #include <qcombobox.h>
 #include <qcontainerfwd.h>
+#include <qlineedit.h>
 #include <qpushbutton.h>
 #include <qspinbox.h>
 #include <qtmetamacros.h>
@@ -21,16 +22,15 @@ WidgetControl::WidgetControl(QWidget *parent)
 	: QWidget(parent), ui(new Ui::WidgetControl) {
 	ui->setupUi(this);
 
-	// =========================================================================
 	// 1. 加载文件/文件夹
-	// =========================================================================
+
 	QMenu *menuOpenLFP = new QMenu(this);
 	menuOpenLFP->addAction("原图", this, [this] {
 		QString path = QFileDialog::getOpenFileName(
 			this, "打开光场图像", "",
 			"*.lfp *.lfr *.raw *.png *.bmp *jpeg *.jpg");
 		if (!path.isEmpty() && params_) {
-			params_->path.lfp = path.toStdString();
+			ui->lineEditLFP->setText(path);
 			emit requestLoadLFP(path);
 		}
 	});
@@ -39,7 +39,7 @@ WidgetControl::WidgetControl(QWidget *parent)
 			this, "打开子孔径图像", "",
 			QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
 		if (!path.isEmpty() && params_) {
-			params_->path.sai = path.toStdString();
+			ui->lineEditLFP->setText(path);
 			emit requestLoadSAI(path);
 		}
 	});
@@ -51,7 +51,7 @@ WidgetControl::WidgetControl(QWidget *parent)
 			this, "打开白图像", "",
 			"*.lfp *.lfr *.raw *.png *.bmp *jpeg *.jpg");
 		if (!path.isEmpty() && params_) {
-			params_->path.white = path.toStdString();
+			ui->lineEditWhite->setText(path);
 			emit requestLoadWhite(path);
 		}
 	});
@@ -61,7 +61,7 @@ WidgetControl::WidgetControl(QWidget *parent)
 		QString path = QFileDialog::getOpenFileName(this, "打开子孔径提取表",
 													"", "LUT (*.bin)");
 		if (!path.isEmpty() && params_) {
-			params_->path.extractLUT = path.toStdString();
+			ui->lineEditExtract->setText(path);
 			emit requestLoadExtractLUT(path);
 		}
 	});
@@ -69,45 +69,65 @@ WidgetControl::WidgetControl(QWidget *parent)
 		QString path = QFileDialog::getOpenFileName(this, "打开Dehex表", "",
 													"LUT (*.bin)");
 		if (!path.isEmpty() && params_) {
-			params_->path.dehexLUT = path.toStdString();
+			ui->lineEditDehex->setText(path);
 			emit requestLoadDehexLUT(path);
 		}
 	});
 
-	// =========================================================================
 	// 2. 基础参数 (Info)
-	// =========================================================================
+
+	connect(ui->comboBoxType, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				params_->imageType = static_cast<ImageFileType>(index);
+				ui->comboBoxBayer->setEnabled(index != 0);
+				ui->comboBoxBit->setEnabled(index != 0);
+				ui->lineEditHeight->setEnabled(index == 1);
+				ui->lineEditWidth->setEnabled(index == 1);
+			});
 	connect(ui->comboBoxBayer, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
 				if (params_)
-					params_->isp.config.bayer =
+					params_->isp.config->bayer =
 						static_cast<BayerPattern>(index);
 			});
 	connect(ui->comboBoxBit, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
 				if (params_)
-					params_->isp.config.bitDepth = 8 + 2 * index;
+					params_->isp.config->bitDepth = 8 + 2 * index;
+			});
+	connect(ui->lineEditHeight, &QLineEdit::textChanged, this,
+			[this](QString str) {
+				if (params_)
+					params_->image.height = str.toInt();
+			});
+	connect(ui->lineEditWidth, &QLineEdit::textChanged, this,
+			[this](QString str) {
+				if (params_)
+					params_->image.height = str.toInt();
 			});
 
-	// =========================================================================
 	// 3. 标定与预处理 (Calibration)
-	// =========================================================================
+
+	// connect(ui->checkBoxCaliDemosaic, &QCheckBox::toggled, this,
+	// 		[this](bool active) {
+	// 			if (params_) {
+	// 				params_->calibrate.demosaic = active;
+	// 			}
+	// 		});
 	connect(ui->checkBoxDiameter, &QCheckBox::toggled, this,
 			[this](bool active) {
-				ui->spinBoxDiameter->setEnabled(active);
-				if (!active) {
-					params_->calibrate.diameter = 0;
-				}
+				ui->spinBoxDiameter->setEnabled(!active);
+				params_->calibrate.config->autoEstimate = active;
 			});
 	connect(ui->spinBoxDiameter, &QSpinBox::valueChanged, this,
 			[this](int value) {
 				if (params_)
-					params_->calibrate.diameter = value;
+					params_->calibrate.config->diameter = value;
 			});
 	connect(ui->comboBoxDetectAlgo, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
 				if (params_)
-					params_->calibrate.useCCA = index;
+					params_->calibrate.config->use_cca = index;
 			});
 	connect(ui->checkBoxSaveLUT, &QCheckBox::toggled, this, [this](bool value) {
 		if (params_)
@@ -125,9 +145,8 @@ WidgetControl::WidgetControl(QWidget *parent)
 	connect(ui->btnGenLUT, &QPushButton::clicked, this,
 			&WidgetControl::requestGenLUT);
 
-	// =========================================================================
 	// 4. ISP 管道控制
-	// =========================================================================
+
 	connect(ui->checkBoxDPC, &QCheckBox::toggled, this, [this](bool val) {
 		if (params_)
 			params_->isp.enableDPC = val;
@@ -197,33 +216,33 @@ WidgetControl::WidgetControl(QWidget *parent)
 			});
 	connect(ui->spinBoxThreshold, &QSpinBox::valueChanged, this,
 			[this](int value) {
-				params_->isp.config.dpcThreshold = static_cast<int>(value);
+				params_->isp.config->dpcThreshold = static_cast<int>(value);
 			});
 	connect(ui->spinBoxBL, &QSpinBox::valueChanged, this, [this](int value) {
-		params_->isp.config.black_level = static_cast<int>(value);
+		params_->isp.config->black_level = static_cast<int>(value);
 	});
 	connect(ui->spinBoxWL, &QSpinBox::valueChanged, this, [this](int value) {
-		params_->isp.config.white_level = static_cast<int>(value);
+		params_->isp.config->white_level = static_cast<int>(value);
 	});
 	connect(ui->doubleSpinBoxExpo, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) {
-				params_->isp.config.lscExp = static_cast<float>(value);
+				params_->isp.config->lscExp = static_cast<float>(value);
 			});
 	connect(ui->doubleSpinBoxGain0, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) {
-				params_->isp.config.awb_gains[0] = static_cast<float>(value);
+				params_->isp.config->awb_gains[0] = static_cast<float>(value);
 			});
 	connect(ui->doubleSpinBoxGain1, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) {
-				params_->isp.config.awb_gains[1] = static_cast<float>(value);
+				params_->isp.config->awb_gains[1] = static_cast<float>(value);
 			});
 	connect(ui->doubleSpinBoxGain2, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) {
-				params_->isp.config.awb_gains[2] = static_cast<float>(value);
+				params_->isp.config->awb_gains[2] = static_cast<float>(value);
 			});
 	connect(ui->doubleSpinBoxGain3, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) {
-				params_->isp.config.awb_gains[3] = static_cast<float>(value);
+				params_->isp.config->awb_gains[3] = static_cast<float>(value);
 			});
 	connect(ui->comboBoxDemosaicAlgo, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
@@ -233,14 +252,14 @@ WidgetControl::WidgetControl(QWidget *parent)
 	connect(ui->btnSetCCM, &QPushButton::clicked, this, [this] {
 		if (!params_)
 			return;
-		DialogCCM dialog(params_->isp.config.ccm_matrix, this);
+		DialogCCM dialog(params_->isp.config->ccm_matrix, this);
 		if (dialog.exec() == QDialog::Accepted) {
 			updateUI();
 		}
 	});
 	connect(ui->doubleSpinBoxGamma, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) {
-				params_->isp.config.gamma = static_cast<float>(value);
+				params_->isp.config->gamma = static_cast<float>(value);
 			});
 	connect(ui->comboBoxColorEq, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
@@ -285,9 +304,7 @@ WidgetControl::WidgetControl(QWidget *parent)
 				emit requestProcess(canProcess);
 			});
 
-	// =========================================================================
 	// 5. 子孔径与播放 (SAI)
-	// =========================================================================
 	connect(ui->spinBoxHorz, &QSpinBox::valueChanged, this, [this](int value) {
 		if (!params_)
 			return;
@@ -319,9 +336,8 @@ WidgetControl::WidgetControl(QWidget *parent)
 		emit requestSAI(params_->sai.row, params_->sai.col);
 	});
 
-	// =========================================================================
 	// 6. 后处理 (Refocus, SR, DE)
-	// =========================================================================
+
 	// Refocus
 	connect(ui->spinBoxRefocusCrop, &QSpinBox::valueChanged, this,
 			[this](int value) {
@@ -359,6 +375,7 @@ WidgetControl::WidgetControl(QWidget *parent)
 			[this](int index) {
 				if (params_)
 					params_->de.color = static_cast<LFParamsDE::Color>(index);
+				emit requestChangingColor(index);
 			});
 	connect(ui->btnDE, &QPushButton::clicked, this, &WidgetControl::requestDE);
 }
@@ -377,21 +394,37 @@ void WidgetControl::updateUI() {
 	if (params_ == nullptr)
 		return;
 
-	// Info
-	setValSilent(ui->lineEditLFP, params_->path.lfp);
-	setValSilent(ui->comboBoxBayer, params_->isp.config.bayer);
-	setValSilent(ui->comboBoxBit, (params_->isp.config.bitDepth - 8) / 2);
-	setValSilent(ui->labelResValue,
-				 std::format("{}x{}", params_->isp.config.width,
-							 params_->isp.config.height));
-
-	// Calibrate
-	setValSilent(ui->spinBoxDiameter, params_->calibrate.diameter);
+	// Path
+	if (!params_->path.lfp.empty()) {
+		setValSilent(ui->lineEditLFP, params_->path.lfp);
+	} else {
+		setValSilent(ui->lineEditLFP, params_->path.sai);
+	}
 	setValSilent(ui->lineEditWhite, params_->path.white);
 	setValSilent(ui->lineEditExtract, params_->path.extractLUT);
 	setValSilent(ui->lineEditDehex, params_->path.dehexLUT);
 
-	// Static
+	// Info (修复数据源一致性)
+	setValSilent(ui->comboBoxType, params_->imageType);
+
+	// [修复] 从 isp.config 读取，确保与 ComboBox 的 set 信号源一致
+	setValSilent(ui->comboBoxBayer, params_->isp.config->bayer);
+	setValSilent(ui->comboBoxBit, (params_->isp.config->bitDepth - 8) / 2);
+
+	setValSilent(ui->lineEditHeight, params_->image.height);
+	setValSilent(ui->lineEditWidth, params_->image.width);
+
+	// Calibrate (补全遗漏参数)
+	ui->spinBoxDiameter->setEnabled(!params_->calibrate.config->autoEstimate);
+	setValSilent(ui->checkBoxDiameter, params_->calibrate.config->autoEstimate);
+	setValSilent(ui->spinBoxDiameter, params_->calibrate.config->diameter);
+
+	// [新增] 补全检测算法、保存LUT、视点数的反向更新
+	setValSilent(ui->comboBoxDetectAlgo, params_->calibrate.config->use_cca);
+	setValSilent(ui->checkBoxSaveLUT, params_->calibrate.saveLUT);
+	setValSilent(ui->spinBoxLUTViews, params_->calibrate.views);
+
+	// ISP - Static
 	setValSilent(ui->checkBoxDPC, params_->isp.enableDPC);
 	setValSilent(ui->checkBoxBLC, params_->isp.enableBLC);
 	setValSilent(ui->checkBoxLSC, params_->isp.enableLSC);
@@ -402,17 +435,20 @@ void WidgetControl::updateUI() {
 	setValSilent(ui->checkBoxExtract, params_->isp.enableExtract);
 	setValSilent(ui->checkBoxDehex, params_->isp.enableDehex);
 	setValSilent(ui->checkBoxColorEq, params_->isp.enableColorEq);
+
 	setValSilent(ui->comboBoxDPCAlgo, params_->isp.dpcMethod);
-	setValSilent(ui->spinBoxThreshold, params_->isp.config.dpcThreshold);
-	setValSilent(ui->spinBoxBL, params_->isp.config.black_level);
-	setValSilent(ui->spinBoxWL, params_->isp.config.white_level);
-	setValSilent(ui->doubleSpinBoxExpo, params_->isp.config.lscExp);
-	setValSilent(ui->doubleSpinBoxGain0, params_->isp.config.awb_gains[0]);
-	setValSilent(ui->doubleSpinBoxGain1, params_->isp.config.awb_gains[1]);
-	setValSilent(ui->doubleSpinBoxGain2, params_->isp.config.awb_gains[2]);
-	setValSilent(ui->doubleSpinBoxGain3, params_->isp.config.awb_gains[3]);
+	setValSilent(ui->spinBoxThreshold, params_->isp.config->dpcThreshold);
+	setValSilent(ui->spinBoxBL, params_->isp.config->black_level);
+	setValSilent(ui->spinBoxWL, params_->isp.config->white_level);
+	setValSilent(ui->doubleSpinBoxExpo, params_->isp.config->lscExp);
+
+	setValSilent(ui->doubleSpinBoxGain0, params_->isp.config->awb_gains[0]);
+	setValSilent(ui->doubleSpinBoxGain1, params_->isp.config->awb_gains[1]);
+	setValSilent(ui->doubleSpinBoxGain2, params_->isp.config->awb_gains[2]);
+	setValSilent(ui->doubleSpinBoxGain3, params_->isp.config->awb_gains[3]);
+
 	setValSilent(ui->comboBoxDemosaicAlgo, params_->isp.demosaicMethod);
-	setValSilent(ui->doubleSpinBoxGamma, params_->isp.config.gamma);
+	setValSilent(ui->doubleSpinBoxGamma, params_->isp.config->gamma);
 	setValSilent(ui->comboBoxColorEq, params_->isp.colorEqMethod);
 
 	// Dynamic
@@ -428,7 +464,7 @@ void WidgetControl::updateUI() {
 	ui->spinBoxVert->setMaximum(params_->sai.rows);
 	setValSilent(ui->spinBoxHorz, params_->sai.col);
 	setValSilent(ui->spinBoxVert, params_->sai.row);
-	// 播放按钮状态
+
 	setValSilent(ui->pushButtonViewPlay, params_->sai.isPlaying);
 	ui->pushButtonViewPlay->setText(params_->sai.isPlaying ? "停止" : "播放");
 

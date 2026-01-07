@@ -3,8 +3,10 @@
 #include "hexgrid_fit.h"
 #include "lfcalibrate.h"
 #include "lfio.h"
+#include "lfisp.h"
 #include "utils.h"
 
+#include <cmath>
 #include <format>
 #include <iostream>
 #include <opencv2/core/hal/interface.h>
@@ -135,7 +137,10 @@ void test_calibrate() {
 
 	LFCalibrate cali(img);
 	timer.start();
-	auto pts_cali = cali.run(false, true, 10);
+	cali.config.use_cca = false;
+	cali.config.bayer = BayerPattern::GRBG;
+	cali.config.bitDepth = 10;
+	auto pts_cali = cali.run();
 	timer.stop();
 	std::cout << "--- Calibrate ---" << std::endl;
 	std::cout << "pts_cali size: " << pts_cali.size() << " "
@@ -164,15 +169,18 @@ void test_lut() {
 	cv::Mat img = cv::imread("../../data/gray.png", cv::IMREAD_GRAYSCALE);
 	LFCalibrate cali(img);
 	Timer timer;
-	auto pts_cali = cali.run(false, false, 8);
+	cali.config.use_cca = false;
+	cali.config.bayer = BayerPattern::NONE;
+	cali.config.bitDepth = 8;
+	auto pts_cali = cali.run();
 	timer.stop();
 	timer.print_elapsed_ms();
 
 	for (int winSize = 1; winSize <= 13; winSize += 2) {
-		cali.computeSliceMaps(winSize);
+		cali.computeExtractMaps(winSize);
 		LFIO::saveLookUpTables(
 			std::format("../../data/calibration/slice_{}.bin", winSize),
-			cali.getSliceMaps(), winSize);
+			cali.getExtractMaps(), winSize);
 		cali.computeDehexMaps();
 		LFIO::saveLookUpTables("../../data/calibration/dehex.bin",
 							   cali.getDehexMaps(), 1);

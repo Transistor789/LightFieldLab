@@ -22,7 +22,8 @@ public:
 	 * @param use_cca 是否使用连通域分析（否则用轮廓）
 	 * @return {检测到的中心点列表, {水平pitch, 垂直pitch}}
 	 */
-	void run(bool use_cca = false);
+	void run(bool use_cca);
+	void run(bool use_cca, int diameter);
 	std::vector<cv::Point2f> getPoints() { return _points; }
 	std::vector<float> getPitch() { return _pitch; };
 	int getEstimatedM() const { return _estimatedM; }

@@ -57,6 +57,7 @@ signals:
 	void requestRefocus();
 	void requestSR();
 	void requestDE();
+	void requestChangingColor(int index);
 
 	void setRefocusCrop(int value);
 	void setRefocusAlpha(double value);

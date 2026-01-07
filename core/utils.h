@@ -31,6 +31,12 @@ private:
 	bool _is_running;	   // 计时器是否正在运行
 };
 
+enum class BayerPattern { NONE, RGGB, GRBG, GBRG, BGGR };
+
+enum class ImageFileType { Lytro, Raw, Normal };
+
+int get_demosaic_code(BayerPattern pattern, bool gray = false);
+
 cv::Mat draw_points(const cv::Mat &img,
 					const std::vector<cv::Point2f> &pts_sorted,
 					const std::string &output_path, int radius = 1,
@@ -58,6 +64,6 @@ void imshowRaw(const std::string &winname, const cv::Mat &img,
 std::string get_base_filename(const std::string &filename);
 cv::Mat gamma_convert(const cv::Mat &src, bool inverse);
 
-bool isRawFormat(const std::string &path);
+ImageFileType checkImageType(const std::string &path);
 
 #endif

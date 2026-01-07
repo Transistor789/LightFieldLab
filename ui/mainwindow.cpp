@@ -38,8 +38,8 @@ MainWindow::MainWindow(QWidget *parent)
 			elapsedMs = 1;
 
 		// 2. 获取并清零计数器
-		int countCap = ctrl->params.dynamic.capFrameCount.exchange(0);
-		int countProc = ctrl->params.dynamic.procFrameCount.exchange(0);
+		int countCap = ctrl->params->dynamic.capFrameCount.exchange(0);
+		int countProc = ctrl->params->dynamic.procFrameCount.exchange(0);
 		int countUI = m_uiFrameCount;
 		m_uiFrameCount = 0;
 
@@ -65,7 +65,7 @@ MainWindow::MainWindow(QWidget *parent)
 	});
 	m_fpsTimer->start();
 
-	ui->widgetControl->setupParams(&ctrl->params);
+	ui->widgetControl->setupParams(ctrl->params.get());
 	connect(ctrl.get(), &LFControl::paramsChanged, ui->widgetControl,
 			&WidgetControl::updateUI);
 
@@ -104,15 +104,17 @@ MainWindow::MainWindow(QWidget *parent)
 	connect(ui->widgetControl, &WidgetControl::requestSAI, this,
 			[this](int row, int col) { ctrl->updateSAI(row, col); });
 	// 重聚焦
-	connect(ui->widgetControl, &WidgetControl::requestRefocus, this,
-			[this] { ctrl->processAllInFocus(); });
 	// connect(ui->widgetControl, &WidgetControl::requestRefocus, this,
-	// 		[this] { ctrl->refocus(); });
+	// 		[this] { ctrl->processAllInFocus(); });
+	connect(ui->widgetControl, &WidgetControl::requestRefocus, this,
+			[this] { ctrl->refocus(); });
 
 	connect(ui->widgetControl, &WidgetControl::requestSR, this,
 			[this] { ctrl->upsample(); });
 	connect(ui->widgetControl, &WidgetControl::requestDE, this,
 			[this] { ctrl->depth(); });
+	connect(ui->widgetControl, &WidgetControl::requestChangingColor, this,
+			[this](int index) { ctrl->colorChanged(index); });
 
 	// 图像就绪
 	connect(ctrl.get(), &LFControl::imageReady, ui->widgetImage,
@@ -122,16 +124,16 @@ MainWindow::MainWindow(QWidget *parent)
 #ifndef NDEBUG
 	ctrl->readExtractLUT("data/calibration/lut_extract_9.bin");
 	ctrl->readDehexLUT("data/calibration/lut_dehex.bin");
-	ctrl->readSAI("data/bedroom");
+	// ctrl->readSAI("data/bedroom");
 	ctrl->readLFP("data/toy.lfr");
-	std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	// std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	ctrl->readWhite("data/MOD_0015.RAW");
-	std::this_thread::sleep_for(std::chrono::milliseconds(500));
-	// ctrl->calibrate();
-	ctrl->refocus();
-	// ctrl->processAllInFocus();
-	ctrl->upsample();
-	ctrl->depth();
+	// std::this_thread::sleep_for(std::chrono::milliseconds(500));
+	// // ctrl->calibrate();
+	// ctrl->refocus();
+	// // ctrl->processAllInFocus();
+	// ctrl->upsample();
+	// ctrl->depth();
 #endif
 }
 

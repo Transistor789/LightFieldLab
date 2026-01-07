@@ -22,7 +22,10 @@ void fast_preview() {
 	// cv::waitKey();
 
 	LFCalibrate cali(wht_img_gray);
-	cali.run(false, false, 10);
+	cali.config.use_cca = false;
+	cali.config.bayer = BayerPattern::NONE;
+	cali.config.bitDepth = 10;
+	cali.run();
 
 	LFIsp isp(j, lf_img, wht_img);
 
@@ -34,7 +37,7 @@ void fast_preview() {
 	// cv::imshow("", isp.getResult());
 	// cv::waitKey();
 
-	auto demosaic_img = isp.getPreviewResult();
+	auto demosaic_img = isp.getResult();
 	// cv::imshow("", demosaic_img);
 	// cv::waitKey();
 
@@ -47,7 +50,7 @@ void fast_preview() {
 	cv::Mat slice_x = slice_maps[0];
 	cv::Mat slice_y = slice_maps[1];
 	// cv::Mat slice_map_x, slice_map_y;
-	// cali.computeSliceMaps(1, slice_map_x, slice_map_y);
+	// cali.computeExtractMaps(1, slice_map_x, slice_map_y);
 
 	cv::Mat sliced_img;
 

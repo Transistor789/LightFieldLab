@@ -7,7 +7,7 @@
 class ColorMatcher {
 public:
 	// 算法类型枚举
-	enum class Method { Reinhard, HistMatch };
+	enum class Method { Reinhard, HistMatch, MKL, MVGD, HM_MKL_HM, HM_MVGD_HM };
 
 	/**
 	 * @brief [核心接口] 对整个光场视角进行色彩一致性矫正
@@ -21,17 +21,25 @@ public:
 	static void apply(cv::Mat &src, const cv::Mat &ref, Method method);
 
 private:
-	// --- Reinhard 算法相关 ---
+	// --- Reinhard 算法 ---
 	static void reinhard(cv::Mat &src, const cv::Mat &ref);
-	// 优化的内部接口：直接传入预计算好的参考图统计信息
 	static void reinhardInternal(cv::Mat &src, const cv::Scalar &ref_mean,
 								 const cv::Scalar &ref_std);
 	static void computeLabStats(const cv::Mat &src, cv::Scalar &mean,
 								cv::Scalar &stddev);
 
-	// --- HistMatch 算法相关 ---
+	// --- HistMatch 算法 ---
 	static void histMatch(cv::Mat &src, const cv::Mat &ref);
 	static void histMatchChannel(cv::Mat &src, const cv::Mat &ref);
+
+	// --- MKL & MVGD 算法 (RGB空间) ---
+	static void mkl(cv::Mat &src, const cv::Mat &ref);
+	static void mvgd(cv::Mat &src, const cv::Mat &ref);
+
+	// --- 线性代数辅助函数 ---
+	static void computeMeanCov(const cv::Mat &img, cv::Mat &mean, cv::Mat &cov);
+	static cv::Mat sqrtMatrix(const cv::Mat &cov);	  // 计算矩阵平方根
+	static cv::Mat invSqrtMatrix(const cv::Mat &cov); // 计算矩阵逆平方根
 };
 
 #endif // COLORMATCHER_H

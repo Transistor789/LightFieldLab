@@ -25,6 +25,26 @@ void CentroidsExtract::run(bool use_cca) {
 
 	// 4. 计算间距
 	_pitch = estimatePitchXY(crop_centers);
+
+	// --- 输出调试信息 ---
+	std::cout << "[CentroidsExtract] Results:" << std::endl;
+	std::cout << "  > Diameter: " << _estimatedM << std::endl;
+	std::cout << "  > Points Count: " << _points.size() << std::endl;
+	std::cout << "  > Pitch: [" << _pitch[0] << ", " << _pitch[1] << "]"
+			  << std::endl;
+}
+
+void CentroidsExtract::run(bool use_cca, int diameter) {
+	_points = detectMlaCenters(_img, false, diameter, use_cca);
+	auto crop_centers = detectMlaCenters(_cropImg, false, diameter, use_cca);
+	_pitch = estimatePitchXY(crop_centers);
+
+	// --- 输出调试信息 ---
+	std::cout << "[CentroidsExtract] Results:" << std::endl;
+	std::cout << "  > Diameter: " << diameter << std::endl;
+	std::cout << "  > Points Count: " << _points.size() << std::endl;
+	std::cout << "  > Pitch: [" << _pitch[0] << ", " << _pitch[1] << "]"
+			  << std::endl;
 }
 
 cv::Mat CentroidsExtract::createGaussKernel(int length, float sigma) {

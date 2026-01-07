@@ -2,9 +2,11 @@
 #define LFPARAMS_H
 
 #include "colormatcher.h"
+#include "lfcalibrate.h"
 #include "lfdepth.h"
 #include "lfisp.h"
 #include "lfsr.h"
+#include "utils.h"
 
 #include <atomic>
 #include <string>
@@ -12,6 +14,13 @@
 
 struct LFParamsPath {
 	std::string lfp, sai, white, extractLUT, dehexLUT;
+};
+
+struct LFParamsImage {
+	BayerPattern bayer = BayerPattern::NONE;
+	int height = 0;
+	int width = 0;
+	int bitDepth = 8;
 };
 
 struct LFParamsSAI {
@@ -24,11 +33,9 @@ struct LFParamsSAI {
 };
 
 struct LFParamsCalibrate {
-	int diameter = 0;
-	bool useCCA = false;
-	bool autoEstimate = false;
 	bool saveLUT = false;
 	int views = 9;
+	LFCalibrate::Config *config;
 };
 
 struct LFParamsISP {
@@ -43,10 +50,10 @@ struct LFParamsISP {
 	bool enableDehex = true;
 	bool enableColorEq = true;
 
-	LFIsp::IspConfig config;
 	LFIsp::Method::DPC dpcMethod = LFIsp::Method::DPC::Diretional;
 	LFIsp::Method::Demosaic demosaicMethod = LFIsp::Method::Demosaic::Bilinear;
 	ColorMatcher::Method colorEqMethod = ColorMatcher::Method::Reinhard;
+	LFIsp::Config *config;
 };
 
 struct LFParamsDynamic {
@@ -81,6 +88,8 @@ struct LFParamsDE {
 };
 
 struct LFParams {
+	ImageFileType imageType = ImageFileType::Lytro;
+	LFParamsImage image;
 	LFParamsPath path;
 	LFParamsCalibrate calibrate;
 	LFParamsISP isp;
@@ -89,6 +98,11 @@ struct LFParams {
 	LFParamsRefocus refocus;
 	LFParamsSR sr;
 	LFParamsDE de;
+
+	LFParams(LFCalibrate::Config *cfgCali, LFIsp::Config *cfgIsp) {
+		isp.config = cfgIsp;
+		calibrate.config = cfgCali;
+	}
 };
 
 #endif
