@@ -11,10 +11,9 @@
 #include <opencv2/opencv.hpp>
 
 void test_isp() {
-	LFIO load;
-	json j;
-	auto lf_img = load.readLFP("../data/toy.lfr", &j);
-	auto wht_img = load.readLFP("../data/MOD_0015.RAW");
+	json j, meta;
+	auto lf_img = LFIO::ReadLFP("../data/toy.lfr", j);
+	auto wht_img = LFIO::ReadLFP("../data/MOD_0015.RAW", meta);
 	// lf_img.convertTo(lf_img, CV_8U, 255.0 / 1023.0);
 	// wht_img.convertTo(wht_img, CV_8U, 255.0 / 1023.0);
 

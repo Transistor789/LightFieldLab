@@ -34,6 +34,7 @@ struct LFParamsSAI {
 
 struct LFParamsCalibrate {
 	bool saveLUT = false;
+	bool genLUT = true;
 	int views = 9;
 	LFCalibrate::Config *config;
 };

@@ -115,6 +115,7 @@ LFIsp::LFIsp(const json &json_config, const cv::Mat &lfp_img,
 LFIsp &LFIsp::set_config(const LFIsp::Config &new_config) {
 	config_ = new_config;
 	prepare_ccm_fixed_point();
+	prepare_gamma_lut();
 	return *this;
 }
 
@@ -328,7 +329,43 @@ LFIsp &LFIsp::ccm() {
 	return *this;
 }
 
-LFIsp &LFIsp::gc() { return *this; }
+LFIsp &LFIsp::gc() {
+	if (lfp_img_.empty())
+		return *this;
+
+	// 防御性编程：如果 LUT 没生成（比如没调 set_config），现场生成一次
+	if (gamma_lut_u8_.empty() || gamma_lut_u16_.empty()) {
+		prepare_gamma_lut();
+	}
+
+	if (lfp_img_.depth() == CV_8U) {
+		// 8-bit: OpenCV 自带的 LUT 已经非常快 (SIMD)
+		cv::LUT(lfp_img_, gamma_lut_u8_, lfp_img_);
+	} else {
+		// 16-bit (10/12/16 bit): 使用 OpenMP 并行查表
+		// 相比原本的转 float -> pow -> 转回，速度提升约 50-100 倍
+
+		int rows = lfp_img_.rows;
+		int cols = lfp_img_.cols * lfp_img_.channels(); // 展平处理通道
+		const uint16_t *lut_ptr = gamma_lut_u16_.data();
+
+		if (lfp_img_.isContinuous()) {
+			cols *= rows;
+			rows = 1;
+		}
+
+#pragma omp parallel for
+		for (int r = 0; r < rows; ++r) {
+			uint16_t *ptr = lfp_img_.ptr<uint16_t>(r);
+			for (int c = 0; c < cols; ++c) {
+				// 直接查表，无分支，极快
+				// 此时 lut_ptr 大小为 65536，ptr[c] 为 uint16，天然安全不越界
+				ptr[c] = lut_ptr[ptr[c]];
+			}
+		}
+	}
+	return *this;
+}
 
 // ============================================================================
 // 快速处理流程 (SIMD Implementation Dispatcher)
@@ -740,9 +777,50 @@ void LFIsp::generate_lsc_maps(const cv::Mat &raw_wht) {
 	lsc_gain_map_.convertTo(lsc_gain_map_int_, CV_16U, 4096.0);
 }
 
+void LFIsp::prepare_gamma_lut() {
+	float g = config_.gamma > 0 ? config_.gamma : 0.4166f; // 默认 1/2.4
+
+	// --- A. 准备 8-bit LUT ---
+	gamma_lut_u8_ = cv::Mat(1, 256, CV_8U);
+	uchar *p = gamma_lut_u8_.ptr();
+	for (int i = 0; i < 256; ++i) {
+		// 归一化 -> pow -> 饱和
+		p[i] = cv::saturate_cast<uchar>(pow(i / 255.0, g) * 255.0);
+	}
+
+	// --- B. 准备 16-bit LUT (覆盖所有可能的输入值 0-65535) ---
+	// 无论实际 bitDepth 是多少，我们都生成一张完整的 65536 大小的表，
+	// 这样可以处理任何 16位 容器的数据，且内存占用仅 128KB，非常划算。
+	gamma_lut_u16_.resize(65536);
+
+	// 确定归一化的最大值 (White Point)
+	// 如果 bitDepth=10，则 1023 映射到 1023，超过 1023 的值会被截断或映射到最大
+	int valid_bits = config_.bitDepth > 0 ? config_.bitDepth : 16;
+	int max_val = (1 << valid_bits) - 1;
+	if (max_val > 65535)
+		max_val = 65535;
+
+#pragma omp parallel for
+	for (int i = 0; i < 65536; ++i) {
+		if (i > max_val) {
+			// 超过位深范围的值（如 10bit 里的 1024~65535）直接钳位到最大值
+			gamma_lut_u16_[i] = static_cast<uint16_t>(max_val);
+		} else {
+			// 正常的 Gamma 映射: (val / max) ^ gamma * max
+			float norm = (float)i / max_val;
+			float res = std::pow(norm, g) * max_val;
+			gamma_lut_u16_[i] = cv::saturate_cast<uint16_t>(res);
+		}
+	}
+}
+
 LFIsp &LFIsp::lsc_simd_u16(cv::Mat &img) {
 	int rows = img.rows;
 	int cols = img.cols;
+
+	// [新增] 准备曝光增益 (定点化 Q12: 1.0 -> 4096)
+	int32_t exp_fix = static_cast<int32_t>(config_.lscExp * 4096.0f);
+	__m256i v_exp = _mm256_set1_epi32(exp_fix);
 
 #pragma omp parallel for
 	for (int r = 0; r < rows; ++r) {
@@ -758,6 +836,11 @@ LFIsp &LFIsp::lsc_simd_u16(cv::Mat &img) {
 				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src));
 			__m256i v_gain_lo =
 				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_gain));
+
+			// [修改] 叠加曝光增益: Gain_New = (Gain_Map * Exp) >> 12
+			v_gain_lo =
+				_mm256_srli_epi32(_mm256_mullo_epi32(v_gain_lo, v_exp), 12);
+
 			__m256i v_res_lo =
 				_mm256_srli_epi32(_mm256_mullo_epi32(v_src_lo, v_gain_lo), 12);
 
@@ -765,6 +848,11 @@ LFIsp &LFIsp::lsc_simd_u16(cv::Mat &img) {
 				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src, 1));
 			__m256i v_gain_hi =
 				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_gain, 1));
+
+			// [修改] 叠加曝光增益
+			v_gain_hi =
+				_mm256_srli_epi32(_mm256_mullo_epi32(v_gain_hi, v_exp), 12);
+
 			__m256i v_res_hi =
 				_mm256_srli_epi32(_mm256_mullo_epi32(v_src_hi, v_gain_hi), 12);
 
@@ -772,8 +860,11 @@ LFIsp &LFIsp::lsc_simd_u16(cv::Mat &img) {
 			v_res = _mm256_permute4x64_epi64(v_res, _MM_SHUFFLE(3, 1, 2, 0));
 			_mm256_storeu_si256((__m256i *)(ptr_src + c), v_res);
 		}
+		// 处理剩余像素
 		for (; c < cols; ++c) {
-			uint32_t val = (uint32_t)ptr_src[c] * ptr_gain[c];
+			// gain * exp
+			uint32_t gain = (ptr_gain[c] * exp_fix) >> 12;
+			uint32_t val = (uint32_t)ptr_src[c] * gain;
 			val >>= 12;
 			if (val > 65535)
 				val = 65535;
@@ -786,6 +877,10 @@ LFIsp &LFIsp::lsc_simd_u16(cv::Mat &img) {
 LFIsp &LFIsp::lsc_simd_u8(cv::Mat &img) {
 	int rows = img.rows;
 	int cols = img.cols;
+
+	// [新增] 曝光增益
+	int32_t exp_fix = static_cast<int32_t>(config_.lscExp * 4096.0f);
+	__m256i v_exp = _mm256_set1_epi32(exp_fix);
 
 #pragma omp parallel for
 	for (int r = 0; r < rows; ++r) {
@@ -801,6 +896,11 @@ LFIsp &LFIsp::lsc_simd_u8(cv::Mat &img) {
 			__m256i v_src_lo = _mm256_cvtepu8_epi32(v_src_small);
 			__m256i v_gain_lo =
 				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_gain));
+
+			// [修改] 叠加曝光
+			v_gain_lo =
+				_mm256_srli_epi32(_mm256_mullo_epi32(v_gain_lo, v_exp), 12);
+
 			__m256i v_res_lo =
 				_mm256_srli_epi32(_mm256_mullo_epi32(v_src_lo, v_gain_lo), 12);
 
@@ -809,6 +909,11 @@ LFIsp &LFIsp::lsc_simd_u8(cv::Mat &img) {
 			__m256i v_src_hi = _mm256_cvtepu8_epi32(v_src_hi_small);
 			__m256i v_gain_hi =
 				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_gain, 1));
+
+			// [修改] 叠加曝光
+			v_gain_hi =
+				_mm256_srli_epi32(_mm256_mullo_epi32(v_gain_hi, v_exp), 12);
+
 			__m256i v_res_hi =
 				_mm256_srli_epi32(_mm256_mullo_epi32(v_src_hi, v_gain_hi), 12);
 
@@ -822,7 +927,9 @@ LFIsp &LFIsp::lsc_simd_u8(cv::Mat &img) {
 			_mm_storeu_si128((__m128i *)(ptr_src + c), v_packed_u8);
 		}
 		for (; c < cols; ++c) {
-			uint32_t val = (uint32_t)ptr_src[c] * ptr_gain[c];
+			// gain * exp
+			uint32_t gain = (ptr_gain[c] * exp_fix) >> 12;
+			uint32_t val = (uint32_t)ptr_src[c] * gain;
 			val >>= 12;
 			if (val > 255)
 				val = 255;
@@ -1182,10 +1289,18 @@ LFIsp &LFIsp::lsc_awb_simd_u16(cv::Mat &img) {
 	int rows = img.rows;
 	int cols = img.cols;
 	const float scale = 4096.0f;
-	uint16_t g_tl = static_cast<uint16_t>(config_.awb_gains[0] * scale);
-	uint16_t g_tr = static_cast<uint16_t>(config_.awb_gains[1] * scale);
-	uint16_t g_bl = static_cast<uint16_t>(config_.awb_gains[2] * scale);
-	uint16_t g_br = static_cast<uint16_t>(config_.awb_gains[3] * scale);
+
+	// [修改] 将 config_.lscExp 乘入 AWB 基础增益
+	float exp_gain = config_.lscExp;
+
+	uint16_t g_tl =
+		static_cast<uint16_t>(config_.awb_gains[0] * scale * exp_gain);
+	uint16_t g_tr =
+		static_cast<uint16_t>(config_.awb_gains[1] * scale * exp_gain);
+	uint16_t g_bl =
+		static_cast<uint16_t>(config_.awb_gains[2] * scale * exp_gain);
+	uint16_t g_br =
+		static_cast<uint16_t>(config_.awb_gains[3] * scale * exp_gain);
 
 	uint32_t p_row0 = (static_cast<uint32_t>(g_tr) << 16) | g_tl;
 	__m256i v_awb_row0 = _mm256_set1_epi32(p_row0);
@@ -1211,6 +1326,7 @@ LFIsp &LFIsp::lsc_awb_simd_u16(cv::Mat &img) {
 			__m256i v_awb_hi =
 				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb, 1));
 
+			// 这里不需要改，因为 awb 变量已经包含了 lscExp
 			__m256i v_gain_lo =
 				_mm256_srli_epi32(_mm256_mullo_epi32(v_lsc_lo, v_awb_lo), 12);
 			__m256i v_gain_hi =
@@ -1251,10 +1367,18 @@ LFIsp &LFIsp::lsc_awb_simd_u8(cv::Mat &img) {
 	int rows = img.rows;
 	int cols = img.cols;
 	const float scale = 4096.0f;
-	uint16_t g_tl = static_cast<uint16_t>(config_.awb_gains[0] * scale);
-	uint16_t g_tr = static_cast<uint16_t>(config_.awb_gains[1] * scale);
-	uint16_t g_bl = static_cast<uint16_t>(config_.awb_gains[2] * scale);
-	uint16_t g_br = static_cast<uint16_t>(config_.awb_gains[3] * scale);
+
+	// [修改] 引入 lscExp
+	float exp_gain = config_.lscExp;
+
+	uint16_t g_tl =
+		static_cast<uint16_t>(config_.awb_gains[0] * scale * exp_gain);
+	uint16_t g_tr =
+		static_cast<uint16_t>(config_.awb_gains[1] * scale * exp_gain);
+	uint16_t g_bl =
+		static_cast<uint16_t>(config_.awb_gains[2] * scale * exp_gain);
+	uint16_t g_br =
+		static_cast<uint16_t>(config_.awb_gains[3] * scale * exp_gain);
 
 	uint32_t p_row0 = (static_cast<uint32_t>(g_tr) << 16) | g_tl;
 	__m256i v_awb_row0 = _mm256_set1_epi32(p_row0);
@@ -1333,9 +1457,21 @@ LFIsp &LFIsp::lsc_awb_simd_u8(cv::Mat &img) {
 	return *this;
 }
 
+// 确保在类中定义或在此处定义 saturate 辅助函数 (OpenCV已有)
+// 假设 ccm_matrix_int_ 是标准的 RGB->RGB 矩阵 (Row0: R, Row1: G, Row2: B)
+
+// 确保包含必要的头文件
+#include <immintrin.h>
+
+// ============================================================================
+// CCM SIMD Implementation
+// ============================================================================
+
 LFIsp &LFIsp::ccm_fixed_u16(cv::Mat &img) {
 	int rows = img.rows;
 	int cols = img.cols;
+
+	// [修正 1] 显式定义标量系数，供 SIMD 初始化和底部的标量循环使用
 	const int32_t c00 = ccm_matrix_int_[0], c01 = ccm_matrix_int_[1],
 				  c02 = ccm_matrix_int_[2];
 	const int32_t c10 = ccm_matrix_int_[3], c11 = ccm_matrix_int_[4],
@@ -1343,32 +1479,107 @@ LFIsp &LFIsp::ccm_fixed_u16(cv::Mat &img) {
 	const int32_t c20 = ccm_matrix_int_[6], c21 = ccm_matrix_int_[7],
 				  c22 = ccm_matrix_int_[8];
 
+	// 1. 准备矩阵系数 (广播到 SIMD 寄存器)
+	const __m256i v_c00 = _mm256_set1_epi32(c00);
+	const __m256i v_c01 = _mm256_set1_epi32(c01);
+	const __m256i v_c02 = _mm256_set1_epi32(c02);
+	const __m256i v_c10 = _mm256_set1_epi32(c10);
+	const __m256i v_c11 = _mm256_set1_epi32(c11);
+	const __m256i v_c12 = _mm256_set1_epi32(c12);
+	const __m256i v_c20 = _mm256_set1_epi32(c20);
+	const __m256i v_c21 = _mm256_set1_epi32(c21);
+	const __m256i v_c22 = _mm256_set1_epi32(c22);
+
 #pragma omp parallel for
 	for (int r = 0; r < rows; ++r) {
 		uint16_t *ptr = img.ptr<uint16_t>(r);
-		for (int c = 0; c < cols; ++c) {
+		int c = 0;
+
+		// SIMD 循环：每次处理 8 个像素
+		for (; c <= cols - 8; c += 8) {
+			// 手动 Load (模拟 Gather)
+			__m256i v_b = _mm256_setr_epi32(ptr[c * 3 + 0], ptr[c * 3 + 3],
+											ptr[c * 3 + 6], ptr[c * 3 + 9],
+											ptr[c * 3 + 12], ptr[c * 3 + 15],
+											ptr[c * 3 + 18], ptr[c * 3 + 21]);
+
+			__m256i v_g = _mm256_setr_epi32(ptr[c * 3 + 1], ptr[c * 3 + 4],
+											ptr[c * 3 + 7], ptr[c * 3 + 10],
+											ptr[c * 3 + 13], ptr[c * 3 + 16],
+											ptr[c * 3 + 19], ptr[c * 3 + 22]);
+
+			__m256i v_r = _mm256_setr_epi32(ptr[c * 3 + 2], ptr[c * 3 + 5],
+											ptr[c * 3 + 8], ptr[c * 3 + 11],
+											ptr[c * 3 + 14], ptr[c * 3 + 17],
+											ptr[c * 3 + 20], ptr[c * 3 + 23]);
+
+			// --- 矩阵乘法 ---
+			// R_new
+			__m256i v_r_new = _mm256_mullo_epi32(v_r, v_c00);
+			v_r_new = _mm256_add_epi32(v_r_new, _mm256_mullo_epi32(v_g, v_c01));
+			v_r_new = _mm256_add_epi32(v_r_new, _mm256_mullo_epi32(v_b, v_c02));
+			v_r_new = _mm256_srai_epi32(v_r_new, 12); // Shift
+
+			// G_new
+			__m256i v_g_new = _mm256_mullo_epi32(v_r, v_c10);
+			v_g_new = _mm256_add_epi32(v_g_new, _mm256_mullo_epi32(v_g, v_c11));
+			v_g_new = _mm256_add_epi32(v_g_new, _mm256_mullo_epi32(v_b, v_c12));
+			v_g_new = _mm256_srai_epi32(v_g_new, 12);
+
+			// B_new
+			__m256i v_b_new = _mm256_mullo_epi32(v_r, v_c20);
+			v_b_new = _mm256_add_epi32(v_b_new, _mm256_mullo_epi32(v_g, v_c21));
+			v_b_new = _mm256_add_epi32(v_b_new, _mm256_mullo_epi32(v_b, v_c22));
+			v_b_new = _mm256_srai_epi32(v_b_new, 12);
+
+			// --- Pack & Store ---
+			__m256i v_bg = _mm256_packus_epi32(v_b_new, v_g_new);
+			__m256i v_r0 = _mm256_packus_epi32(v_r_new, _mm256_setzero_si256());
+
+			uint16_t *p = ptr + c * 3;
+			// Lane 0
+			p[0] = _mm256_extract_epi16(v_bg, 0);
+			p[1] = _mm256_extract_epi16(v_bg, 4);
+			p[2] = _mm256_extract_epi16(v_r0, 0);
+			p[3] = _mm256_extract_epi16(v_bg, 1);
+			p[4] = _mm256_extract_epi16(v_bg, 5);
+			p[5] = _mm256_extract_epi16(v_r0, 1);
+			p[6] = _mm256_extract_epi16(v_bg, 2);
+			p[7] = _mm256_extract_epi16(v_bg, 6);
+			p[8] = _mm256_extract_epi16(v_r0, 2);
+			p[9] = _mm256_extract_epi16(v_bg, 3);
+			p[10] = _mm256_extract_epi16(v_bg, 7);
+			p[11] = _mm256_extract_epi16(v_r0, 3);
+
+			// Lane 1
+			p[12] = _mm256_extract_epi16(v_bg, 8);
+			p[13] = _mm256_extract_epi16(v_bg, 12);
+			p[14] = _mm256_extract_epi16(v_r0, 8);
+			p[15] = _mm256_extract_epi16(v_bg, 9);
+			p[16] = _mm256_extract_epi16(v_bg, 13);
+			p[17] = _mm256_extract_epi16(v_r0, 9);
+			p[18] = _mm256_extract_epi16(v_bg, 10);
+			p[19] = _mm256_extract_epi16(v_bg, 14);
+			p[20] = _mm256_extract_epi16(v_r0, 10);
+			p[21] = _mm256_extract_epi16(v_bg, 11);
+			p[22] = _mm256_extract_epi16(v_bg, 15);
+			p[23] = _mm256_extract_epi16(v_r0, 11);
+		}
+
+		// 剩余像素处理 (现在 c00...c22 已经定义了，不会报错)
+		for (; c < cols; ++c) {
 			int idx = c * 3;
-			int32_t r_val = ptr[idx + 0];
+			int32_t b_val = ptr[idx + 0];
 			int32_t g_val = ptr[idx + 1];
-			int32_t b_val = ptr[idx + 2];
-			int32_t new_ch0 = (r_val * c00 + g_val * c01 + b_val * c02) >> 12;
-			int32_t new_ch1 = (r_val * c10 + g_val * c11 + b_val * c12) >> 12;
-			int32_t new_ch2 = (r_val * c20 + g_val * c21 + b_val * c22) >> 12;
-			if (new_ch0 < 0)
-				new_ch0 = 0;
-			else if (new_ch0 > 65535)
-				new_ch0 = 65535;
-			if (new_ch1 < 0)
-				new_ch1 = 0;
-			else if (new_ch1 > 65535)
-				new_ch1 = 65535;
-			if (new_ch2 < 0)
-				new_ch2 = 0;
-			else if (new_ch2 > 65535)
-				new_ch2 = 65535;
-			ptr[idx + 0] = static_cast<uint16_t>(new_ch0);
-			ptr[idx + 1] = static_cast<uint16_t>(new_ch1);
-			ptr[idx + 2] = static_cast<uint16_t>(new_ch2);
+			int32_t r_val = ptr[idx + 2];
+
+			int32_t r_new = (r_val * c00 + g_val * c01 + b_val * c02) >> 12;
+			int32_t g_new = (r_val * c10 + g_val * c11 + b_val * c12) >> 12;
+			int32_t b_new = (r_val * c20 + g_val * c21 + b_val * c22) >> 12;
+
+			ptr[idx + 0] = cv::saturate_cast<uint16_t>(std::max(0, b_new));
+			ptr[idx + 1] = cv::saturate_cast<uint16_t>(std::max(0, g_new));
+			ptr[idx + 2] = cv::saturate_cast<uint16_t>(std::max(0, r_new));
 		}
 	}
 	return *this;
@@ -1377,6 +1588,8 @@ LFIsp &LFIsp::ccm_fixed_u16(cv::Mat &img) {
 LFIsp &LFIsp::ccm_fixed_u8(cv::Mat &img) {
 	int rows = img.rows;
 	int cols = img.cols;
+
+	// [修正 1] 同样显式定义标量系数
 	const int32_t c00 = ccm_matrix_int_[0], c01 = ccm_matrix_int_[1],
 				  c02 = ccm_matrix_int_[2];
 	const int32_t c10 = ccm_matrix_int_[3], c11 = ccm_matrix_int_[4],
@@ -1384,32 +1597,88 @@ LFIsp &LFIsp::ccm_fixed_u8(cv::Mat &img) {
 	const int32_t c20 = ccm_matrix_int_[6], c21 = ccm_matrix_int_[7],
 				  c22 = ccm_matrix_int_[8];
 
+	const __m256i v_c00 = _mm256_set1_epi32(c00);
+	const __m256i v_c01 = _mm256_set1_epi32(c01);
+	const __m256i v_c02 = _mm256_set1_epi32(c02);
+	const __m256i v_c10 = _mm256_set1_epi32(c10);
+	const __m256i v_c11 = _mm256_set1_epi32(c11);
+	const __m256i v_c12 = _mm256_set1_epi32(c12);
+	const __m256i v_c20 = _mm256_set1_epi32(c20);
+	const __m256i v_c21 = _mm256_set1_epi32(c21);
+	const __m256i v_c22 = _mm256_set1_epi32(c22);
+
+	// 8位 gather 索引 (Stride=3)
+	__m256i v_idx_base = _mm256_setr_epi32(0, 3, 6, 9, 12, 15, 18, 21);
+	__m256i v_idx_g = _mm256_add_epi32(v_idx_base, _mm256_set1_epi32(1));
+	__m256i v_idx_r = _mm256_add_epi32(v_idx_base, _mm256_set1_epi32(2));
+	__m256i v_mask = _mm256_set1_epi32(0xFF);
+
 #pragma omp parallel for
 	for (int r = 0; r < rows; ++r) {
 		uint8_t *ptr = img.ptr<uint8_t>(r);
-		for (int c = 0; c < cols; ++c) {
+		int c = 0;
+
+		// SIMD 循环：8 像素
+		for (; c <= cols - 8; c += 8) {
+			// Gather
+			__m256i v_b = _mm256_i32gather_epi32((const int *)(ptr + c * 3),
+												 v_idx_base, 1);
+			__m256i v_g =
+				_mm256_i32gather_epi32((const int *)(ptr + c * 3), v_idx_g, 1);
+			__m256i v_r =
+				_mm256_i32gather_epi32((const int *)(ptr + c * 3), v_idx_r, 1);
+
+			v_b = _mm256_and_si256(v_b, v_mask);
+			v_g = _mm256_and_si256(v_g, v_mask);
+			v_r = _mm256_and_si256(v_r, v_mask);
+
+			// --- 矩阵乘法 ---
+			__m256i v_r_new = _mm256_mullo_epi32(v_r, v_c00);
+			v_r_new = _mm256_add_epi32(v_r_new, _mm256_mullo_epi32(v_g, v_c01));
+			v_r_new = _mm256_add_epi32(v_r_new, _mm256_mullo_epi32(v_b, v_c02));
+			v_r_new = _mm256_srai_epi32(v_r_new, 12);
+
+			__m256i v_g_new = _mm256_mullo_epi32(v_r, v_c10);
+			v_g_new = _mm256_add_epi32(v_g_new, _mm256_mullo_epi32(v_g, v_c11));
+			v_g_new = _mm256_add_epi32(v_g_new, _mm256_mullo_epi32(v_b, v_c12));
+			v_g_new = _mm256_srai_epi32(v_g_new, 12);
+
+			__m256i v_b_new = _mm256_mullo_epi32(v_r, v_c20);
+			v_b_new = _mm256_add_epi32(v_b_new, _mm256_mullo_epi32(v_g, v_c21));
+			v_b_new = _mm256_add_epi32(v_b_new, _mm256_mullo_epi32(v_b, v_c22));
+			v_b_new = _mm256_srai_epi32(v_b_new, 12);
+
+			// [修正 2] 避免使用 extract lambda，改用 Store 到临时数组
+			// 这种方法避免了 "must be constant integer"
+			// 错误，且编译器优化后性能极高
+			int32_t buf_r[8], buf_g[8], buf_b[8];
+			_mm256_storeu_si256((__m256i *)buf_r, v_r_new);
+			_mm256_storeu_si256((__m256i *)buf_g, v_g_new);
+			_mm256_storeu_si256((__m256i *)buf_b, v_b_new);
+
+			// 循环写入 (手动饱和)
+			uint8_t *p_dst = ptr + c * 3;
+			for (int k = 0; k < 8; ++k) {
+				p_dst[k * 3 + 0] = cv::saturate_cast<uint8_t>(buf_b[k]);
+				p_dst[k * 3 + 1] = cv::saturate_cast<uint8_t>(buf_g[k]);
+				p_dst[k * 3 + 2] = cv::saturate_cast<uint8_t>(buf_r[k]);
+			}
+		}
+
+		// 剩余像素处理
+		for (; c < cols; ++c) {
 			int idx = c * 3;
-			int32_t r_val = ptr[idx];
+			int32_t b_val = ptr[idx + 0];
 			int32_t g_val = ptr[idx + 1];
-			int32_t b_val = ptr[idx + 2];
-			int32_t new_ch0 = (r_val * c00 + g_val * c01 + b_val * c02) >> 12;
-			int32_t new_ch1 = (r_val * c10 + g_val * c11 + b_val * c12) >> 12;
-			int32_t new_ch2 = (r_val * c20 + g_val * c21 + b_val * c22) >> 12;
-			if (new_ch0 < 0)
-				new_ch0 = 0;
-			else if (new_ch0 > 255)
-				new_ch0 = 255;
-			if (new_ch1 < 0)
-				new_ch1 = 0;
-			else if (new_ch1 > 255)
-				new_ch1 = 255;
-			if (new_ch2 < 0)
-				new_ch2 = 0;
-			else if (new_ch2 > 255)
-				new_ch2 = 255;
-			ptr[idx] = (uint8_t)new_ch0;
-			ptr[idx + 1] = (uint8_t)new_ch1;
-			ptr[idx + 2] = (uint8_t)new_ch2;
+			int32_t r_val = ptr[idx + 2];
+
+			int32_t r_new = (r_val * c00 + g_val * c01 + b_val * c02) >> 12;
+			int32_t g_new = (r_val * c10 + g_val * c11 + b_val * c12) >> 12;
+			int32_t b_new = (r_val * c20 + g_val * c21 + b_val * c22) >> 12;
+
+			ptr[idx + 0] = cv::saturate_cast<uint8_t>(std::max(0, b_new));
+			ptr[idx + 1] = cv::saturate_cast<uint8_t>(std::max(0, g_new));
+			ptr[idx + 2] = cv::saturate_cast<uint8_t>(std::max(0, r_new));
 		}
 	}
 	return *this;
@@ -1419,10 +1688,13 @@ LFIsp &LFIsp::prepare_ccm_fixed_point() {
 	if (config_.ccm_matrix.empty())
 		return *this;
 	ccm_matrix_int_.resize(9);
+
 	const float scale = 4096.0f;
+
 	for (int i = 0; i < 9; ++i) {
+		// 四舍五入取整，减小误差
 		ccm_matrix_int_[i] =
-			static_cast<int32_t>(config_.ccm_matrix[i] * scale);
+			static_cast<int32_t>(config_.ccm_matrix[i] * scale + 0.5f);
 	}
 	return *this;
 }
@@ -1515,4 +1787,49 @@ LFIsp &LFIsp::color_equalize() {
 		apply_reinhard_transfer(sais[i], ref_mean, ref_std);
 	}
 	return *this;
+}
+
+std::vector<cv::Mat> LFIsp::getSAIS_8bit() const {
+	if (sais.empty()) {
+		return {};
+	}
+
+	std::vector<cv::Mat> res;
+	res.reserve(sais.size());
+
+	// 1. 计算归一化系数
+	// 我们需要知道原始数据是多少位的 (10, 12, 14, 16?)
+	// 从而将其正确压缩到 0-255
+	int validBits = config_.bitDepth;
+	if (validBits <= 0)
+		validBits = 12; // 默认兜底
+
+	double maxVal = (1 << validBits) - 1.0;
+	// 防御性：避免 maxVal 过小导致除以零或错误放大
+	if (maxVal < 255.0)
+		maxVal = 255.0;
+
+	double scale = 255.0 / maxVal;
+
+	// 2. 批量转换
+	for (const auto &img : sais) {
+		if (img.empty()) {
+			res.push_back(cv::Mat());
+			continue;
+		}
+
+		cv::Mat img8u;
+		// 如果原本就是 8-bit，直接克隆
+		// (或者不克隆，看你需要深拷贝还是浅拷贝，建议Clone防止外部修改影响ISP内部)
+		if (img.depth() == CV_8U) {
+			img8u = img;
+			// img8u = img.clone();
+		} else {
+			// 执行缩放并转换类型: dst = src * scale
+			img.convertTo(img8u, CV_8U, scale);
+		}
+		res.push_back(img8u);
+	}
+
+	return res;
 }

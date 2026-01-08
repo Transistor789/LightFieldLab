@@ -1,42 +1,88 @@
 ﻿#include "lfio.h"
 
+#include "califinder.h"
 #include "raw_decode.h"
-#include "utils.h"
+#include "utils.h" // 假设有通用工具
 
+#include <algorithm>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
-#include <omp.h>
-#include <opencv2/opencv.hpp>
-#include <openssl/sha.h>
-#include <string>
 
-LFIO::LFIO() { cv::setNumThreads(cv::getNumberOfCPUs()); }
-
-cv::Mat LFIO::readStandardImage(const std::string &path) {
-	// 读取普通图片 (Unchanged 以保留可能的 Alpha 通道或原始深度)
+cv::Mat LFIO::ReadStandardImage(const std::string &path) {
 	cv::Mat img = cv::imread(path, cv::IMREAD_UNCHANGED);
 	if (img.empty()) {
 		std::cerr << "[LFIO] Error: Failed to load standard image: " << path
 				  << std::endl;
 		return cv::Mat();
 	}
-	// TODO
-	// return gamma_convert(img, false);
 	return img;
 }
 
-cv::Mat LFIO::readLFP(const std::string &path, json *j) {
+cv::Mat LFIO::ReadLFP(const std::string &path, json &outMetadata) {
+	// 使用无状态的 RawDecoder
 	RawDecoder decoder;
-	cv::Mat img = decoder.decode(path);
-
-	if (!img.empty() && j != nullptr) {
-		*j = decoder.lfp;
-	}
+	cv::Mat img = decoder.DecodeLytro(path, outMetadata);
 	return img;
 }
 
-std::shared_ptr<LFData> LFIO::readSAI(const std::string &path) {
+cv::Mat LFIO::ReadWhiteImageAuto(const std::string &lfpPath,
+								 const std::string &caliDir,
+								 json &outWhiteMeta) {
+	// 1. 检查标定目录
+	if (caliDir.empty())
+		return cv::Mat();
+
+	// 2. 预读 LFP 获取 Key (Serial, GeoRef)
+	RawDecoder decoder;
+	json lfpMeta;
+	try {
+		decoder.DecodeLytro(lfpPath, lfpMeta);
+	} catch (...) {
+		return cv::Mat();
+	}
+
+	std::string serial, geoRef;
+	if (lfpMeta.contains("serial"))
+		serial = lfpMeta["serial"];
+	if (lfpMeta.contains("geo_ref"))
+		geoRef = lfpMeta["geo_ref"];
+
+	if (serial.empty() || geoRef.empty())
+		return cv::Mat();
+
+	// 3. 查找路径
+	CaliFinder finder(caliDir);
+	std::string whitePath = finder.findPath(serial, geoRef);
+
+	if (whitePath.empty())
+		return cv::Mat();
+
+	std::cout << "[LFIO] Auto-found white image: " << whitePath << std::endl;
+
+	// 4. 解码
+	return decoder.DecodeWhiteImage(whitePath, outWhiteMeta);
+}
+
+// =============================================================
+// [方式二：手动]
+// =============================================================
+cv::Mat LFIO::ReadWhiteImageManual(const std::string &whitePath,
+								   json &outWhiteMeta) {
+	// 简单的参数检查
+	if (whitePath.empty())
+		return cv::Mat();
+	if (!std::filesystem::exists(whitePath)) {
+		std::cerr << "[LFIO] Manual white image path not found: " << whitePath
+				  << std::endl;
+		return cv::Mat();
+	}
+
+	// 直接调用解码器，解码器内部会自动处理 .TXT/.json 的寻找和应用
+	RawDecoder decoder;
+	return decoder.DecodeWhiteImage(whitePath, outWhiteMeta);
+}
+
+std::shared_ptr<LFData> LFIO::ReadSAI(const std::string &path) {
 	// 1. 检查路径
 	if (!std::filesystem::exists(path)) {
 		throw std::runtime_error("readSAI: file not exist! Path: " + path);
@@ -96,7 +142,7 @@ std::shared_ptr<LFData> LFIO::readSAI(const std::string &path) {
 	return std::make_shared<LFData>(std::move(temp));
 }
 
-bool LFIO::saveLookUpTables(const std::string &path,
+bool LFIO::SaveLookUpTables(const std::string &path,
 							const std::vector<cv::Mat> &maps, int winSize) {
 	if (maps.empty())
 		return false;
@@ -160,7 +206,7 @@ bool LFIO::saveLookUpTables(const std::string &path,
 }
 
 // 【重要修正】注意这里的 int &outWinSize
-bool LFIO::loadLookUpTables(const std::string &path, std::vector<cv::Mat> &maps,
+bool LFIO::LoadLookUpTables(const std::string &path, std::vector<cv::Mat> &maps,
 							int &outWinSize) {
 	std::ifstream in(path, std::ios::binary);
 	if (!in.is_open()) {

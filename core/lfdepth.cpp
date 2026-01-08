@@ -11,6 +11,12 @@ bool LFDisp::depth(const std::vector<cv::Mat> &views, Method method) {
 		return false;
 	}
 
+	if (views[0].depth() != CV_8U) {
+		std::cerr << "[LFDisp] Error: Input views must be 8-bit (CV_8U)."
+				  << std::endl;
+		return false;
+	}
+
 	// --- 智能加载：检查并按需加载模型 ---
 	// 将 method 传入，与内部状态比对
 	if (!checkAndLoadModel(method)) {

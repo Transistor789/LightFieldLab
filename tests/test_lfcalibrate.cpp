@@ -6,7 +6,6 @@
 #include "lfisp.h"
 #include "utils.h"
 
-#include <cmath>
 #include <format>
 #include <iostream>
 #include <opencv2/core/hal/interface.h>
@@ -20,12 +19,14 @@ void test_module();
 void test_calibrate();
 void test_json();
 void test_lut();
+void test_detach();
 
 int main() {
 	// test_module();
-	test_calibrate();
+	// test_calibrate();
 	// test_json();
 	// test_lut();
+	test_detach();
 
 	return 0;
 }
@@ -41,7 +42,7 @@ void test_module() {
 
 	CentroidsExtract ce(img);
 
-	ce.run(use_cca);
+	ce.run(CentroidsExtract::Method::Contour);
 	timer.stop();
 
 	std::vector<cv::Point2f> pts = ce.getPoints();
@@ -128,24 +129,33 @@ void test_module() {
 
 void test_calibrate() {
 	// cv::Mat img = cv::imread("../../data/gray.png", cv::IMREAD_GRAYSCALE);
-	cv::Mat img = LFIO::readLFP("../../data/MOD_0015.RAW");
-	Timer timer;
+	json meta;
+	cv::Mat img =
+		LFIO::ReadWhiteImageAuto("D:/code/LightFieldLab/data/toy.lfr",
+								 "D:/code/LightFieldCamera/B5152102610/", meta);
+	imshowRaw("raw", img);
+	cv::waitKey();
+	// cv::Mat img = LFIO::ReadLFP("../../data/MOD_0015.RAW");
+	// Timer timer;
 
-	// cv::Mat demosic;
-	// cv::demosaicing(img, demosic, cv::COLOR_BayerGB2GRAY);
-	// demosic.convertTo(demosic, CV_8U, 255.0 / 1023.0);
+	cv::Mat demosic;
+	cv::demosaicing(img, demosic, cv::COLOR_BayerGB2GRAY);
+	demosic.convertTo(demosic, CV_8U, 255.0 / 1023.0);
+	imshowRaw("demosic", demosic);
+	cv::imwrite("../../data/demosaic.png", demosic);
+	cv::waitKey();
 
-	LFCalibrate cali(img);
-	timer.start();
-	cali.config.use_cca = false;
-	cali.config.bayer = BayerPattern::GRBG;
-	cali.config.bitDepth = 10;
-	auto pts_cali = cali.run();
-	timer.stop();
-	std::cout << "--- Calibrate ---" << std::endl;
-	std::cout << "pts_cali size: " << pts_cali.size() << " "
-			  << pts_cali[0].size() << std::endl;
-	std::cout << "总耗时: " << timer.elapsed_ms() << " ms" << std::endl;
+	// LFCalibrate cali(img);
+	// timer.start();
+	// cali.config.use_cca = false;
+	// cali.config.bayer = BayerPattern::GRBG;
+	// cali.config.bitDepth = 10;
+	// auto pts_cali = cali.run();
+	// timer.stop();
+	// std::cout << "--- Calibrate ---" << std::endl;
+	// std::cout << "pts_cali size: " << pts_cali.size() << " "
+	// 		  << pts_cali[0].size() << std::endl;
+	// std::cout << "总耗时: " << timer.elapsed_ms() << " ms" << std::endl;
 }
 
 void test_json() {
@@ -169,7 +179,7 @@ void test_lut() {
 	cv::Mat img = cv::imread("../../data/gray.png", cv::IMREAD_GRAYSCALE);
 	LFCalibrate cali(img);
 	Timer timer;
-	cali.config.use_cca = false;
+	cali.config.ceMethod = CentroidsExtract::Method::Contour;
 	cali.config.bayer = BayerPattern::NONE;
 	cali.config.bitDepth = 8;
 	auto pts_cali = cali.run();
@@ -177,12 +187,88 @@ void test_lut() {
 	timer.print_elapsed_ms();
 
 	for (int winSize = 1; winSize <= 13; winSize += 2) {
-		cali.computeExtractMaps(winSize);
-		LFIO::saveLookUpTables(
+		LFIO::SaveLookUpTables(
 			std::format("../../data/calibration/slice_{}.bin", winSize),
-			cali.getExtractMaps(), winSize);
-		cali.computeDehexMaps();
-		LFIO::saveLookUpTables("../../data/calibration/dehex.bin",
-							   cali.getDehexMaps(), 1);
+			cali.computeExtractMaps(winSize), winSize);
+
+		LFIO::SaveLookUpTables("../../data/calibration/lut_dehex.bin",
+							   cali.computeDehexMaps(), 1);
 	}
+}
+
+void test_detach() {
+	// 1. 读取 Raw 图
+	// 请确保路径正确
+	json j;
+	cv::Mat img =
+		LFIO::ReadWhiteImageAuto("D:/code/LightFieldLab/data/toy.lfr",
+								 "D:/code/LightFieldCamera/B5152102610/", j);
+
+	if (img.empty()) {
+		std::cerr << "Failed to load image!" << std::endl;
+		return;
+	}
+
+	// 2. 简单的去马赛克转灰度
+	cv::Mat gray;
+	// 注意：请确认你的 Raw 是 GB 格式，如果这里错了，灰度图会有网格纹理
+	cv::demosaicing(img, gray, cv::COLOR_BayerGB2GRAY);
+
+	// 3. 转为 8-bit (DoG 在 8-bit 上够用了，且速度快)
+	// 假设是 10-bit raw (0-1023)
+	gray.convertTo(gray, CV_8U, 255.0 / 1023.0);
+	imshowRaw("1. Original Gray", gray);
+
+	// =========================================================
+	// DoG 分离处理核心代码
+	// =========================================================
+
+	// [参数设置] 估计你的微透镜直径 (像素)
+	// 如果微透镜很大，这里一定要改大！比如 30, 50, 80...
+	double diameter = 15.0;
+
+	// sigma1: 控制核心 (保留高频细节) -> 约直径的 1/6 ~ 1/4
+	// sigma2: 控制背景 (抑制低频粘连) -> 约直径的 1/2 ~ 1
+	double sigma1 = std::max(1.0, diameter * 0.2);
+	double sigma2 = std::max(3.0, diameter * 0.8);
+
+	std::cout << "Running DoG with sigma1=" << sigma1 << ", sigma2=" << sigma2
+			  << std::endl;
+
+	// A. CLAHE (限制对比度自适应直方图均衡)
+	// 这一步非常重要！它能把灰蒙蒙的粘连处强行拉开反差
+	cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(4.0, cv::Size(8, 8));
+	cv::Mat enhanced;
+	clahe->apply(gray, enhanced);
+	imshowRaw("2. CLAHE Enhanced", enhanced);
+
+	// B. 计算 DoG (Difference of Gaussians)
+	cv::Mat g1, g2, dog;
+	cv::GaussianBlur(enhanced, g1, cv::Size(0, 0), sigma1);
+	cv::GaussianBlur(enhanced, g2, cv::Size(0, 0), sigma2);
+
+	// 核心：中心 - 背景
+	// 这样做的物理含义是：保留突出的亮点，减去平缓的背景
+	cv::subtract(g1, g2, dog);
+
+	// C. 归一化 (为了显示清晰)
+	// 拉伸到 0-255
+	cv::normalize(dog, dog, 0, 255, cv::NORM_MINMAX);
+	imshowRaw("3. DoG Result (Separated)", dog);
+
+	// (可选) 二值化看看效果
+	cv::Mat binary;
+	// 取前 20% 亮度的区域作为中心
+	// DoG 后背景基本是黑的，阈值切分非常容易
+	double minVal, maxVal;
+	cv::minMaxLoc(dog, &minVal, &maxVal);
+	cv::threshold(dog, binary, maxVal * 0.4, 255, cv::THRESH_BINARY);
+	imshowRaw("4. Binary Result", binary);
+
+	cv::imwrite("../data/gray.png", gray);
+	cv::imwrite("../data/enhanced.png", enhanced);
+	cv::imwrite("../data/dog.png", dog);
+	cv::imwrite("../data/binary.png", binary);
+
+	cv::waitKey();
 }

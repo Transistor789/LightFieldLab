@@ -11,10 +11,9 @@
 #include <vector>
 
 void fast_preview() {
-	LFIO load;
-	json j;
-	auto lf_img = load.readLFP("../data/toy.lfr", &j);
-	auto wht_img = load.readLFP("../data/MOD_0015.RAW");
+	json j, meta;
+	auto lf_img = LFIO::ReadLFP("../data/toy.lfr", j);
+	auto wht_img = LFIO::ReadWhiteImageManual("../data/MOD_0015.RAW", meta);
 	cv::Mat wht_img_gray;
 	cv::demosaicing(wht_img, wht_img_gray, cv::COLOR_BayerGR2GRAY);
 	wht_img_gray.convertTo(wht_img_gray, CV_8U, 255.0 / 1023.0);
@@ -22,7 +21,7 @@ void fast_preview() {
 	// cv::waitKey();
 
 	LFCalibrate cali(wht_img_gray);
-	cali.config.use_cca = false;
+	cali.config.ceMethod = CentroidsExtract::Method::Contour;
 	cali.config.bayer = BayerPattern::NONE;
 	cali.config.bitDepth = 10;
 	cali.run();
@@ -45,7 +44,7 @@ void fast_preview() {
 	int winSize = 0;
 
 	// 调用读取
-	LFIO::loadLookUpTables("../../data/calibration/slice_1.bin", slice_maps,
+	LFIO::LoadLookUpTables("../../data/calibration/slice_1.bin", slice_maps,
 						   winSize);
 	cv::Mat slice_x = slice_maps[0];
 	cv::Mat slice_y = slice_maps[1];
@@ -63,7 +62,7 @@ void fast_preview() {
 	// cv::waitKey();
 
 	std::vector<cv::Mat> dehex_maps;
-	LFIO::loadLookUpTables("../../data/calibration/dehex.bin", dehex_maps,
+	LFIO::LoadLookUpTables("../../data/calibration/lut_dehex.bin", dehex_maps,
 						   winSize);
 	cv::Mat dehex_x = dehex_maps[0];
 	cv::Mat dehex_y = dehex_maps[1];
@@ -92,44 +91,44 @@ void fast_preview() {
 }
 
 void get_sai() {
-	LFIO load;
-	json j;
-	auto lf_img = load.readLFP("../data/toy.lfr", &j);
-	auto wht_img = load.readLFP("../data/MOD_0015.RAW");
+	json j, meta;
+	auto lf_img = LFIO::ReadLFP("../data/toy.lfr", j);
+	auto wht_img = LFIO::ReadWhiteImageManual("../data/MOD_0015.RAW", meta);
 	cv::Mat wht_img_gray;
 	cv::demosaicing(wht_img, wht_img_gray, cv::COLOR_BayerGR2GRAY);
-	wht_img_gray.convertTo(wht_img_gray, CV_8U, 255.0 / 1023.0);
+	// wht_img_gray.convertTo(wht_img_gray, CV_8U, 255.0 / 1023.0);
 
-	LFIsp isp(j, lf_img, wht_img);
+	LFIsp isp(j, lf_img, wht_img_gray);
 	isp.print_config();
 
 	int slice_size = 0, dehex_size = 0;
-	LFIO::loadLookUpTables("../../data/calibration/slice_9.bin",
+	LFIO::LoadLookUpTables("../../data/calibration/lut_extract_9.bin",
 						   isp.maps.extract, slice_size);
-	LFIO::loadLookUpTables("../../data/calibration/dehex.bin", isp.maps.dehex,
-						   dehex_size);
+	LFIO::LoadLookUpTables("../../data/calibration/lut_dehex.bin",
+						   isp.maps.dehex, dehex_size);
 
 	Timer timer;
 
 	isp.preview(1.0).resample(true);
-	isp.ccm_fast();
+	// std::cout << "test...\n";
+	// isp.ccm_fast();
 	// isp.color_equalize();
 	// isp.raw_process_fast().demosaic().resample();
 
 	timer.stop();
 	timer.print_elapsed_ms();
 
-	const auto &sais = isp.getSAIS();
-	std::cout << sais[0].size << std::endl;
-	for (int i = 0; i < sais.size(); ++i) {
-		// cv::Mat temp;
-		// sais[i].convertTo(temp, CV_8U, 255.0f / (1023 - 64));
-		// cv::imshow("", temp);
-		// cv::imwrite("../../data/center.png", temp);
-		cv::imshow("", sais[i]);
-		// cv::imwrite("../../data/center_preview.png", sais[i]);
-		cv::waitKey();
-	}
+	// const auto &sais = isp.getSAIS();
+	// std::cout << sais[0].size << std::endl;
+	// for (int i = 0; i < sais.size(); ++i) {
+	// 	// cv::Mat temp;
+	// 	// sais[i].convertTo(temp, CV_8U, 255.0f / (1023 - 64));
+	// 	// cv::imshow("", temp);
+	// 	// cv::imwrite("../../data/center.png", temp);
+	// 	cv::imshow("", sais[i]);
+	// 	// cv::imwrite("../../data/center_preview.png", sais[i]);
+	// 	cv::waitKey();
+	// }
 }
 
 int main() {

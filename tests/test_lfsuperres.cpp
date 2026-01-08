@@ -13,7 +13,7 @@ int main() {
 #else
 	std::string path = "/Users/jax/code/LightFieldLab/input/toy";
 #endif
-	auto lf = LFIO::readSAI(path);
+	auto lf = LFIO::ReadSAI(path);
 	auto center = lf->getCenter();
 	cv::imshow("ORIGINAL", center);
 

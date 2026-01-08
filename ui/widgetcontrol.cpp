@@ -1,5 +1,6 @@
 #include "widgetcontrol.h"
 
+#include "centers_extract.h"
 #include "colormatcher.h"
 #include "dialogccm.h"
 #include "lfdepth.h"
@@ -9,7 +10,6 @@
 #include "ui_widgetcontrol.h"
 
 #include <QMenu>
-#include <format>
 #include <qcheckbox.h>
 #include <qcombobox.h>
 #include <qcontainerfwd.h>
@@ -23,7 +23,6 @@ WidgetControl::WidgetControl(QWidget *parent)
 	ui->setupUi(this);
 
 	// 1. 加载文件/文件夹
-
 	QMenu *menuOpenLFP = new QMenu(this);
 	menuOpenLFP->addAction("原图", this, [this] {
 		QString path = QFileDialog::getOpenFileName(
@@ -46,7 +45,16 @@ WidgetControl::WidgetControl(QWidget *parent)
 	ui->toolButtonLF->setMenu(menuOpenLFP);
 
 	// 加载白图像
-	connect(ui->toolButtonWhite, &QToolButton::clicked, this, [this] {
+	QMenu *menuOpenCali = new QMenu(this);
+	menuOpenCali->addAction("文件夹", this, [this] {
+		QString path = QFileDialog::getExistingDirectory(
+			this, "打开标定数据所在文件夹", "",
+			QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+		if (!path.isEmpty() && params_) {
+			ui->lineEditWhite->setText(path);
+		}
+	});
+	menuOpenCali->addAction("图像", this, [this] {
 		QString path = QFileDialog::getOpenFileName(
 			this, "打开白图像", "",
 			"*.lfp *.lfr *.raw *.png *.bmp *jpeg *.jpg");
@@ -55,6 +63,7 @@ WidgetControl::WidgetControl(QWidget *parent)
 			emit requestLoadWhite(path);
 		}
 	});
+	ui->toolButtonWhite->setMenu(menuOpenCali);
 
 	// 加载 LUT
 	connect(ui->toolButtonExtract, &QToolButton::clicked, this, [this] {
@@ -87,13 +96,12 @@ WidgetControl::WidgetControl(QWidget *parent)
 	connect(ui->comboBoxBayer, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
 				if (params_)
-					params_->isp.config->bayer =
-						static_cast<BayerPattern>(index);
+					params_->image.bayer = static_cast<BayerPattern>(index);
 			});
 	connect(ui->comboBoxBit, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
 				if (params_)
-					params_->isp.config->bitDepth = 8 + 2 * index;
+					params_->image.bitDepth = 8 + 2 * index;
 			});
 	connect(ui->lineEditHeight, &QLineEdit::textChanged, this,
 			[this](QString str) {
@@ -127,8 +135,13 @@ WidgetControl::WidgetControl(QWidget *parent)
 	connect(ui->comboBoxDetectAlgo, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
 				if (params_)
-					params_->calibrate.config->use_cca = index;
+					params_->calibrate.config->ceMethod =
+						static_cast<CentroidsExtract::Method>(index);
 			});
+	connect(ui->checkBoxGenLUT, &QCheckBox::toggled, this, [this](bool value) {
+		if (params_)
+			params_->calibrate.genLUT = value;
+	});
 	connect(ui->checkBoxSaveLUT, &QCheckBox::toggled, this, [this](bool value) {
 		if (params_)
 			params_->calibrate.saveLUT = value;
@@ -142,8 +155,6 @@ WidgetControl::WidgetControl(QWidget *parent)
 	// 按钮动作
 	connect(ui->btnCalibrate, &QPushButton::clicked, this,
 			&WidgetControl::requestCalibrate);
-	connect(ui->btnGenLUT, &QPushButton::clicked, this,
-			&WidgetControl::requestGenLUT);
 
 	// 4. ISP 管道控制
 
@@ -416,13 +427,12 @@ void WidgetControl::updateUI() {
 
 	// Calibrate (补全遗漏参数)
 	ui->spinBoxDiameter->setEnabled(!params_->calibrate.config->autoEstimate);
-	setValSilent(ui->checkBoxDiameter, params_->calibrate.config->autoEstimate);
 	setValSilent(ui->spinBoxDiameter, params_->calibrate.config->diameter);
-
-	// [新增] 补全检测算法、保存LUT、视点数的反向更新
-	setValSilent(ui->comboBoxDetectAlgo, params_->calibrate.config->use_cca);
-	setValSilent(ui->checkBoxSaveLUT, params_->calibrate.saveLUT);
+	setValSilent(ui->checkBoxDiameter, params_->calibrate.config->autoEstimate);
+	setValSilent(ui->comboBoxDetectAlgo, params_->calibrate.config->ceMethod);
 	setValSilent(ui->spinBoxLUTViews, params_->calibrate.views);
+	setValSilent(ui->checkBoxSaveLUT, params_->calibrate.saveLUT);
+	setValSilent(ui->checkBoxGenLUT, params_->calibrate.genLUT);
 
 	// ISP - Static
 	setValSilent(ui->checkBoxDPC, params_->isp.enableDPC);

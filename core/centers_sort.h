@@ -47,12 +47,18 @@ public:
 				  const std::vector<float> &pitch);
 
 	/**
-	 * @brief 主运行入口
+	 * @brief 主运行入口 (原有算法 - 边缘行走)
 	 * @return {排序后的中心点列表, 是否为奇数六边形偏移}
 	 */
 	void run();
 
-	// === 核心查找方法 ===
+	/**
+	 * @brief [新增] 增强版运行入口 (泛洪填充算法)
+	 * 针对边缘缺失、渐晕等情况更鲁棒
+	 */
+	void run2();
+
+	// === 核心查找方法 (原有) ===
 	std::vector<cv::Point2f> neighbors_by_idx(const IntIndex &idx,
 											  int radius = 3) const;
 	// cv::Point2f nearest_point(const cv::Point2f &pt, int radius = 3) const;
@@ -73,6 +79,12 @@ public:
 	std::vector<cv::Point2f> const getPoints() { return _centroids_list; }
 
 private:
+	// === 新增辅助函数 (用于 run2) ===
+	void flood_fill_from_center();
+	cv::Point2f find_nearest_existing(const cv::Point2f &target,
+									  float radius) const;
+
+private:
 	// === 成员变量 ===
 	const cv::Point2f _pitch_unit; // pitch / 2
 
@@ -85,7 +97,7 @@ private:
 	bool _hex_odd = false;
 	std::vector<cv::Point2f> _centroids_list;
 
-	// === 搜索逻辑 ===
+	// === 搜索逻辑 (原有) ===
 	// 返回 {size, corners}
 	std::vector<int> _search_clockwise(std::vector<cv::Point2f> &corners);
 	std::vector<int> _search_counter_clockwise(

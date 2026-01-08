@@ -46,7 +46,6 @@ signals:
 	void requestLoadDehexLUT(const QString &path);
 
 	void requestCalibrate();
-	void requestGenLUT();
 	void requestFastPreview();
 	void requestISP();
 	void requestDetectCamera();

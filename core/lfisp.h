@@ -51,6 +51,7 @@ public:
 	const cv::Mat &getResult() const { return lfp_img_; }
 	const std::vector<cv::Mat> &getSAIS() const { return sais; }
 	std::vector<cv::Mat> &getSAIS() { return sais; }
+	std::vector<cv::Mat> getSAIS_8bit() const;
 	LFIsp::Config &get_config() { return config_; }
 	bool isLutEmpty() { return maps.extract.empty() || maps.dehex.empty(); }
 
@@ -97,10 +98,13 @@ private:
 	cv::Mat lsc_gain_map_, lsc_gain_map_int_;
 	std::vector<int32_t> ccm_matrix_int_;
 	std::vector<cv::Mat> sais;
+	cv::Mat gamma_lut_u8_;
+	std::vector<uint16_t> gamma_lut_u16_;
 
 	// 内部辅助函数
 	std::string bayer_to_string(BayerPattern p) const;
 	void generate_lsc_maps(const cv::Mat &raw_wht);
+	void prepare_gamma_lut();
 	LFIsp &prepare_ccm_fixed_point();
 
 	LFIsp &compute_lab_stats(const cv::Mat &src, cv::Scalar &mean,

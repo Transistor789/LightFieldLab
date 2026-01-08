@@ -31,7 +31,7 @@ void test() {
 	}
 
 	// 3. 读取图像
-	auto lf = LFIO::readSAI("../data/bedroom");
+	auto lf = LFIO::ReadSAI("../data/bedroom");
 
 	// 4. 执行推理
 	std::cout << "Estimating disparity..." << std::endl;
@@ -50,7 +50,7 @@ void test() {
 	}
 }
 void patch_test() {
-	auto lf = LFIO::readSAI("../data/bedroom");
+	auto lf = LFIO::ReadSAI("../data/bedroom");
 
 	DistgDisp disp;
 	disp.readEngine("../data/DistgDisp_9x9_196_FP16_Windows.engine");

@@ -3,7 +3,10 @@
 // 引入所有必要的头文件
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <numeric>
+#include <opencv2/highgui.hpp>
+#include <opencv2/opencv.hpp>
 
 CentroidsExtract::CentroidsExtract(const cv::Mat &img, int precision, int cr)
 	: _img(img), _precision(precision), _CR(cr), _estimatedM(0) {
@@ -12,36 +15,40 @@ CentroidsExtract::CentroidsExtract(const cv::Mat &img, int precision, int cr)
 	}
 }
 
-void CentroidsExtract::run(bool use_cca) {
+void CentroidsExtract::run(Method method) {
 	// 1. 尺度空间分析，确定 _estimatedM
 	createScaleSpace(); // 内部调用 cropImage()
 	findScaleMax(true);
 
 	// 2. 全图检测
-	_points = detectMlaCenters(_img, false, _estimatedM, use_cca);
+	_points = detectMlaCenters(_img, _estimatedM, method);
 
 	// 3. 裁剪图检测
-	auto crop_centers = detectMlaCenters(_cropImg, false, _estimatedM, use_cca);
+	auto crop_centers = detectMlaCenters(_cropImg, _estimatedM, method);
 
 	// 4. 计算间距
 	_pitch = estimatePitchXY(crop_centers);
 
 	// --- 输出调试信息 ---
-	std::cout << "[CentroidsExtract] Results:" << std::endl;
+	std::cout << std::format("[CentroidsExtract] Method: {}, Results:",
+							 getMethodString(method))
+			  << std::endl;
 	std::cout << "  > Diameter: " << _estimatedM << std::endl;
 	std::cout << "  > Points Count: " << _points.size() << std::endl;
 	std::cout << "  > Pitch: [" << _pitch[0] << ", " << _pitch[1] << "]"
 			  << std::endl;
 }
 
-void CentroidsExtract::run(bool use_cca, int diameter) {
-	_points = detectMlaCenters(_img, false, diameter, use_cca);
-	auto crop_centers = detectMlaCenters(_cropImg, false, diameter, use_cca);
+void CentroidsExtract::run(Method method, int diameter) {
+	_points = detectMlaCenters(_img, diameter, method);
+	auto crop_centers = detectMlaCenters(_cropImg, diameter, method);
 	_pitch = estimatePitchXY(crop_centers);
 
 	// --- 输出调试信息 ---
-	std::cout << "[CentroidsExtract] Results:" << std::endl;
-	std::cout << "  > Diameter: " << diameter << std::endl;
+	std::cout << std::format("[CentroidsExtract] Method: {}, Results:",
+							 getMethodString(method))
+			  << std::endl;
+	std::cout << "  > Diameter: " << _estimatedM << std::endl;
 	std::cout << "  > Points Count: " << _points.size() << std::endl;
 	std::cout << "  > Pitch: [" << _pitch[0] << ", " << _pitch[1] << "]"
 			  << std::endl;
@@ -96,58 +103,133 @@ cv::Mat CentroidsExtract::ensureGrayUint8(const cv::Mat &img) {
 }
 
 std::vector<cv::Point2f> CentroidsExtract::detectMlaCenters(const cv::Mat &img,
-															bool useDilate,
 															int blockSize,
-															bool useCCA) {
+															Method method) {
+	// 1. 预处理：转灰度
 	cv::Mat gray = ensureGrayUint8(img);
+	int h = gray.rows;
+	int w = gray.cols;
+
+	// 2. 预处理：自适应二值化
 	if (blockSize % 2 == 0)
 		blockSize++;
 	blockSize = std::max(blockSize, 3);
 
 	cv::Mat binary;
 	cv::adaptiveThreshold(gray, binary, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C,
-						  cv::THRESH_BINARY, blockSize, 1.0);
+						  cv::THRESH_BINARY, blockSize, 1);
 
-	if (useDilate) {
-		cv::Mat kernel =
-			cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));
-		cv::dilate(binary, binary, kernel);
-	}
+	// 3. 预处理：形态学去噪 (腐蚀)
+	// 腐蚀可以分离粘连的光斑，对微透镜阵列图像非常重要
+	int erodeSize = 2;
+	cv::Mat element = cv::getStructuringElement(
+		cv::MORPH_ELLIPSE, cv::Size(2 * erodeSize + 1, 2 * erodeSize + 1));
+	cv::erode(binary, binary, element);
 
+	// 准备结果容器和边界余量
 	std::vector<cv::Point2f> centers;
-	int h = gray.rows, w = gray.cols;
 	float margin = blockSize * 0.75f;
 
-	if (useCCA) {
+	// =========================================================
+	// 分支 1: CCA (连通域分析) - 速度快，适合只有位置需求
+	// =========================================================
+	if (method == Method::CCA) {
 		cv::Mat labels, stats, centroids;
 		int nLabels = cv::connectedComponentsWithStats(binary, labels, stats,
 													   centroids, 8, CV_32S);
+		// 预分配内存
+		centers.reserve(nLabels);
+
 		for (int i = 1; i < nLabels; ++i) {
+			// 过滤噪点
 			if (stats.at<int>(i, cv::CC_STAT_AREA) <= 1)
 				continue;
+
 			float cx = static_cast<float>(centroids.at<double>(i, 0));
 			float cy = static_cast<float>(centroids.at<double>(i, 1));
+
+			// 边界检查
 			if (cx >= margin && cx <= w - margin && cy >= margin
 				&& cy <= h - margin) {
 				centers.emplace_back(cx, cy);
 			}
 		}
-	} else {
-		std::vector<std::vector<cv::Point>> contours;
-		cv::findContours(binary, contours, cv::RETR_EXTERNAL,
-						 cv::CHAIN_APPROX_SIMPLE);
-		for (const auto &cnt : contours) {
+		return centers;
+	}
+
+	// =========================================================
+	// 分支 2 & 3: 基于轮廓的处理 (Contour & GrayGravity)
+	// =========================================================
+	std::vector<std::vector<cv::Point>> contours;
+	cv::findContours(binary, contours, cv::RETR_EXTERNAL,
+					 cv::CHAIN_APPROX_SIMPLE);
+	centers.reserve(contours.size());
+
+	for (const auto &cnt : contours) {
+		double cx = 0.0, cy = 0.0;
+		bool valid = false;
+
+		if (method == Method::GrayGravity) {
+			// --- 灰度重心法 (精度最高，抗饱和性能好) ---
+
+			// 1. 获取边界框并安全裁剪
+			cv::Rect r = cv::boundingRect(cnt);
+			r = r & cv::Rect(0, 0, w, h); // 交集操作防止越界
+			if (r.area() <= 0)
+				continue;
+
+			// 2. 准备掩码和 ROI
+			cv::Mat grayROI = gray(r);
+			cv::Mat maskROI = cv::Mat::zeros(r.size(), CV_8U);
+
+			// 3. 在局部坐标系绘制掩码
+			std::vector<cv::Point> localCnt = cnt;
+			for (auto &p : localCnt) {
+				p.x -= r.x;
+				p.y -= r.y;
+			}
+			cv::drawContours(maskROI,
+							 std::vector<std::vector<cv::Point>>{localCnt}, 0,
+							 cv::Scalar(255), cv::FILLED);
+
+			// 4. 应用掩码提取有效像素
+			// 这里优化一下：不一定要copyTo，可以直接传 mask 给 moments 吗？
+			// cv::moments 不支持 mask 参数，所以必须 copyTo 或者自行计算
+			cv::Mat weightedROI;
+			grayROI.copyTo(weightedROI, maskROI);
+
+			// 5. 计算灰度矩 (binaryImage=false 表示利用像素值权重)
+			cv::Moments m = cv::moments(weightedROI, false);
+
+			if (m.m00 > 1e-6) {
+				// 转换回全局坐标
+				cx = r.x + m.m10 / m.m00;
+				cy = r.y + m.m01 / m.m00;
+				valid = true;
+			}
+
+		} else { // Method::Contour
+			// --- 几何形心法 (基于二值形状) ---
+
+			// 直接对轮廓计算矩 (binaryImage=true 效果，只看形状)
 			cv::Moments m = cv::moments(cnt);
 			if (m.m00 > 1e-6) {
-				float cx = static_cast<float>(m.m10 / m.m00);
-				float cy = static_cast<float>(m.m01 / m.m00);
-				if (cx >= margin && cx <= w - margin && cy >= margin
-					&& cy <= h - margin) {
-					centers.emplace_back(cx, cy);
-				}
+				cx = m.m10 / m.m00;
+				cy = m.m01 / m.m00;
+				valid = true;
+			}
+		}
+
+		// 统一保存结果
+		if (valid) {
+			if (cx >= margin && cx <= w - margin && cy >= margin
+				&& cy <= h - margin) {
+				centers.emplace_back(static_cast<float>(cx),
+									 static_cast<float>(cy));
 			}
 		}
 	}
+
 	return centers;
 }
 
@@ -312,6 +394,19 @@ void CentroidsExtract::createScaleSpace() {
 
 		cv::resize(gauss2, current, cv::Size(), 0.5, 0.5, cv::INTER_NEAREST);
 	}
+}
+
+std::string CentroidsExtract::getMethodString(
+	CentroidsExtract::Method method) const {
+	std::string methodStr;
+	if (method == CentroidsExtract::Method::Contour) {
+		methodStr = "Contour";
+	} else if (method == CentroidsExtract::Method::GrayGravity) {
+		methodStr = "GrayGravity";
+	} else {
+		methodStr = "CCA";
+	}
+	return methodStr;
 }
 
 std::pair<std::vector<float>, std::vector<float>>

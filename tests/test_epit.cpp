@@ -7,7 +7,7 @@
 #include <vector>
 
 int main() {
-	auto lf = LFIO::readSAI("../data/bedroom");
+	auto lf = LFIO::ReadSAI("../data/bedroom");
 
 	EPIT ssr;
 

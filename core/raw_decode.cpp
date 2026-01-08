@@ -1,199 +1,187 @@
 ﻿#include "raw_decode.h"
 
-#include "config.h"
-#include "utils.h"
+#include "utils.h" // 包含 get_base_filename
 
-#include <cstdint>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <opencv2/opencv.hpp>
+#include <iomanip> // for std::setw
+#include <iostream>
+#include <omp.h>
 #include <openssl/sha.h>
-#include <string>
-#include <vector>
+#include <sstream> // for std::ostringstream
 
-RawDecoder::RawDecoder() {}
+namespace fs = std::filesystem;
 
-cv::Mat RawDecoder::decode(std::string filename) {
-	cv::Mat ret;
-	std::filesystem::path path(filename);
-	std::string ext = path.extension().string();
-	std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+// 匿名命名空间存放仅本文件可见的常量
+namespace {
+constexpr int LYTRO_WIDTH = 7728;
+constexpr int LYTRO_HEIGHT = 5368;
+constexpr int BUFFER_INDEX = 10;
+} // namespace
 
-	if (ext == ".lfp" || ext == ".lfr") {
-		ret = decode_lytro(filename);
-	} else if (ext == ".raw") {
-		ret = decode_raw(filename);
+// =============================================================
+// 公开接口实现
+// =============================================================
+
+cv::Mat RawDecoder::DecodeLytro(const std::string &filename,
+								json &outMetadata) {
+	// 1. 读取文件段
+	auto sections = ReadLytroFile(filename);
+
+	// 2. 提取 JSON
+	json fullDict = ExtractJson(sections);
+
+	// 可选：导出 JSON
+	// writeJson(get_base_filename(filename) + ".json", fullDict);
+
+	// 3. 过滤关键设置并通过引用传出
+	outMetadata = FilterLfpJson(fullDict);
+
+	// 获取尺寸
+	int w = fullDict["image"].value("width", LYTRO_WIDTH);
+	int h = fullDict["image"].value("height", LYTRO_HEIGHT);
+
+	// 4. 解包图像
+	if (sections.size() <= BUFFER_INDEX) {
+		throw std::runtime_error(
+			"LFP file structure invalid: missing image data");
 	}
-	return ret;
+
+	// 直接操作内存，无额外拷贝
+	const uint8_t *imgBuf =
+		reinterpret_cast<const uint8_t *>(sections[BUFFER_INDEX].data());
+	return UnpackRaw10ToBayer(imgBuf, w, h);
 }
 
-cv::Mat RawDecoder::decode_lytro(std::string filename) {
-	// decode lfp file
-	auto sections = read_lytro_file(filename);
-	// retrieve JSON data
-	json_dict = extract_json(sections);
-	// JSON file export
-	writeJson(get_base_filename(filename) + ".json", json_dict);
-	// writeJson("../data/" + get_base_filename(filename) + ".json", json_dict);
-	// decompose JSON data
-	width = json_dict["image"]["width"];
-	height = json_dict["image"]["height"];
-	// filter LFP metadata settings
-	lfp = filter_lfp_json(json_dict);
-
-	// compose bayer image from lfp file
-	auto img_buf =
-		reinterpret_cast<uint8_t *>(sections[Lytro::buffer_index].data());
-	return unpack_raw2bayer(img_buf, width, height);
+cv::Mat RawDecoder::DecodeRaw(const std::string &filename) {
+	// 读取文件到临时 vector
+	std::vector<uint8_t> buffer = ReadRawFile(filename);
+	return UnpackRaw10ToBayer(buffer.data(), LYTRO_WIDTH, LYTRO_HEIGHT);
 }
 
-cv::Mat RawDecoder::decode_raw(std::string filename) {
-	buffer = read_raw_file(filename);
-	auto ptr = buffer.data();
-	return unpack_raw2bayer(ptr);
-}
+cv::Mat RawDecoder::DecodeWhiteImage(const std::string &filename,
+									 json &outMetadata) {
+	// 1. 复用 DecodeRaw 读取像素
+	cv::Mat raw = DecodeRaw(filename);
+	if (raw.empty())
+		return raw;
 
-cv::Mat RawDecoder::unpack_raw2bayer(const uint8_t *src, int width,
-									 int height) {
-	if (src == nullptr) {
-		throw std::runtime_error("convertRaw10ToMat: src is nullptr!");
+	// 2. 加载元数据
+	outMetadata = LoadWhiteMetadata(filename);
+	if (outMetadata.is_null() || outMetadata.empty()) {
+		std::cerr << "[RawDecoder] Warning: No metadata for white image: "
+				  << filename << std::endl;
+		return raw;
 	}
-	cv::Mat ret = cv::Mat(height, width, CV_16UC1);
-	auto *ptr = ret.ptr<uint16_t>();
-	int dataSize = width * height * 5 / 4;
-	for (int i = 0, index = 0; i < dataSize; i += 5, index += 4) {
-		const uint8_t low_bits = src[i + 4];
-		ptr[index] = (src[i] << 2) | ((low_bits >> 6) & 0x03);
-		ptr[index + 1] = (src[i + 1] << 2) | ((low_bits >> 4) & 0x03);
-		ptr[index + 2] = (src[i + 2] << 2) | ((low_bits >> 2) & 0x03);
-		ptr[index + 3] = (src[i + 3] << 2) | (low_bits & 0x03);
-	}
-	return ret;
+
+	// 3. 应用白平衡和黑电平
+	ApplyWhiteBalance(raw, outMetadata);
+
+	return raw;
 }
 
-std::vector<std::string> RawDecoder::read_lytro_file(
+// =============================================================
+// 私有辅助函数实现
+// =============================================================
+
+std::vector<std::string> RawDecoder::ReadLytroFile(
 	const std::string &filename) {
 	std::vector<std::string> sections;
 	constexpr unsigned char LFP_HEADER[] = {0x89, 'L',	'F',  'P',	0x0d, 0x0a,
 											0x1a, 0x0a, 0x00, 0x00, 0x00, 0x01};
+
 	std::ifstream file(filename, std::ios::binary);
 	if (!file.is_open())
-		throw std::runtime_error("readLytroFile: Cannot open file: "
+		throw std::runtime_error("ReadLytroFile: Cannot open file: "
 								 + filename);
 
-	char file_header_buf[12];
-	file.read(file_header_buf, 12);
-	if (file.gcount() != 12
-		|| std::memcmp(file_header_buf, LFP_HEADER, 12) != 0)
-		throw std::runtime_error("readLytroFile: Invalid file header: "
+	char headerBuf[12];
+	file.read(headerBuf, 12);
+	if (file.gcount() != 12 || std::memcmp(headerBuf, LFP_HEADER, 12) != 0) {
+		throw std::runtime_error("ReadLytroFile: Invalid LFP header: "
 								 + filename);
+	}
 
-	uint8_t len_bytes[4];
-	file.read(reinterpret_cast<char *>(len_bytes), 4);
+	// 跳过 header length (4 bytes)
+	uint8_t lenBytes[4];
+	file.read(reinterpret_cast<char *>(lenBytes), 4);
 	if (file.gcount() != 4)
 		throw std::runtime_error(
-			"readLytroFile: Failed to read LFP header length");
+			"ReadLytroFile: Failed to read LFP header length");
 
-	int header_len = (len_bytes[0] << 24) | (len_bytes[1] << 16)
-					 | (len_bytes[2] << 8) | len_bytes[3];
-	if (header_len != 0)
-		throw std::runtime_error("readLytroFile: Unexpected LFP header length: "
-								 + std::to_string(header_len));
+	int headerLen = (lenBytes[0] << 24) | (lenBytes[1] << 16)
+					| (lenBytes[2] << 8) | lenBytes[3];
+	if (headerLen != 0)
+		throw std::runtime_error("ReadLytroFile: Unexpected LFP header length: "
+								 + std::to_string(headerLen));
 
 	while (!file.eof()) {
 		std::streampos pos = file.tellg();
 		char b;
-		file.get(b);
+		file.get(b); // 探测 EOF
 		if (file.eof())
 			break;
-		file.seekg(pos); // rewind
+		file.seekg(pos);
 
 		try {
-			sections.emplace_back(read_section(file));
+			sections.emplace_back(ReadSection(file));
 		} catch (const std::exception &e) {
 			throw std::runtime_error(
-				std::string("readLytroFile: Failed to read section: ")
+				std::string("ReadLytroFile: Failed to read section: ")
 				+ e.what());
 		}
 	}
-
-	file.close();
 	return sections;
 }
 
-std::vector<uint8_t> RawDecoder::read_raw_file(const std::string &filename) {
-	std::ifstream file(filename, std::ios::binary | std::ios::ate);
-	if (!file) {
-		throw std::runtime_error("readRawFile: file not exist!");
-	}
-	std::streamsize size = file.tellg();
-	file.seekg(0, std::ios::beg);
-
-	std::vector<uint8_t> buffer(size);
-	if (!file.read(reinterpret_cast<char *>(buffer.data()), size)) {
-		throw std::runtime_error("readRawFile: read error!");
-	}
-	return buffer;
-}
-
-json RawDecoder::extract_json(const std::vector<std::string> &sections) {
-	json json_dict;
-	for (const auto &section : sections) {
-		try {
-			json parsed = json::parse(section);
-			json_dict.update(parsed);
-		} catch (...) {
-			continue; // 忽略无法解析的部分
-		}
-	}
-	return json_dict;
-}
-
-std::string RawDecoder::read_section(std::ifstream &file) {
-	std::string section;
+std::string RawDecoder::ReadSection(std::ifstream &file) {
 	constexpr unsigned char LFM_HEADER[] = {0x89, 'L',	'F',  'M',	0x0d, 0x0a,
 											0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00};
 	constexpr unsigned char LFC_HEADER[] = {0x89, 'L',	'F',  'C',	0x0d, 0x0a,
 											0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00};
 	constexpr size_t HEADER_LEN = 12;
 	constexpr size_t SHA1_LEN = 45;
-	constexpr size_t SHA_PADDING_LEN = 35;
-	char header_buf[HEADER_LEN];
-	file.read(header_buf, HEADER_LEN);
+	constexpr size_t PAD_LEN = 35;
+
+	char headerBuf[HEADER_LEN];
+	file.read(headerBuf, HEADER_LEN);
 	if (file.gcount() != HEADER_LEN)
-		throw std::runtime_error("readSection: Failed to read section header");
+		throw std::runtime_error("ReadSection: Failed to read section header");
 
-	if (std::memcmp(header_buf, LFM_HEADER, HEADER_LEN) != 0
-		&& std::memcmp(header_buf, LFC_HEADER, HEADER_LEN) != 0)
-		throw std::runtime_error("readSection: Invalid section header format");
+	if (std::memcmp(headerBuf, LFM_HEADER, HEADER_LEN) != 0
+		&& std::memcmp(headerBuf, LFC_HEADER, HEADER_LEN) != 0)
+		throw std::runtime_error("ReadSection: Invalid section header format");
 
-	uint8_t len_bytes[4];
-	file.read(reinterpret_cast<char *>(len_bytes), 4);
+	uint8_t lenBytes[4];
+	file.read(reinterpret_cast<char *>(lenBytes), 4);
 	if (file.gcount() != 4)
-		throw std::runtime_error("readSection: Failed to read section length");
+		throw std::runtime_error("ReadSection: Failed to read section length");
 
-	int section_length = (len_bytes[0] << 24) | (len_bytes[1] << 16)
-						 | (len_bytes[2] << 8) | len_bytes[3];
+	int sectionLen = (lenBytes[0] << 24) | (lenBytes[1] << 16)
+					 | (lenBytes[2] << 8) | lenBytes[3];
 
 	std::string sha1(SHA1_LEN, '\0');
 	file.read(&sha1[0], SHA1_LEN);
 	if (file.gcount() != SHA1_LEN)
-		throw std::runtime_error("readSection: Failed to read SHA1 hash");
+		throw std::runtime_error("ReadSection: Failed to read SHA1 hash");
 
-	std::string padding(SHA_PADDING_LEN, '\0');
-	file.read(&padding[0], SHA_PADDING_LEN);
-	if (file.gcount() != SHA_PADDING_LEN)
-		throw std::runtime_error("readSection: Failed to read SHA1 padding");
+	std::string padding(PAD_LEN, '\0');
+	file.read(&padding[0], PAD_LEN);
+	if (file.gcount() != PAD_LEN)
+		throw std::runtime_error("ReadSection: Failed to read SHA1 padding");
+
 	if (!std::all_of(padding.begin(), padding.end(),
 					 [](const char c) { return c == 0; }))
 		throw std::runtime_error(
-			"readSection: Non-zero padding found after SHA1");
+			"ReadSection: Non-zero padding found after SHA1");
 
-	section.resize(section_length);
-	file.read(&section[0], section_length);
-	if (file.gcount() != section_length)
-		throw std::runtime_error("readSection: Failed to read section payload");
+	std::string section(sectionLen, '\0');
+	file.read(&section[0], sectionLen);
+	if (file.gcount() != sectionLen)
+		throw std::runtime_error("ReadSection: Failed to read section payload");
 
+	// 校验 SHA1
 	unsigned char hash[SHA_DIGEST_LENGTH];
 	SHA1(reinterpret_cast<const unsigned char *>(section.data()),
 		 section.size(), hash);
@@ -203,30 +191,60 @@ std::string RawDecoder::read_section(std::ifstream &file) {
 		computed << std::hex << std::setw(2) << std::setfill('0')
 				 << static_cast<int>(i);
 	}
-	std::string computed_hash = computed.str();
-	std::string given_hash = sha1.substr(5);
+	std::string computedHash = computed.str();
+	// LFP 文件中的 SHA1 字符串通常以 "sha1-" 开头，截取后40位比较
+	// 如果文件中存储的是纯哈希字符串，则直接比较。根据原代码逻辑 sha1.substr(5)
+	std::string givenHash = sha1.substr(5);
 
-	if (computed_hash != given_hash)
-		throw std::runtime_error("readSection: SHA1 mismatch");
+	if (computedHash != givenHash) {
+		// 有些实现可能会忽略校验错误，但为了严谨这里抛出异常
+		throw std::runtime_error("ReadSection: SHA1 mismatch");
+	}
 
-	// Skip any padding
+	// Skip trailing padding (null bytes)
 	while (true) {
 		char b;
 		file.get(b);
 		if (file.eof() || b != '\x00') {
 			if (!file.eof())
-				file.seekg(-1, std::ios_base::cur);
+				file.seekg(-1, std::ios::cur);
 			break;
 		}
 	}
-
 	return section;
 }
 
-json RawDecoder::filter_lfp_json(const json &jsonDict) {
-	json settings;
+std::vector<uint8_t> RawDecoder::ReadRawFile(const std::string &filename) {
+	std::ifstream file(filename, std::ios::binary | std::ios::ate);
+	if (!file)
+		throw std::runtime_error("File not found: " + filename);
 
-	const std::vector<std::string> channels = {"b", "r", "gb", "gr"};
+	std::streamsize size = file.tellg();
+	file.seekg(0, std::ios::beg);
+
+	std::vector<uint8_t> buffer(size);
+	if (!file.read((char *)buffer.data(), size))
+		throw std::runtime_error("Read error");
+	return buffer;
+}
+
+json RawDecoder::ExtractJson(const std::vector<std::string> &sections) {
+	json combined;
+	for (const auto &sec : sections) {
+		try {
+			// 尝试解析每一段，忽略非 JSON 段
+			json j = json::parse(sec, nullptr, false);
+			if (!j.is_discarded()) {
+				combined.update(j);
+			}
+		} catch (...) {
+		}
+	}
+	return combined;
+}
+
+json RawDecoder::FilterLfpJson(const json &jsonDict) {
+	json settings;
 
 	// 获取 serialNumber 或 model
 	std::string serial;
@@ -258,42 +276,31 @@ json RawDecoder::filter_lfp_json(const json &jsonDict) {
 		// --- 1. 黑电平/白电平 (BLC) ---
 		// Gen1 的 JSON 结构通常不提供 BLC/White point，使用硬编码的 12-bit
 		// 默认值 12-bit 最大值: 2^12 - 1 = 4095
-		uint16_t white_12bit = 4095;
-		uint16_t black_12bit = 0;
+		uint16_t white12bit = 4095;
+		uint16_t black12bit = 0;
 
-		// 严格遵循 Gen2 的结构，使用 vector<uint16_t>
-		std::vector<uint16_t> black_vec = {black_12bit, black_12bit,
-										   black_12bit, black_12bit};
-		std::vector<uint16_t> white_vec = {white_12bit, white_12bit,
-										   white_12bit, white_12bit};
+		std::vector<uint16_t> blackVec = {black12bit, black12bit, black12bit,
+										  black12bit};
+		std::vector<uint16_t> whiteVec = {white12bit, white12bit, white12bit,
+										  white12bit};
 
-		settings["blc"]["black"] = black_vec;
-		settings["blc"]["white"] = white_vec;
+		settings["blc"]["black"] = blackVec;
+		settings["blc"]["white"] = whiteVec;
 
 		// --- 2. AWB 增益 (转换为 Gen2 的 [Gr, R, B, Gb] 顺序和类型) ---
-
-		// Gen1 JSON 存储为 ["b", "r", "gb", "gr"] 的结构
-		auto &wb_json = jsonDict["image"]["color"]["whiteBalanceGain"];
-		std::vector<float> awb_gains = {// Index 0: B
-										wb_json.value("b", 1.0f),
-										// Index 1: Gr
-										wb_json.value("gr", 1.0f),
-										// Index 2: Gb
-										wb_json.value("gb", 1.0f),
-										// Index 3: R
-										wb_json.value("r", 1.0f)};
-		settings["awb"] = awb_gains;
+		auto &wbJson = jsonDict["image"]["color"]["whiteBalanceGain"];
+		std::vector<float> awbGains = {
+			wbJson.value("b", 1.0f),  // Index 0: B
+			wbJson.value("gr", 1.0f), // Index 1: Gr
+			wbJson.value("gb", 1.0f), // Index 2: Gb
+			wbJson.value("r", 1.0f)	  // Index 3: R
+		};
+		settings["awb"] = awbGains;
 
 		// --- 3. CCM & Gamma ---
-		// CCM: 确保数据类型为 std::vector<float>
 		settings["ccm"] = jsonDict["image"]["color"]["ccmRgbToSrgbArray"]
 							  .get<std::vector<float>>();
-
-		// Gamma: 确保数据类型为 float
 		settings["gam"] = jsonDict["image"]["color"]["gamma"].get<float>();
-
-		// Gen1 JSON 通常没有
-		// modulationExposureBias，但为了结构一致性，可以设为默认值
 		settings["exp"] = 0.0f;
 
 	}
@@ -303,34 +310,68 @@ json RawDecoder::filter_lfp_json(const json &jsonDict) {
 		int bit = jsonDict["image"]["pixelPacking"]["bitsPerPixel"];
 		if (bit != 10) {
 			throw std::runtime_error(
-				"Unrecognized bit packing format (expected 10-bit for "
-				"Gen2)");
+				"Unrecognized bit packing format (expected 10-bit for Gen2)");
 		}
 		settings["bit"] = bit;
 		settings["bay"] = std::string("GRBG");
 
+		// === 提取标定所需的关键元数据 (Serial & GeoRef) ===
+		settings["serial"] = serial; // 序列号
+
+		// 提取 Geometry Reference (白图匹配的关键 Hash)
+		std::string geoRef;
+		try {
+			if (camModel[0] == 'B' || camModel[0] == 'I'
+				|| std::isdigit(camModel[0])) {
+				// Gen2 (Illum): 位于 frames[0].frame.geometryCorrectionRef
+				if (jsonDict.contains("frames")
+					&& !jsonDict["frames"].empty()) {
+					auto &f0 = jsonDict["frames"][0];
+					if (f0.contains("frame")
+						&& f0["frame"].contains("geometryCorrectionRef")) {
+						geoRef = f0["frame"]["geometryCorrectionRef"]
+									 .get<std::string>();
+					}
+				}
+			} else {
+				// 兼容逻辑 (虽在 Gen2 分支，但保留完整性): 位于
+				// picture.derivationArray[0]
+				if (jsonDict.contains("picture")
+					&& jsonDict["picture"].contains("derivationArray")) {
+					auto &arr = jsonDict["picture"]["derivationArray"];
+					if (!arr.empty()) {
+						geoRef = arr[0].get<std::string>();
+					}
+				}
+			}
+		} catch (...) {
+			// 忽略异常，保持 geoRef 为空
+		}
+		settings["geo_ref"] = geoRef;
+
+		// === 提取 ISP 参数 ===
 		auto &fmt = jsonDict["image"]["pixelFormat"];
-		std::vector<uint16_t> black_vec = {
+		std::vector<uint16_t> blackVec = {
 			fmt["black"].value("gr", (uint16_t)0),
 			fmt["black"].value("r", (uint16_t)0),
 			fmt["black"].value("b", (uint16_t)0),
 			fmt["black"].value("gb", (uint16_t)0)};
-		std::vector<uint16_t> white_vec = {
+		std::vector<uint16_t> whiteVec = {
 			fmt["white"].value("gr", (uint16_t)1023),
 			fmt["white"].value("r", (uint16_t)1023),
 			fmt["white"].value("b", (uint16_t)1023),
 			fmt["white"].value("gb", (uint16_t)1023)};
-		settings["blc"]["black"] = black_vec;
-		settings["blc"]["white"] = white_vec;
+		settings["blc"]["black"] = blackVec;
+		settings["blc"]["white"] = whiteVec;
 
-		auto &wb_json = jsonDict["image"]["color"]["whiteBalanceGain"];
-		std::vector<float> awb_gains = {
-			wb_json.value("gr", 1.0f), // Index 0: Gr (Green in Red row)
-			wb_json.value("r", 1.0f),  // Index 1: R  (Red)
-			wb_json.value("b", 1.0f),  // Index 2: B  (Blue)
-			wb_json.value("gb", 1.0f)  // Index 3: Gb (Green in Blue row)
+		auto &wbJson = jsonDict["image"]["color"]["whiteBalanceGain"];
+		std::vector<float> awbGains = {
+			wbJson.value("gr", 1.0f), // Index 0: Gr
+			wbJson.value("r", 1.0f),  // Index 1: R
+			wbJson.value("b", 1.0f),  // Index 2: B
+			wbJson.value("gb", 1.0f)  // Index 3: Gb
 		};
-		settings["awb"] = awb_gains;
+		settings["awb"] = awbGains;
 		settings["ccm"] =
 			jsonDict["image"]["color"]["ccm"].get<std::vector<float>>();
 		settings["gam"] =
@@ -345,4 +386,123 @@ json RawDecoder::filter_lfp_json(const json &jsonDict) {
 	}
 
 	return settings;
+}
+
+json RawDecoder::LoadWhiteMetadata(const std::string &rawFilename) {
+	fs::path rawPath(rawFilename);
+	const std::vector<std::string> exts = {".TXT", ".txt", ".json"};
+
+	for (const auto &ext : exts) {
+		fs::path metaPath = rawPath;
+		metaPath.replace_extension(ext);
+		if (fs::exists(metaPath)) {
+			try {
+				std::ifstream f(metaPath);
+				json j;
+				f >> j;
+				return j;
+			} catch (...) {
+			}
+		}
+	}
+	return json(); // 返回空对象
+}
+
+cv::Mat RawDecoder::UnpackRaw10ToBayer(const uint8_t *src, int width,
+									   int height) {
+	if (!src)
+		throw std::runtime_error("Source buffer is null");
+
+	cv::Mat ret(height, width, CV_16UC1);
+
+	if (ret.isContinuous()) {
+		uint16_t *dst = ret.ptr<uint16_t>(0);
+		int totalPixels = width * height;
+		int chunks = totalPixels / 4;
+
+#pragma omp parallel for
+		for (int i = 0; i < chunks; ++i) {
+			int srcIdx = i * 5;
+			int dstIdx = i * 4;
+
+			const uint8_t b0 = src[srcIdx];
+			const uint8_t b1 = src[srcIdx + 1];
+			const uint8_t b2 = src[srcIdx + 2];
+			const uint8_t b3 = src[srcIdx + 3];
+			const uint8_t low = src[srcIdx + 4];
+
+			dst[dstIdx] = (b0 << 2) | ((low >> 6) & 0x03);
+			dst[dstIdx + 1] = (b1 << 2) | ((low >> 4) & 0x03);
+			dst[dstIdx + 2] = (b2 << 2) | ((low >> 2) & 0x03);
+			dst[dstIdx + 3] = (b3 << 2) | (low & 0x03);
+		}
+	}
+	return ret;
+}
+
+void RawDecoder::ApplyWhiteBalance(cv::Mat &raw, const json &j) {
+	// 提取逻辑 (复用 FilterLfpJson 的思路，但针对白图结构优化)
+	int blcR = 0, blcGr = 0, blcGb = 0, blcB = 0;
+	float gainR = 1.0f, gainGr = 1.0f, gainGb = 1.0f, gainB = 1.0f;
+
+	// 简化的辅助 Lambda
+	auto getVal = [&](const json &node, const char *key, auto defaultVal) {
+		return node.value(key, defaultVal);
+	};
+
+	// 提取 Black Level (需要适配 MOD_00xx.TXT 结构)
+	// 路径:
+	// master.picture.frameArray[0].frame.metadata.image.rawDetails.pixelFormat.black
+	try {
+		if (j.contains("master")) {
+			auto &meta =
+				j["master"]["picture"]["frameArray"][0]["frame"]["metadata"];
+
+			// BLC
+			if (meta["image"]["rawDetails"]["pixelFormat"].contains("black")) {
+				auto &b = meta["image"]["rawDetails"]["pixelFormat"]["black"];
+				blcR = getVal(b, "r", 0);
+				blcGr = getVal(b, "gr", 0);
+				blcGb = getVal(b, "gb", 0);
+				blcB = getVal(b, "b", 0);
+			}
+
+			// AWB Gains from Normalized Responses
+			if (meta["devices"]["sensor"].contains("normalizedResponses")) {
+				auto &resp =
+					meta["devices"]["sensor"]["normalizedResponses"][0];
+				if (resp.contains("r"))
+					gainR = 1.0f / resp["r"].get<float>();
+				if (resp.contains("gr"))
+					gainGr = 1.0f / resp["gr"].get<float>();
+				if (resp.contains("b"))
+					gainB = 1.0f / resp["b"].get<float>();
+				// Gb 通常不存在或设为 1.0
+			}
+		}
+	} catch (...) {
+		std::cerr << "[RawDecoder] Metadata parse error, skipping correction."
+				  << std::endl;
+		return;
+	}
+
+	// 应用校正
+#pragma omp parallel for
+	for (int r = 0; r < raw.rows; r += 2) {
+		uint16_t *ptr0 = raw.ptr<uint16_t>(r);
+		uint16_t *ptr1 = raw.ptr<uint16_t>(r + 1);
+		for (int c = 0; c < raw.cols; c += 2) {
+			// GRBG Pattern
+			// Row 0: G(gr), R
+			ptr0[c] = cv::saturate_cast<uint16_t>(
+				std::max(0.0f, (ptr0[c] - blcGr) * gainGr));
+			ptr0[c + 1] = cv::saturate_cast<uint16_t>(
+				std::max(0.0f, (ptr0[c + 1] - blcR) * gainR));
+			// Row 1: B, G(gb)
+			ptr1[c] = cv::saturate_cast<uint16_t>(
+				std::max(0.0f, (ptr1[c] - blcB) * gainB));
+			ptr1[c + 1] = cv::saturate_cast<uint16_t>(
+				std::max(0.0f, (ptr1[c + 1] - blcGb) * gainGb));
+		}
+	}
 }

@@ -8,7 +8,7 @@
 #include <opencv2/core/utils/logger.hpp>
 
 void setupLogging() {
-#ifdef QT_DEBUG
+	// #ifdef QT_DEBUG
 	// 劫持 std::cout -> 发给 Logger -> (CoreLogger处理格式) -> Adapter ->
 	// UI
 	static StreamRedirector redirectOut(std::cout, [](const std::string &msg) {
@@ -19,9 +19,9 @@ void setupLogging() {
 	static StreamRedirector redirectErr(std::cerr, [](const std::string &msg) {
 		Logger::instance().log(LogLevel::Error, msg, "StdErr", 0);
 	});
-#else
-	cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_FATAL);
-#endif
+	// #else
+	// cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_FATAL);
+	// #endif
 }
 
 int main(int argc, char *argv[]) {

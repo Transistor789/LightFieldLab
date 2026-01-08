@@ -5,8 +5,7 @@
 #include <opencv2/opencv.hpp>
 
 int main(int argc, char *argv[]) {
-	LFIO lfreader;
-	auto lf = lfreader.readSAI("../data/toy_lftoolbox");
+	auto lf = LFIO::ReadSAI("../data/toy_lftoolbox");
 
 	LFRefocus rfc;
 	rfc.setLF(lf);

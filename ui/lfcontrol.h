@@ -49,7 +49,6 @@ public slots:
 	void readDehexLUT(const QString &path);
 
 	void calibrate();
-	void genLUT();
 	void process();
 	void fast_preview();
 	void detectCamera();

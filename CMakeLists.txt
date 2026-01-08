@@ -133,6 +133,7 @@ set(SRCS_CORE
     core/lfisp.cpp
     core/colormatcher.cpp
     core/trtwrapper.cpp
+    core/califinder.cpp
 )
 
 # UI 界面模块

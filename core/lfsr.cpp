@@ -24,11 +24,18 @@ std::vector<cv::Mat> LFSuperRes::upsample(const std::vector<cv::Mat> &views,
 		return {};
 	}
 
+	// [新增] 强制检查 8-bit
+	if (views[0].depth() != CV_8U) {
+		std::cerr << "[LFSuperRes] Error: Input must be 8-bit (CV_8U). Current "
+					 "depth: "
+				  << views[0].depth() << std::endl;
+		return {};
+	}
+
 	// 1. 智能加载/切换模型
 	if (!checkAndLoadModel(method)) {
 		std::cerr << "[LFSuperRes] Model load failed. Falling back to LINEAR."
 				  << std::endl;
-		// 递归调用自己，使用备用方案，防止死循环 (LINEAR 不需要加载)
 		if (method != Method::LINEAR) {
 			return upsample(views, Method::LINEAR);
 		}
@@ -37,23 +44,18 @@ std::vector<cv::Mat> LFSuperRes::upsample(const std::vector<cv::Mat> &views,
 
 	// 2. 根据方法分发执行
 	if (method == Method::DISTGSSR) {
-		// DistgSSR 需要整个光场序列
 		return distg.run(views);
 	} else {
-		// 其他方法（插值 或 OpenCV DNN）都是针对单张图处理的
-		// 我们在这里遍历处理
 		std::vector<cv::Mat> results;
 		results.reserve(views.size());
 
 		if (isDeepLearningMethod(method)) {
-			// OpenCV DNN 推理
 			for (const auto &view : views) {
 				cv::Mat dst;
 				opencv_dnn_sr.upsample(view, dst);
 				results.push_back(dst);
 			}
 		} else {
-			// 传统插值
 			int flag = MethodToInterFlag(method);
 			for (const auto &view : views) {
 				cv::Mat dst;
@@ -71,16 +73,19 @@ cv::Mat LFSuperRes::upsample(const cv::Mat &src, Method method) {
 	if (src.empty())
 		return cv::Mat();
 
-	// 包装成 vector 调用核心逻辑
+	// [新增] 强制检查 8-bit
+	if (src.depth() != CV_8U) {
+		std::cerr << "[LFSuperRes] Error: Input image must be 8-bit."
+				  << std::endl;
+		return cv::Mat();
+	}
+
 	std::vector<cv::Mat> inputs = {src};
 
-	// 如果是 DistgSSR 但只有一张图，打印警告
 	if (method == Method::DISTGSSR) {
 		std::cerr
-			<< "[LFSuperRes] Warning: DistgSSR requires Light Field (vector). "
-			   "Input is single image."
+			<< "[LFSuperRes] Warning: DistgSSR requires Light Field (vector)."
 			<< std::endl;
-		// 这里 DistgSSR 内部可能会处理，或者我们降级
 	}
 
 	std::vector<cv::Mat> results = upsample(inputs, method);

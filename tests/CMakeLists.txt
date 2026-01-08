@@ -13,6 +13,7 @@ set(SRCS_COMMON
     ${SOURCE_DIR}/config.cpp
     ${SOURCE_DIR}/lfio.cpp
     ${SOURCE_DIR}/raw_decode.cpp
+    ${SOURCE_DIR}/califinder.cpp
 )
 
 # 核心算法模块: ISP, Calibrate, Centers, HexGrid

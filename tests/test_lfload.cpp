@@ -2,25 +2,25 @@
 #include "lfio.h"
 #include "utils.h"
 
+#include <memory>
 #include <omp.h>
 #include <opencv2/highgui.hpp>
 #include <opencv2/opencv.hpp>
 
 void test_read() {
-	LFIO lfpreader = LFIO();
-
-	auto white_img = lfpreader.readLFP("../data/MOD_0015.RAW");
+	json meta;
+	auto white_img = LFIO::ReadWhiteImageManual("../data/MOD_0015.RAW", meta);
 	std::cout << white_img.at<float>(0, 0) << std::endl;
 
 	json j;
-	auto lf_img = lfpreader.readLFP("../data/toy.lfr", &j);
+	auto lf_img = LFIO::ReadLFP("../data/toy.lfr", j);
 	std::cout << lf_img.at<float>(0, 0) << std::endl;
 	std::cout << Config::Get().img_meta()["camera"]["serialNumber"]
 			  << std::endl;
 
-	auto test_img = lfpreader.readStandardImage("../data/zutomayo.jpg");
+	auto test_img = LFIO::ReadStandardImage("../data/zutomayo.jpg");
 
-	auto lfptr = lfpreader.readSAI("../data/toy");
+	auto lfptr = LFIO::ReadSAI("../data/toy");
 	cv::Mat center = lfptr->getCenter();
 	std::cout << center.at<float>(200, 200) << std::endl;
 
@@ -39,17 +39,15 @@ void test_read() {
 	cv::waitKey();
 }
 void test_openmp() {
-	LFIO lfpreader;
-
 	Timer timer;
-	auto lf = lfpreader.readSAI("../data/toy_lftoolbox");
+	auto lf = LFIO::ReadSAI("../data/toy_lftoolbox");
 	timer.stop();
 	timer.print_elapsed_ms();
 	// cv::imshow("", lf->getCenter());
 	// cv::waitKey();
 
 	timer.start();
-	lf = lfpreader.readSAI("../data/toy_lftoolbox");
+	lf = LFIO::ReadSAI("../data/toy_lftoolbox");
 	timer.stop();
 	timer.print_elapsed_ms();
 	// cv::imshow("", lf->getCenter());

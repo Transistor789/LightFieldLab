@@ -15,12 +15,12 @@
 #include <QThreadPool>
 #include <chrono>
 #include <format>
-#include <iostream>
 #include <memory>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/highgui.hpp>
 #include <qcontainerfwd.h>
 #include <qtmetamacros.h>
+#include <string>
 #include <thread>
 
 LFControl::LFControl(QObject *parent) : QObject(parent) {
@@ -30,7 +30,6 @@ LFControl::LFControl(QObject *parent) : QObject(parent) {
 	dep = std::make_unique<LFDisp>();
 	cap = std::make_unique<LFCapture>();
 	isp = std::make_unique<LFIsp>();
-	io = std::make_unique<LFIO>();
 
 	params = std::make_unique<LFParams>(&cal->config, &isp->get_config());
 
@@ -168,7 +167,7 @@ void LFControl::readSAI(const QString &path) {
 		[this, path] {
 			params->path.sai = path.toStdString();
 			// 1. 耗时操作
-			std::shared_ptr<LFData> tempLF = LFIO::readSAI(path.toStdString());
+			std::shared_ptr<LFData> tempLF = LFIO::ReadSAI(path.toStdString());
 
 			// 2. 加锁赋值
 			{
@@ -178,8 +177,6 @@ void LFControl::readSAI(const QString &path) {
 
 			emit imageReady(ImageType::Center, cvMatToQImage(lf->getCenter()));
 
-			params->sai.width = lf->width;
-			params->sai.height = lf->height;
 			params->sai.row = (lf->rows + 1) / 2;
 			params->sai.col = (lf->cols + 1) / 2;
 			params->sai.rows = lf->rows;
@@ -195,16 +192,31 @@ void LFControl::readLFP(const QString &path) {
 		[this, path] {
 			params->path.lfp = path.toStdString();
 			if (params->imageType == ImageFileType::Lytro) {
-				json j;
-				lfraw = io->readLFP(path.toStdString(), &j);
-				isp->set_config(j);
+				json LfpMeta;
+				// 读取 LFP 并获取元数据 j
+				lfraw = LFIO::ReadLFP(path.toStdString(), LfpMeta);
+				isp->set_config(LfpMeta);
 				params->image.bayer = isp->get_config().bayer;
 				params->image.bitDepth = isp->get_config().bitDepth;
-
+				// 自动加载白图逻辑 ===
+				if (!params->path.white.empty()
+					&& std::filesystem::is_directory(params->path.white)) {
+					// 传入 LFP 路径(用于提取Key) 和 标定目录
+					json WhiteMeta;
+					cv::Mat autoWhite = LFIO::ReadWhiteImageAuto(
+						path.toStdString(), params->path.white, WhiteMeta);
+					if (!autoWhite.empty()) {
+						white = autoWhite; // 更新类的白图成员变量
+						cal->initConfigLytro2();
+						LOG_INFO("Auto-loaded white imagesuccessfully.");
+						emit imageReady(
+							ImageType::White,
+							cvMatToQImage(white, params->image.bitDepth));
+					}
+				}
 			} else if (params->imageType == ImageFileType::Raw) {
-				lfraw = io->readLFP(path.toStdString());
 			} else {
-				lfraw = io->readStandardImage(path.toStdString());
+				lfraw = LFIO::ReadStandardImage(path.toStdString());
 				isp->set_config(LFIsp::Config());
 			}
 			params->image.height = lfraw.size().height;
@@ -222,15 +234,15 @@ void LFControl::readWhite(const QString &path) {
 		[this, path] {
 			params->path.white = path.toStdString();
 			if (params->imageType == ImageFileType::Lytro) {
-				white = io->readLFP(path.toStdString(), nullptr);
+				json meta;
+				white = LFIO::ReadWhiteImageManual(path.toStdString(), meta);
 				params->image.bitDepth = 10;
 				params->image.bayer = BayerPattern::GRBG;
 				cal->initConfigLytro2();
 
 			} else if (params->imageType == ImageFileType::Raw) {
-				white = io->readLFP(path.toStdString(), nullptr);
 			} else {
-				white = io->readStandardImage(path.toStdString());
+				white = LFIO::ReadStandardImage(path.toStdString());
 			}
 			isp->set_white_img(white);
 			params->image.height = white.size().height;
@@ -246,7 +258,7 @@ void LFControl::readExtractLUT(const QString &path) {
 	runAsync(
 		[this, path] {
 			params->path.extractLUT = path.toStdString();
-			LFIO::loadLookUpTables(path.toStdString(), isp->maps.extract,
+			LFIO::LoadLookUpTables(path.toStdString(), isp->maps.extract,
 								   params->calibrate.views);
 			params->sai.cols = params->sai.rows = params->calibrate.views;
 
@@ -260,7 +272,7 @@ void LFControl::readDehexLUT(const QString &path) {
 		[this, path] {
 			params->path.dehexLUT = path.toStdString();
 			int _;
-			LFIO::loadLookUpTables(path.toStdString(), isp->maps.dehex, _);
+			LFIO::LoadLookUpTables(path.toStdString(), isp->maps.dehex, _);
 			emit paramsChanged();
 		},
 		"Load dehex-lut");
@@ -274,27 +286,22 @@ void LFControl::calibrate() {
 			cv::Mat draw =
 				draw_points(white, points, "", 1, cv::Scalar(0), false);
 			params->sai.cols = params->sai.rows = params->calibrate.views;
-			emit imageReady(ImageType::White,
-							cvMatToQImage(draw, params->image.bitDepth));
-			emit paramsChanged();
-		},
-		"Calibrating");
-}
-
-void LFControl::genLUT() {
-	runAsync(
-		[this] {
-			isp->maps.extract =
-				cal->computeExtractMaps(params->calibrate.views);
-			isp->maps.dehex = cal->computeDehexMaps();
-			if (params->calibrate.saveLUT) {
-				io->saveLookUpTables(
+			if (params->calibrate.genLUT) {
+				isp->maps.extract =
+					cal->computeExtractMaps(params->calibrate.views);
+				isp->maps.dehex = cal->computeDehexMaps();
+			}
+			if (params->calibrate.saveLUT && !isp->maps.extract.empty()
+				&& !isp->maps.dehex.empty()) {
+				LFIO::SaveLookUpTables(
 					std::format("data/calibration/lut_extract_{}.bin",
 								params->calibrate.views),
 					isp->maps.extract, params->calibrate.views);
-				io->saveLookUpTables("data/calibration/lut_dehex.bin",
-									 isp->maps.dehex, 1);
+				LFIO::SaveLookUpTables("data/calibration/lut_lut_dehex.bin",
+									   isp->maps.dehex, 1);
 			}
+			emit imageReady(ImageType::White,
+							cvMatToQImage(draw, params->image.bitDepth));
 			emit paramsChanged();
 		},
 		"Calibrating");
@@ -362,7 +369,11 @@ void LFControl::process() {
 			isp->demosaic();
 
 			if (params->isp.enableCCM) {
-				isp->ccm_fast();
+				// isp->ccm_fast();
+				isp->ccm();
+			}
+			if (params->isp.enableGamma) {
+				isp->gc();
 			}
 
 			// 发送去马赛克后的结果
@@ -382,16 +393,14 @@ void LFControl::process() {
 			// 8. 光场重采样与生成
 			isp->resample(params->isp.enableDehex);
 
+			auto views = isp->getSAIS_8bit();
 			if (params->isp.enableColorEq) {
-				ColorMatcher::equalize(isp->getSAIS(),
-									   params->isp.colorEqMethod);
+				ColorMatcher::equalize(views, params->isp.colorEqMethod);
 			}
 
-			lf = std::make_shared<LFData>(isp->getSAIS());
+			lf = std::make_shared<LFData>(views);
 			params->sai.cols = lf->cols;
 			params->sai.rows = lf->rows;
-			params->sai.width = lf->width;
-			params->sai.height = lf->height;
 			params->sai.col = (1 + params->sai.cols) / 2;
 			params->sai.row = (1 + params->sai.rows) / 2;
 			emit imageReady(
@@ -432,7 +441,7 @@ void LFControl::fast_preview() {
 			}
 
 			// --- 快速预览管线 ---
-			isp->preview();
+			isp->preview(params->isp.config->lscExp);
 			emit imageReady(ImageType::LFP, cvMatToQImage(isp->getResult()));
 
 			// 5. [逻辑判断] 检查是否启用了光场提取
@@ -455,8 +464,6 @@ void LFControl::fast_preview() {
 			lf = std::make_shared<LFData>(isp->getSAIS());
 			params->sai.cols = lf->cols;
 			params->sai.rows = lf->rows;
-			params->sai.width = lf->width;
-			params->sai.height = lf->height;
 			params->sai.col = (1 + params->sai.cols) / 2;
 			params->sai.row = (1 + params->sai.rows) / 2;
 			emit imageReady(ImageType::Center, cvMatToQImage(lf->getCenter()));
@@ -469,7 +476,8 @@ void LFControl::updateSAI(int row, int col) {
 	runAsync(
 		[this, row, col] {
 			emit imageReady(ImageType::Center,
-							cvMatToQImage(lf->getSAI(row - 1, col - 1)));
+							cvMatToQImage(lf->getSAI(row - 1, col - 1),
+										  params->image.bitDepth));
 			emit paramsChanged();
 		},
 		"SAI updated");
@@ -531,7 +539,8 @@ void LFControl::play() {
 				// 注意：getSAI 使用 0-based 索引，所以这里减 1
 				emit imageReady(ImageType::Center,
 								cvMatToQImage(lf->getSAI(params->sai.row - 1,
-														 params->sai.col - 1)));
+														 params->sai.col - 1),
+											  params->image.bitDepth));
 				emit paramsChanged();
 				std::this_thread::sleep_for(std::chrono::milliseconds(50));
 			}
@@ -542,43 +551,34 @@ void LFControl::play() {
 void LFControl::refocus() {
 	runAsync(
 		[this] {
-			// 1. 安全检查
-			// 注意：lf 是 shared_ptr，先判空指针，再判内部数据
+			// 1. 安全检查: 数据是否存在
 			if (!lf || lf->data.empty()) {
 				LOG_ERROR("[Refocus] Cancelled: Light field data is empty!");
 				return;
 			}
 
+			// 2. [新增] 严格检查: 必须是 8-bit 数据
+			if (lf->data[0].depth() != CV_8U) {
+				LOG_ERROR(
+					"[Refocus] Error: Input data is not 8-bit! Current depth: "
+					+ std::to_string(lf->data[0].depth()));
+				return;
+			}
+
 			ref->setLF(lf);
 
-			// 2. 执行重聚焦
-			// 结果可能是 CV_16U (保持原位深) 或 CV_32F (平均值)
+			// 3. 执行重聚焦
+			// 由于输入保证是 8-bit，且 Refocus 内部已锁定输出 8-bit
 			auto img = ref->refocusByShift(params->refocus.shift,
 										   params->refocus.crop);
 
-			// 3. [新增] 位深归一化处理
-			// 如果结果不是 8 位，或者是浮点型，强制转为 8 位以便显示
-			if (img.depth() != CV_8U) {
-				double alpha = 1.0;
-				double maxVal = (1 << params->image.bitDepth) - 1.0;
-
-				// 防御性检查
-				if (maxVal < 255.0)
-					maxVal = 255.0;
-
-				// 计算缩放系数 (将 0~65535 映射到 0~255)
-				alpha = 255.0 / maxVal;
-
-				// 执行转换
-				// 如果 img 是浮点型且范围是 0.0-1.0，这里的 alpha 应该改回
-				// 255.0 但通常 Refocus 后的浮点值范围依然是 0~MaxVal
-				cv::Mat temp;
-				img.convertTo(temp, CV_8U, alpha);
-				img = temp;
+			if (img.empty()) {
+				LOG_ERROR("[Refocus] Failed: Result image is empty.");
+				return;
 			}
 
 			// 4. 发送结果
-			// 因为上面已经转成了 8 位，所以这里 bitDepth 传 8 即可
+			// 结果是标准的 8-bit，cvMatToQImage 第二个参数传 8 即可
 			emit imageReady(ImageType::Refocus, cvMatToQImage(img, 8));
 			emit paramsChanged();
 		},
@@ -604,71 +604,31 @@ void LFControl::upsample() {
 		[this] {
 			// 0. [安全检查] 确保光场数据存在
 			if (!lf || lf->data.empty()) {
-				LOG_WARN("[SR] Cancelled: Light field data is empty.");
+				LOG_WARN(
+					"[Super Resolution] Cancelled: Light field data is empty.");
 				return;
 			}
 
-			// 1. 传统插值算法 (Nearest, Bilinear, Bicubic)
-			// 支持 8-bit 和 16-bit，无需转换
+			if (lf->data[0].depth() != CV_8U) {
+				LOG_ERROR(
+					"[Super Resolution] Error: Input data is not 8-bit! "
+					"Current depth: "
+					+ std::to_string(lf->data[0].depth()));
+				return;
+			}
+
 			if (params->sr.method < LFSuperRes::Method::ESPCN) {
 				auto img = sr->upsample(lf->getCenter(), params->sr.method);
-				// 结果保持原有位深，需传入 bitDepth 进行正确显示归一化
-				emit imageReady(ImageType::SR,
-								cvMatToQImage(img, params->image.bitDepth));
-			}
-			// 2. 单图 DNN 算法 (ESPCN, EDSR, FSRCNN, LapSRN)
-			// OpenCV DNN 模块通常仅支持 8-bit 输入
-			else if (params->sr.method < LFSuperRes::Method::DISTGSSR) {
-				cv::Mat src = lf->getCenter();
-				cv::Mat src_8u;
 
-				// 如果不是 8 位，则进行缩放转换
-				if (params->image.bitDepth != 8 || src.depth() != CV_8U) {
-					double maxVal = (1 << params->image.bitDepth) - 1.0;
-					// 防御性编程：避免除以0
-					if (maxVal < 255.0)
-						maxVal = 255.0;
-
-					// 归一化到 0-255
-					src.convertTo(src_8u, CV_8U, 255.0 / maxVal);
-				} else {
-					src_8u = src; // 已经是 8 位，直接引用
-				}
-
-				auto img = sr->upsample(src_8u, params->sr.method);
-
-				// DNN 输出通常是 8-bit，直接显示即可
+				// 结果必定是 8-bit，直接显示
 				emit imageReady(ImageType::SR, cvMatToQImage(img, 8));
-			}
-			// 3. 光场 DNN 算法 (DISTGSSR 等)
-			// 需要输入一组 8-bit 的视图
-			else {
-				std::vector<cv::Mat> views_8u;
-				views_8u.reserve(lf->data.size());
+			} else if (params->sr.method < LFSuperRes::Method::DISTGSSR) {
+				auto img = sr->upsample(lf->getCenter(), params->sr.method);
 
-				// 计算转换系数
-				double alpha = 1.0;
-				bool needConv = (params->image.bitDepth != 8);
-
-				if (needConv) {
-					double maxVal = (1 << params->image.bitDepth) - 1.0;
-					if (maxVal < 255.0)
-						maxVal = 255.0;
-					alpha = 255.0 / maxVal;
-				}
-
-				// 批量转换所有视图
-				for (const auto &view : lf->data) {
-					if (needConv || view.depth() != CV_8U) {
-						cv::Mat temp;
-						view.convertTo(temp, CV_8U, alpha);
-						views_8u.push_back(temp);
-					} else {
-						views_8u.push_back(view);
-					}
-				}
-
-				auto views = sr->upsample(views_8u, params->sr.method);
+				emit imageReady(ImageType::SR, cvMatToQImage(img, 8));
+			} else {
+				// 直接传入 lf->data，无需再创建 views_8u 临时副本
+				auto views = sr->upsample(lf->data, params->sr.method);
 
 				if (!views.empty()) {
 					// 显示中间视点
@@ -683,49 +643,28 @@ void LFControl::upsample() {
 void LFControl::depth() {
 	runAsync(
 		[this] {
-			// 1. [安全检查] 确保光场数据存在
-			// 注意：先检查指针 lf 是否有效，再检查数据
 			if (!lf || lf->data.empty()) {
 				LOG_WARN(
 					"[Depth Estimation] Cancelled: Light field data is empty!");
 				return;
 			}
 
-			// 2. [数据准备] 转换为 8-bit 用于计算
-			// 深度估计算法通常对亮度敏感，且大多基于 0-255 范围设计
-			std::vector<cv::Mat> process_views;
-
-			// 检查是否需要转换
-			if (params->image.bitDepth != 8) {
-				// 预分配内存，避免多次 realloc
-				process_views.reserve(lf->data.size());
-
-				// 计算归一化系数
-				double maxVal = (1 << params->image.bitDepth) - 1.0;
-				// 防御性检查
-				if (maxVal < 255.0)
-					maxVal = 255.0;
-				double alpha = 255.0 / maxVal;
-
-				// 批量转换
-				for (const auto &view : lf->data) {
-					cv::Mat tmp;
-					view.convertTo(tmp, CV_8U, alpha);
-					process_views.push_back(tmp);
-				}
-			} else {
-				// 如果已经是 8-bit，直接使用（cv::Mat
-				// 拷贝只是拷贝头信息，开销很小）
-				process_views = lf->data;
+			if (lf->data[0].depth() != CV_8U) {
+				LOG_ERROR(
+					"[Depth Estimation] Error: Input data is not 8-bit! "
+					"Current depth: "
+					+ std::to_string(lf->data[0].depth()));
+				return;
 			}
 
-			// 3. [执行算法] 使用处理后的 process_views
-			auto img = dep->depth(process_views, params->de.method);
+			bool success = dep->depth(lf->data, params->de.method);
 
-			// 4. [结果显示]
-			// getGrayVisual/getJetVisual 内部通常已经将结果转为 8-bit
-			// 彩色/灰度图 所以 cvMatToQImage 不需要传
-			// bitDepth，直接用默认处理即可
+			if (!success) {
+				LOG_ERROR(
+					"[Depth Estimation] Failed: Algorithm returned error.");
+				return;
+			}
+
 			if (params->de.color == LFParamsDE::Color::Gray) {
 				emit imageReady(ImageType::Depth,
 								cvMatToQImage(dep->getGrayVisual()));

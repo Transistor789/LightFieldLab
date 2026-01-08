@@ -87,8 +87,6 @@ MainWindow::MainWindow(QWidget *parent)
 
 	connect(ui->widgetControl, &WidgetControl::requestCalibrate, this,
 			[this] { ctrl->calibrate(); });
-	connect(ui->widgetControl, &WidgetControl::requestGenLUT, this,
-			[this] { ctrl->genLUT(); });
 	connect(ui->widgetControl, &WidgetControl::requestFastPreview, this,
 			[this] { ctrl->fast_preview(); });
 	connect(ui->widgetControl, &WidgetControl::requestISP, this,
@@ -120,21 +118,21 @@ MainWindow::MainWindow(QWidget *parent)
 	connect(ctrl.get(), &LFControl::imageReady, ui->widgetImage,
 			&WidgetImage::updateImage);
 
-// 启动业务
-#ifndef NDEBUG
+	// 启动业务
+	ctrl->params->path.white = "D:\\code\\LightFieldCamera\\B5152102610";
 	ctrl->readExtractLUT("data/calibration/lut_extract_9.bin");
 	ctrl->readDehexLUT("data/calibration/lut_dehex.bin");
-	// ctrl->readSAI("data/bedroom");
 	ctrl->readLFP("data/toy.lfr");
+	// ctrl->readWhite("data/MOD_0015.RAW");
+	// ctrl->readSAI("data/bedroom");
 	// std::this_thread::sleep_for(std::chrono::milliseconds(100));
-	ctrl->readWhite("data/MOD_0015.RAW");
+
 	// std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	// // ctrl->calibrate();
 	// ctrl->refocus();
 	// // ctrl->processAllInFocus();
 	// ctrl->upsample();
 	// ctrl->depth();
-#endif
 }
 
 MainWindow::~MainWindow() { delete ui; }
