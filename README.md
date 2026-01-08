@@ -105,6 +105,10 @@ trtexec.exe --onnx=data/DistgSSR_2x_5x5.onnx --saveEngine=data/DistgSSR_2x_1x1x6
     * **Repositories**: [https://github.com/YingqianWang/DistgSSR](https://github.com/YingqianWang/DistgSSR) | [https://github.com/YingqianWang/DistgDisp](https://github.com/YingqianWang/DistgDisp)
     * **Reference**: Wang, Y., Wang, L., Wu, G., Yang, J., An, W., Yu, J., & Guo, Y. (2022). **"Disentangling Light Fields for Super-Resolution and Disparity Estimation"**. *IEEE Transactions on Pattern Analysis and Machine Intelligence (TPAMI)*.
 
+* **OACC-Net**:
+    * **Repository**: https://github.com/YingqianWang/OACC-Net
+    * **Reference**: Wang, Y., Wang, L., Liang, Z., Yang, J., An, W., & Guo, Y. (2022). **"Occlusion-Aware Cost Constructor for Light Field Depth Estimation"**.Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), pp. 19809–19818.
+
 * **EPIT (Updated to ICCV 2023 Work)**:
     * **Repository**: [https://github.com/ZhengyuLiang24/EPIT](https://github.com/ZhengyuLiang24/EPIT)
     * **Reference**: Liang, Z., Wang, Y., Wang, L., Yang, J., Zhou, S., & Guo, Y. (2023). **"Learning Non-Local Spatial-Angular Correlation for Light Field Image Super-Resolution"**. *Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)*, pp. 12376-12386.
