@@ -4,7 +4,6 @@
 #include "centers_sort.h"
 #include "hexgrid_fit.h"
 #include "json.hpp"
-#include "lfio.h"
 #include "utils.h"
 
 #include <format>
@@ -31,12 +30,7 @@ void LFCalibrate::setImage(const cv::Mat &img) {
 	}
 }
 
-void LFCalibrate::initConfigLytro2() {
-	config.bayer = BayerPattern::GRBG;
-	config.bitDepth = 10;
-}
-
-std::vector<std::vector<cv::Point2f>> LFCalibrate::run() {
+void LFCalibrate::run(const LFCalibrate::Config &cfg) {
 	if (_white_img.empty()) {
 		throw std::runtime_error(
 			"LFCalibrate: No image set. Call setImage() first.");
@@ -45,7 +39,7 @@ std::vector<std::vector<cv::Point2f>> LFCalibrate::run() {
 	// -------------------------------------------------------------------------
 	// 1. 预处理：消除 Bayer 棋盘格
 	// -------------------------------------------------------------------------
-	if (config.bayer != BayerPattern::NONE) {
+	if (cfg.bayer != BayerPattern::NONE) {
 		// 使用高斯模糊平滑 Bayer 纹理，保留几何质心
 		cv::GaussianBlur(_white_img, _white_img, cv::Size(3, 3), 0);
 	}
@@ -55,8 +49,8 @@ std::vector<std::vector<cv::Point2f>> LFCalibrate::run() {
 	// -------------------------------------------------------------------------
 	if (_white_img.depth() != CV_8U) {
 		double scale = 1.0;
-		if (config.bitDepth > 8) {
-			scale = 255.0 / ((1 << config.bitDepth) - 1);
+		if (cfg.bitDepth > 8) {
+			scale = 255.0 / ((1 << cfg.bitDepth) - 1);
 		} else if (_white_img.depth() == CV_16U) {
 			scale = 255.0 / 65535.0;
 		}
@@ -67,11 +61,11 @@ std::vector<std::vector<cv::Point2f>> LFCalibrate::run() {
 	// 3. 质心提取 (Centroids Extract)
 	// -------------------------------------------------------------------------
 	CentroidsExtract ce(_white_img);
-	if (config.autoEstimate) {
-		ce.run(config.ceMethod);
-		config.diameter = ce.getEstimatedM();
+	if (cfg.autoEstimate) {
+		ce.run(cfg.ceMethod);
+		_diameter = ce.getEstimatedM();
 	} else {
-		ce.run(config.ceMethod, config.diameter);
+		ce.run(cfg.ceMethod, cfg.diameter);
 	}
 
 	// -------------------------------------------------------------------------
@@ -93,7 +87,10 @@ std::vector<std::vector<cv::Point2f>> LFCalibrate::run() {
 
 	_points = hgf.predict();
 
-	return _points;
+	if (cfg.genLUT) {
+		computeExtractMaps(cfg.views);
+		computeDehexMaps();
+	}
 }
 
 void LFCalibrate::savePoints(const std::string &filename) {
@@ -235,26 +232,6 @@ const std::vector<cv::Mat> &LFCalibrate::computeExtractMaps(int winSize) {
 	return _extract_maps;
 }
 
-void LFCalibrate::getExtractMaps(cv::Mat &out_x, cv::Mat &out_y, int row,
-								 int col) const {
-	if (_extract_maps.empty()) {
-		std::cerr << "[LFCalibrate] Error: Maps not computed." << std::endl;
-		return;
-	}
-
-	int total_maps = _extract_maps.size();
-	int winSize = std::sqrt(total_maps / 2);
-	int u = (row == -1) ? winSize / 2 : row;
-	int v = (col == -1) ? winSize / 2 : col;
-
-	if (u < 0 || u >= winSize || v < 0 || v >= winSize)
-		return;
-
-	int idx = (u * winSize + v) * 2;
-	out_x = _extract_maps[idx];
-	out_y = _extract_maps[idx + 1];
-}
-
 const std::vector<cv::Mat> &LFCalibrate::computeDehexMaps() {
 	_computeDehexMaps();
 	std::cout << std::format(
@@ -264,12 +241,19 @@ const std::vector<cv::Mat> &LFCalibrate::computeDehexMaps() {
 	return _dehex_maps;
 }
 
-void LFCalibrate::getDehexMaps(cv::Mat &out_x, cv::Mat &out_y) {
+std::vector<cv::Mat> LFCalibrate::getExtractMaps() const {
+	if (_extract_maps.empty()) {
+		std::cerr << "[LFCalibrate] Error: Maps not computed." << std::endl;
+		return {};
+	}
+
+	return _extract_maps;
+}
+
+std::vector<cv::Mat> LFCalibrate::getDehexMaps() const {
 	if (_dehex_maps.empty()) {
-		_computeDehexMaps();
+		std::cerr << "[LFCalibrate] Error: LUT not computed." << std::endl;
+		return {};
 	}
-	if (!_dehex_maps.empty()) {
-		out_x = _dehex_maps[0];
-		out_y = _dehex_maps[1];
-	}
+	return _dehex_maps;
 }

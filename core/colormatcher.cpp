@@ -1,16 +1,15 @@
 ﻿#include "colormatcher.h"
 
 #include <cmath>
-#include <iostream>
 #include <omp.h>
 #include <vector>
-
 
 // =========================================================
 // Public Interface
 // =========================================================
 
-void ColorMatcher::equalize(std::vector<cv::Mat> &views, Method method) {
+void ColorMatcher::equalize(std::vector<cv::Mat> &views,
+							ColorEqualizeMethod method) {
 	if (views.empty())
 		return;
 
@@ -25,7 +24,7 @@ void ColorMatcher::equalize(std::vector<cv::Mat> &views, Method method) {
 	const cv::Mat &ref_img = views[center_idx];
 
 	// 2. 根据不同算法进行批处理优化
-	if (method == Method::Reinhard) {
+	if (method == ColorEqualizeMethod::Reinhard) {
 		cv::Scalar ref_mean, ref_std;
 		computeLabStats(ref_img, ref_mean, ref_std);
 
@@ -47,29 +46,30 @@ void ColorMatcher::equalize(std::vector<cv::Mat> &views, Method method) {
 	}
 }
 
-void ColorMatcher::apply(cv::Mat &src, const cv::Mat &ref, Method method) {
+void ColorMatcher::apply(cv::Mat &src, const cv::Mat &ref,
+						 ColorEqualizeMethod method) {
 	if (src.empty() || ref.empty())
 		return;
 
 	switch (method) {
-		case Method::Reinhard:
+		case ColorEqualizeMethod::Reinhard:
 			reinhard(src, ref);
 			break;
-		case Method::HistMatch:
+		case ColorEqualizeMethod::HistMatch:
 			histMatch(src, ref);
 			break;
-		case Method::MKL:
+		case ColorEqualizeMethod::MKL:
 			mkl(src, ref);
 			break;
-		case Method::MVGD:
+		case ColorEqualizeMethod::MVGD:
 			mvgd(src, ref);
 			break;
-		case Method::HM_MKL_HM:
+		case ColorEqualizeMethod::HM_MKL_HM:
 			histMatch(src, ref);
 			mkl(src, ref);
 			histMatch(src, ref);
 			break;
-		case Method::HM_MVGD_HM:
+		case ColorEqualizeMethod::HM_MVGD_HM:
 			histMatch(src, ref);
 			mvgd(src, ref);
 			histMatch(src, ref);

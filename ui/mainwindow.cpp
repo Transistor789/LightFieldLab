@@ -38,8 +38,8 @@ MainWindow::MainWindow(QWidget *parent)
 			elapsedMs = 1;
 
 		// 2. 获取并清零计数器
-		int countCap = ctrl->params->dynamic.capFrameCount.exchange(0);
-		int countProc = ctrl->params->dynamic.procFrameCount.exchange(0);
+		int countCap = ctrl->params.dynamic.capFrameCount.exchange(0);
+		int countProc = ctrl->params.dynamic.procFrameCount.exchange(0);
 		int countUI = m_uiFrameCount;
 		m_uiFrameCount = 0;
 
@@ -65,7 +65,7 @@ MainWindow::MainWindow(QWidget *parent)
 	});
 	m_fpsTimer->start();
 
-	ui->widgetControl->setupParams(ctrl->params.get());
+	ui->widgetControl->setupParams(&ctrl->params);
 	connect(ctrl.get(), &LFControl::paramsChanged, ui->widgetControl,
 			&WidgetControl::updateUI);
 
@@ -119,7 +119,7 @@ MainWindow::MainWindow(QWidget *parent)
 			&WidgetImage::updateImage);
 
 	// 启动业务
-	ctrl->params->path.white = "D:\\code\\LightFieldCamera\\B5152102610";
+	ctrl->params.path.white = "D:\\code\\LightFieldCamera\\B5152102610";
 	ctrl->readExtractLUT("data/calibration/lut_extract_9.bin");
 	ctrl->readDehexLUT("data/calibration/lut_dehex.bin");
 	ctrl->readLFP("data/toy.lfr");

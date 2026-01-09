@@ -125,17 +125,17 @@ WidgetControl::WidgetControl(QWidget *parent)
 	connect(ui->checkBoxDiameter, &QCheckBox::toggled, this,
 			[this](bool active) {
 				ui->spinBoxDiameter->setEnabled(!active);
-				params_->calibrate.config->autoEstimate = active;
+				params_->calibrate.autoEstimate = active;
 			});
 	connect(ui->spinBoxDiameter, &QSpinBox::valueChanged, this,
 			[this](int value) {
 				if (params_)
-					params_->calibrate.config->diameter = value;
+					params_->calibrate.diameter = value;
 			});
 	connect(ui->comboBoxDetectAlgo, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
 				if (params_)
-					params_->calibrate.config->ceMethod =
+					params_->calibrate.ceMethod =
 						static_cast<CentroidsExtract::Method>(index);
 			});
 	connect(ui->checkBoxGenLUT, &QCheckBox::toggled, this, [this](bool value) {
@@ -223,59 +223,59 @@ WidgetControl::WidgetControl(QWidget *parent)
 
 	connect(ui->comboBoxDPCAlgo, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
-				params_->isp.dpcMethod = static_cast<LFIsp::Method::DPC>(index);
+				params_->isp.dpcMethod = static_cast<DpcMethod>(index);
 			});
 	connect(ui->spinBoxThreshold, &QSpinBox::valueChanged, this,
 			[this](int value) {
-				params_->isp.config->dpcThreshold = static_cast<int>(value);
+				params_->isp.dpcThreshold = static_cast<int>(value);
 			});
 	connect(ui->spinBoxBL, &QSpinBox::valueChanged, this, [this](int value) {
-		params_->isp.config->black_level = static_cast<int>(value);
+		params_->isp.black_level = static_cast<int>(value);
 	});
 	connect(ui->spinBoxWL, &QSpinBox::valueChanged, this, [this](int value) {
-		params_->isp.config->white_level = static_cast<int>(value);
+		params_->isp.white_level = static_cast<int>(value);
 	});
 	connect(ui->doubleSpinBoxExpo, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) {
-				params_->isp.config->lscExp = static_cast<float>(value);
+				params_->isp.lscExp = static_cast<float>(value);
 			});
 	connect(ui->doubleSpinBoxGain0, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) {
-				params_->isp.config->awb_gains[0] = static_cast<float>(value);
+				params_->isp.awb_gains[0] = static_cast<float>(value);
 			});
 	connect(ui->doubleSpinBoxGain1, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) {
-				params_->isp.config->awb_gains[1] = static_cast<float>(value);
+				params_->isp.awb_gains[1] = static_cast<float>(value);
 			});
 	connect(ui->doubleSpinBoxGain2, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) {
-				params_->isp.config->awb_gains[2] = static_cast<float>(value);
+				params_->isp.awb_gains[2] = static_cast<float>(value);
 			});
 	connect(ui->doubleSpinBoxGain3, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) {
-				params_->isp.config->awb_gains[3] = static_cast<float>(value);
+				params_->isp.awb_gains[3] = static_cast<float>(value);
 			});
 	connect(ui->comboBoxDemosaicAlgo, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
 				params_->isp.demosaicMethod =
-					static_cast<LFIsp::Method::Demosaic>(index);
+					static_cast<DemosaicMethod>(index);
 			});
 	connect(ui->btnSetCCM, &QPushButton::clicked, this, [this] {
 		if (!params_)
 			return;
-		DialogCCM dialog(params_->isp.config->ccm_matrix, this);
+		DialogCCM dialog(params_->isp.ccm_matrix, this);
 		if (dialog.exec() == QDialog::Accepted) {
 			updateUI();
 		}
 	});
 	connect(ui->doubleSpinBoxGamma, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) {
-				params_->isp.config->gamma = static_cast<float>(value);
+				params_->isp.gamma = static_cast<float>(value);
 			});
 	connect(ui->comboBoxColorEq, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
 				params_->isp.colorEqMethod =
-					static_cast<ColorMatcher::Method>(index);
+					static_cast<ColorEqualizeMethod>(index);
 			});
 	connect(ui->btnFastPreview, &QPushButton::clicked, this,
 			&WidgetControl::requestFastPreview);
@@ -285,6 +285,10 @@ WidgetControl::WidgetControl(QWidget *parent)
 	// Dynamic
 	connect(ui->pushButtonDetectCamera, &QPushButton::clicked, this,
 			[this] { emit requestDetectCamera(); });
+	connect(ui->checkBoxShowLFP, &QCheckBox::toggled, this,
+			[this](bool active) { params_->dynamic.showLFP = active; });
+	connect(ui->checkBoxShowSAI, &QCheckBox::toggled, this,
+			[this](bool active) { params_->dynamic.showSAI = active; });
 	connect(
 		ui->pushButtonCapture, &QPushButton::toggled, this,
 		[this](bool active) {
@@ -367,7 +371,7 @@ WidgetControl::WidgetControl(QWidget *parent)
 	connect(ui->comboBoxSRAlgo, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
 				if (params_)
-					params_->sr.method = static_cast<LFSuperRes::Method>(index);
+					params_->sr.method = static_cast<SRMethod>(index);
 			});
 	connect(ui->comboBoxSRScale, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
@@ -380,7 +384,7 @@ WidgetControl::WidgetControl(QWidget *parent)
 	connect(ui->comboBoxDepthAlgo, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
 				if (params_)
-					params_->de.method = static_cast<LFDisp::Method>(index);
+					params_->de.method = static_cast<DEMethod>(index);
 			});
 	connect(ui->comboBoxDepthPatchColor, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
@@ -419,17 +423,17 @@ void WidgetControl::updateUI() {
 	setValSilent(ui->comboBoxType, params_->imageType);
 
 	// [修复] 从 isp.config 读取，确保与 ComboBox 的 set 信号源一致
-	setValSilent(ui->comboBoxBayer, params_->isp.config->bayer);
-	setValSilent(ui->comboBoxBit, (params_->isp.config->bitDepth - 8) / 2);
+	setValSilent(ui->comboBoxBayer, params_->isp.bayer);
+	setValSilent(ui->comboBoxBit, (params_->isp.bitDepth - 8) / 2);
 
 	setValSilent(ui->lineEditHeight, params_->image.height);
 	setValSilent(ui->lineEditWidth, params_->image.width);
 
 	// Calibrate (补全遗漏参数)
-	ui->spinBoxDiameter->setEnabled(!params_->calibrate.config->autoEstimate);
-	setValSilent(ui->spinBoxDiameter, params_->calibrate.config->diameter);
-	setValSilent(ui->checkBoxDiameter, params_->calibrate.config->autoEstimate);
-	setValSilent(ui->comboBoxDetectAlgo, params_->calibrate.config->ceMethod);
+	ui->spinBoxDiameter->setEnabled(!params_->calibrate.autoEstimate);
+	setValSilent(ui->spinBoxDiameter, params_->calibrate.diameter);
+	setValSilent(ui->checkBoxDiameter, params_->calibrate.autoEstimate);
+	setValSilent(ui->comboBoxDetectAlgo, params_->calibrate.ceMethod);
 	setValSilent(ui->spinBoxLUTViews, params_->calibrate.views);
 	setValSilent(ui->checkBoxSaveLUT, params_->calibrate.saveLUT);
 	setValSilent(ui->checkBoxGenLUT, params_->calibrate.genLUT);
@@ -447,18 +451,18 @@ void WidgetControl::updateUI() {
 	setValSilent(ui->checkBoxColorEq, params_->isp.enableColorEq);
 
 	setValSilent(ui->comboBoxDPCAlgo, params_->isp.dpcMethod);
-	setValSilent(ui->spinBoxThreshold, params_->isp.config->dpcThreshold);
-	setValSilent(ui->spinBoxBL, params_->isp.config->black_level);
-	setValSilent(ui->spinBoxWL, params_->isp.config->white_level);
-	setValSilent(ui->doubleSpinBoxExpo, params_->isp.config->lscExp);
+	setValSilent(ui->spinBoxThreshold, params_->isp.dpcThreshold);
+	setValSilent(ui->spinBoxBL, params_->isp.black_level);
+	setValSilent(ui->spinBoxWL, params_->isp.white_level);
+	setValSilent(ui->doubleSpinBoxExpo, params_->isp.lscExp);
 
-	setValSilent(ui->doubleSpinBoxGain0, params_->isp.config->awb_gains[0]);
-	setValSilent(ui->doubleSpinBoxGain1, params_->isp.config->awb_gains[1]);
-	setValSilent(ui->doubleSpinBoxGain2, params_->isp.config->awb_gains[2]);
-	setValSilent(ui->doubleSpinBoxGain3, params_->isp.config->awb_gains[3]);
+	setValSilent(ui->doubleSpinBoxGain0, params_->isp.awb_gains[0]);
+	setValSilent(ui->doubleSpinBoxGain1, params_->isp.awb_gains[1]);
+	setValSilent(ui->doubleSpinBoxGain2, params_->isp.awb_gains[2]);
+	setValSilent(ui->doubleSpinBoxGain3, params_->isp.awb_gains[3]);
 
 	setValSilent(ui->comboBoxDemosaicAlgo, params_->isp.demosaicMethod);
-	setValSilent(ui->doubleSpinBoxGamma, params_->isp.config->gamma);
+	setValSilent(ui->doubleSpinBoxGamma, params_->isp.gamma);
 	setValSilent(ui->comboBoxColorEq, params_->isp.colorEqMethod);
 
 	// Dynamic
@@ -468,6 +472,8 @@ void WidgetControl::updateUI() {
 			"检测到设备数: "
 			+ QString::number(params_->dynamic.cameraID.size()));
 	}
+	setValSilent(ui->checkBoxShowLFP, params_->dynamic.showLFP);
+	setValSilent(ui->checkBoxShowSAI, params_->dynamic.showSAI);
 
 	// SAI
 	ui->spinBoxHorz->setMaximum(params_->sai.cols);

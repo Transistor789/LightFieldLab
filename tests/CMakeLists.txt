@@ -19,6 +19,7 @@ set(SRCS_COMMON
 # 核心算法模块: ISP, Calibrate, Centers, HexGrid
 set(SRCS_ALGO
     ${SOURCE_DIR}/lfisp.cpp
+    ${SOURCE_DIR}/colormatcher.cpp
     ${SOURCE_DIR}/lfcalibrate.cpp
     ${SOURCE_DIR}/centers_extract.cpp
     ${SOURCE_DIR}/centers_sort.cpp

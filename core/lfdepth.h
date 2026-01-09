@@ -2,17 +2,15 @@
 #define LFDEPTH_
 
 #include "distgdisp.h"
-// [移除] #include "lfparams.h" -> 不再依赖外部参数定义
 
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
 
+enum class DEMethod { DistgDisp, OACC };
+
 class LFDisp {
 public:
-	// [新增] 内部定义枚举，自包含
-	enum class Method { DistgDisp, OACC };
-
 	explicit LFDisp() = default;
 
 	/**
@@ -21,7 +19,7 @@ public:
 	 * @param method 选择的算法模型 (DistgDisp 或 OACC)
 	 * @return 成功返回 true，失败返回 false
 	 */
-	bool depth(const std::vector<cv::Mat> &views, Method method);
+	bool depth(const std::vector<cv::Mat> &views, DEMethod method);
 
 	// 结果获取与可视化
 	bool hasResult() const { return !m_rawMap.empty(); }
@@ -36,9 +34,9 @@ public:
 
 private:
 	// 检查状态并在必要时加载模型
-	bool checkAndLoadModel(Method targetMethod);
+	bool checkAndLoadModel(DEMethod targetMethod);
 	// 根据参数生成路径
-	std::string getModelPath(Method method, int angRes, int patchSize) const;
+	std::string getModelPath(DEMethod method, int angRes, int patchSize) const;
 
 private:
 	DistgDisp distg_;
@@ -49,9 +47,9 @@ private:
 	int m_targetPatchSize = 196; // 用户设定的目标 Patch 大小
 
 	// --- 当前已加载的模型状态 (缓存) ---
-	int m_loadedAngRes = -1;				   // 当前引擎的角度分辨率
-	int m_loadedPatchSize = -1;				   // 当前引擎的 Patch 大小
-	Method m_loadedMethod = Method::DistgDisp; // 当前引擎的算法类型
+	int m_loadedAngRes = -1;					   // 当前引擎的角度分辨率
+	int m_loadedPatchSize = -1;					   // 当前引擎的 Patch 大小
+	DEMethod m_loadedMethod = DEMethod::DistgDisp; // 当前引擎的算法类型
 };
 
 #endif // LFDEPTH_

@@ -179,10 +179,12 @@ void test_lut() {
 	cv::Mat img = cv::imread("../../data/gray.png", cv::IMREAD_GRAYSCALE);
 	LFCalibrate cali(img);
 	Timer timer;
-	cali.config.ceMethod = CentroidsExtract::Method::Contour;
-	cali.config.bayer = BayerPattern::NONE;
-	cali.config.bitDepth = 8;
-	auto pts_cali = cali.run();
+
+	LFCalibrate::Config config;
+	config.ceMethod = CentroidsExtract::Method::Contour;
+	config.bayer = BayerPattern::NONE;
+	config.bitDepth = 8;
+	cali.run(config);
 	timer.stop();
 	timer.print_elapsed_ms();
 

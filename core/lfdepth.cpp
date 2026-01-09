@@ -5,7 +5,7 @@
 
 // [移除] #include "lfparams.h"
 
-bool LFDisp::depth(const std::vector<cv::Mat> &views, Method method) {
+bool LFDisp::depth(const std::vector<cv::Mat> &views, DEMethod method) {
 	if (views.empty()) {
 		std::cerr << "[LFDisp] Error: Empty views input." << std::endl;
 		return false;
@@ -71,7 +71,7 @@ cv::Mat LFDisp::getPlasmaVisual() const {
 	return colorMap;
 }
 
-bool LFDisp::checkAndLoadModel(Method targetMethod) {
+bool LFDisp::checkAndLoadModel(DEMethod targetMethod) {
 	// 1. 检查状态是否发生变化
 	bool methodChanged = (m_loadedMethod != targetMethod);
 	bool paramChanged = (m_loadedAngRes != m_targetAngRes)
@@ -89,9 +89,9 @@ bool LFDisp::checkAndLoadModel(Method targetMethod) {
 
 	// 打印调试信息
 	std::string methodName =
-		(targetMethod == Method::DistgDisp) ? "DistgDisp" : "OACC";
+		(targetMethod == DEMethod::DistgDisp) ? "DistgDisp" : "OACC";
 	std::cout << "[LFDisp] Model change detected. Reloading..." << std::endl;
-	std::cout << "   Target Method: " << methodName << std::endl;
+	std::cout << "   Target DEMethod: " << methodName << std::endl;
 	std::cout << "   Target Path:   " << modelPath << std::endl;
 
 	try {
@@ -120,13 +120,13 @@ bool LFDisp::checkAndLoadModel(Method targetMethod) {
 	}
 }
 
-std::string LFDisp::getModelPath(Method method, int angRes,
+std::string LFDisp::getModelPath(DEMethod method, int angRes,
 								 int patchSize) const {
 	// 基础名称前缀
 	std::string prefix;
-	if (method == Method::DistgDisp) {
+	if (method == DEMethod::DistgDisp) {
 		prefix = "DistgDisp";
-	} else if (method == Method::OACC) {
+	} else if (method == DEMethod::OACC) {
 		prefix = "OACC-Net";
 	} else {
 		return ""; // Should not happen
@@ -142,7 +142,7 @@ std::string LFDisp::getModelPath(Method method, int angRes,
 #endif
 
 	// 使用 format 拼接路径
-	// 格式: data/{Method}_{Ang}x{Ang}_{Patch}_FP16_{OS}.engine
+	// 格式: data/{DEMethod}_{Ang}x{Ang}_{Patch}_FP16_{OS}.engine
 	return std::format("data/{}_{}x{}_{}_FP16_{}.engine", prefix, angRes,
 					   angRes, patchSize, osSuffix);
 }

@@ -1,7 +1,6 @@
 ﻿#ifndef LFPARAMS_H
 #define LFPARAMS_H
 
-#include "colormatcher.h"
 #include "lfcalibrate.h"
 #include "lfdepth.h"
 #include "lfisp.h"
@@ -33,28 +32,7 @@ struct LFParamsSAI {
 };
 
 struct LFParamsCalibrate {
-	bool saveLUT = false;
-	bool genLUT = true;
-	int views = 9;
-	LFCalibrate::Config *config;
-};
-
-struct LFParamsISP {
-	bool enableDPC = true;
-	bool enableBLC = true;
-	bool enableLSC = true;
-	bool enableAWB = true;
-	bool enableDemosaic = true;
-	bool enableCCM = true;
-	bool enableGamma = true;
-	bool enableExtract = true;
-	bool enableDehex = true;
-	bool enableColorEq = true;
-
-	LFIsp::Method::DPC dpcMethod = LFIsp::Method::DPC::Diretional;
-	LFIsp::Method::Demosaic demosaicMethod = LFIsp::Method::Demosaic::Bilinear;
-	ColorMatcher::Method colorEqMethod = ColorMatcher::Method::Reinhard;
-	LFIsp::Config *config;
+	LFCalibrate::Config config;
 };
 
 struct LFParamsDynamic {
@@ -64,6 +42,11 @@ struct LFParamsDynamic {
 	std::atomic<bool> isProcessing = false;
 	std::atomic<int> capFrameCount{0};
 	std::atomic<int> procFrameCount{0};
+	bool showLFP = true;
+	bool showSAI = true;
+	BayerPattern bayer; // TODO
+	int bitDepth;
+	int width, height;
 };
 
 struct LFParamsRefocus {
@@ -76,13 +59,13 @@ struct LFParamsSR {
 	int scale = 2;
 	int patchSize = 196;
 	int views = 5;
-	LFSuperRes::Method method = LFSuperRes::Method::NEAREST;
+	SRMethod method = SRMethod::NEAREST;
 };
 
 struct LFParamsDE {
 	enum class Color { Gray, Jet, Plasma };
 
-	LFDisp::Method method = LFDisp::Method::DistgDisp;
+	DEMethod method = DEMethod::DistgDisp;
 	Color color = Color::Gray;
 	int patchSize = 196;
 	int views = 5;
@@ -92,18 +75,13 @@ struct LFParams {
 	ImageFileType imageType = ImageFileType::Lytro;
 	LFParamsImage image;
 	LFParamsPath path;
-	LFParamsCalibrate calibrate;
-	LFParamsISP isp;
+	LFCalibrate::Config calibrate;
+	IspConfig isp;
 	LFParamsDynamic dynamic;
 	LFParamsSAI sai;
 	LFParamsRefocus refocus;
 	LFParamsSR sr;
 	LFParamsDE de;
-
-	LFParams(LFCalibrate::Config *cfgCali, LFIsp::Config *cfgIsp) {
-		isp.config = cfgIsp;
-		calibrate.config = cfgCali;
-	}
 };
 
 #endif

@@ -373,3 +373,24 @@ ImageFileType checkImageType(const std::string &path) {
 	// 其他所有情况 (png, jpg, tif, bmp, etc.)
 	return ImageFileType::Normal;
 }
+
+int getBlackLevel(const json &j) {
+	try {
+		// 导航到 black 对象下的 "b" 字段并尝试获取其 int 值
+		return j.at("master")
+			.at("picture")
+			.at("frameArray")
+			.at(0)
+			.at("frame")
+			.at("metadata")
+			.at("image")
+			.at("rawDetails")
+			.at("pixelFormat")
+			.at("black")
+			.at("b")
+			.get<int>();
+	} catch (json::exception &e) { // 捕获 JSON 解析相关的异常
+		std::cerr << "Error accessing JSON element: " << e.what() << '\n';
+		return -1; // 或者选择其他方式来表示错误，比如抛出异常或使用 optional
+	}
+}

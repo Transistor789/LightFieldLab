@@ -4,21 +4,29 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 
+enum class ColorEqualizeMethod {
+	Reinhard,
+	HistMatch,
+	MKL,
+	MVGD,
+	HM_MKL_HM,
+	HM_MVGD_HM
+};
+
 class ColorMatcher {
 public:
-	// 算法类型枚举
-	enum class Method { Reinhard, HistMatch, MKL, MVGD, HM_MKL_HM, HM_MVGD_HM };
-
 	/**
 	 * @brief [核心接口] 对整个光场视角进行色彩一致性矫正
 	 * 自动选择中心视角作为 Reference，并行处理其他所有视角
 	 */
-	static void equalize(std::vector<cv::Mat> &views, Method method);
+	static void equalize(std::vector<cv::Mat> &views,
+						 ColorEqualizeMethod method);
 
 	/**
 	 * @brief 单张图像处理：将 src 的色彩风格迁移到 ref 的风格
 	 */
-	static void apply(cv::Mat &src, const cv::Mat &ref, Method method);
+	static void apply(cv::Mat &src, const cv::Mat &ref,
+					  ColorEqualizeMethod method);
 
 private:
 	// --- Reinhard 算法 ---

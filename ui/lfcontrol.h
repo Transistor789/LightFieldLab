@@ -39,8 +39,8 @@ public:
 public slots:
 	void setCapturing(bool active);
 	void setProcessing(bool active);
-	bool getIsCapturing() const { return params->dynamic.isCapturing.load(); }
-	bool getIsProcessing() const { return params->dynamic.isProcessing.load(); }
+	bool getIsCapturing() const { return params.dynamic.isCapturing.load(); }
+	bool getIsProcessing() const { return params.dynamic.isProcessing.load(); }
 
 	void readSAI(const QString &path);
 	void readLFP(const QString &path);
@@ -104,7 +104,7 @@ private:
 	}
 
 public:
-	std::unique_ptr<LFParams> params;
+	LFParams params;
 
 private:
 	std::shared_ptr<LFData> lf;

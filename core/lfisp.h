@@ -1,6 +1,7 @@
 ﻿#ifndef LFISP_H
 #define LFISP_H
 
+#include "colormatcher.h"
 #include "json.hpp"
 #include "utils.h"
 
@@ -14,6 +15,35 @@
 
 using json = nlohmann::json;
 
+enum class DpcMethod { Diretional };
+enum class DemosaicMethod { Bilinear, Gray, VGN, EA };
+
+struct IspConfig {
+	BayerPattern bayer = BayerPattern::NONE;
+	int bitDepth = 8;
+	int white_level = 255, black_level = 0;
+	std::vector<float> awb_gains = {1.0f, 1.0f, 1.0f, 1.0f};
+	std::vector<float> ccm_matrix = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+									 0.0f, 0.0f, 0.0f, 1.0f};
+	float gamma = 1.0f;
+
+	int dpcThreshold = 25;
+	float lscExp = 1.0;
+	bool enableDPC = true;
+	bool enableBLC = true;
+	bool enableLSC = true;
+	bool enableAWB = true;
+	bool enableDemosaic = true;
+	bool enableCCM = true;
+	bool enableGamma = true;
+	bool enableExtract = true;
+	bool enableDehex = true;
+	bool enableColorEq = true;
+	DpcMethod dpcMethod = DpcMethod::Diretional;
+	DemosaicMethod demosaicMethod = DemosaicMethod::Bilinear;
+	ColorEqualizeMethod colorEqMethod = ColorEqualizeMethod::Reinhard;
+};
+
 class LFIsp {
 public:
 	struct ResampleMaps {
@@ -21,115 +51,87 @@ public:
 		std::vector<cv::Mat> dehex;
 	} maps;
 
-public:
-	struct Method {
-		enum class DPC { Diretional };
-		enum class Demosaic { Bilinear, Gray, VGN, EA };
-	};
-	struct Config {
-		BayerPattern bayer = BayerPattern::NONE;
-		int width;
-		int height;
-		int bitDepth = 8;
-		int dpcThreshold = 25;
-		int white_level = 255, black_level = 0;
-		float lscExp = 1.0;
-		std::vector<float> awb_gains = {1.0f, 1.0f, 1.0f, 1.0f};
-		std::vector<float> ccm_matrix = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-										 0.0f, 0.0f, 0.0f, 1.0f};
-		float gamma = 1.0f;
-	};
-
 	explicit LFIsp();
-	explicit LFIsp(const LFIsp::Config &config, const cv::Mat &lfp_img,
-				   const cv::Mat &wht_img);
-	explicit LFIsp(const json &json_config, const cv::Mat &lfp_img,
-				   const cv::Mat &wht_img);
+	explicit LFIsp(const cv::Mat &lfp_img);
+	explicit LFIsp(const cv::Mat &lfp_img, const cv::Mat &wht_img,
+				   const IspConfig &config);
 
-	LFIsp::Config getConfig() const { return config_; }
 	cv::Mat &getResult() { return lfp_img_; }
 	const cv::Mat &getResult() const { return lfp_img_; }
 	const std::vector<cv::Mat> &getSAIS() const { return sais; }
 	std::vector<cv::Mat> &getSAIS() { return sais; }
-	std::vector<cv::Mat> getSAIS_8bit() const;
-	LFIsp::Config &get_config() { return config_; }
 	bool isLutEmpty() { return maps.extract.empty() || maps.dehex.empty(); }
 
-	LFIsp &set_config(const LFIsp::Config &new_config);
-	LFIsp &set_config(const json &json_settings);
-	LFIsp &print_config();
+	LFIsp &print_config(const IspConfig &config);
 
-	LFIsp &updateImage(const cv::Mat &new_image, bool isWhite = false);
+	static std::string bayerToString(BayerPattern p);
+	static void parseJsonToConfig(const json &j, IspConfig &config);
+
 	LFIsp &set_lf_img(const cv::Mat &img);
-	LFIsp &set_white_img(const cv::Mat &img);
+	LFIsp &initConfig(const cv::Mat &img, const IspConfig &config);
 
-	// 预览流程
-	LFIsp &preview(float exposure = 1.5f);
-
-	// 标量处理函数 (内部根据 bitDepth 分发)
-	LFIsp &blc();
+	LFIsp &blc(int black_level);
 	LFIsp &dpc(int threshold = 100);
-	LFIsp &lsc();
-	LFIsp &awb();
-	LFIsp &ccm();
-	LFIsp &demosaic();
-	LFIsp &gc(); // Gamma Correction placeholder
+	LFIsp &lsc(float exposure);
+	LFIsp &awb(const std::vector<float> &wbgains);
+	LFIsp &ccm(const std::vector<float> &ccm_matrix);
+	LFIsp &demosaic(BayerPattern bayer, DemosaicMethod method); // TODO
 
-	LFIsp &raw_process();
-
-	// SIMD 加速函数 (内部根据 bitDepth 分发)
-	LFIsp &blc_fast();
-	LFIsp &dpc_fast(int threshold = 100);
-	LFIsp &lsc_fast();
-	LFIsp &awb_fast();
-	LFIsp &lsc_awb_fused_fast();
-	LFIsp &ccm_fast();
-
-	LFIsp &raw_process_fast();
-
-	// 后处理
+	LFIsp &blc_fast(int black_level);
+	LFIsp &dpc_fast(DpcMethod method, int threshold = 100); // TODO
+	LFIsp &lsc_fast(float exposure);
+	LFIsp &awb_fast(const std::vector<float> &wbgains);
+	LFIsp &lsc_awb_fused_fast(float exposure,
+							  const std::vector<float> &wbgains);
 	LFIsp &resample(bool dehex);
-	LFIsp &color_equalize();
+	LFIsp &ccm_fast(const std::vector<float> &ccm_matrix);
+	LFIsp &gc_fast(float gamma, int bitDepth);
+
+	LFIsp &preview(const IspConfig &config);
+	LFIsp &process(const IspConfig &config);
 
 private:
-	// 成员变量
-	LFIsp::Config config_;
 	cv::Mat lfp_img_;
-	cv::Mat lsc_gain_map_, lsc_gain_map_int_;
-	std::vector<int32_t> ccm_matrix_int_;
 	std::vector<cv::Mat> sais;
-	cv::Mat gamma_lut_u8_;
-	std::vector<uint16_t> gamma_lut_u16_;
 
-	// 内部辅助函数
-	std::string bayer_to_string(BayerPattern p) const;
-	void generate_lsc_maps(const cv::Mat &raw_wht);
-	void prepare_gamma_lut();
-	LFIsp &prepare_ccm_fixed_point();
+	cv::Mat lsc_gain_map_, lsc_gain_map_int_;
+	std::vector<float> last_ccm_matrix_;
+	std::vector<int32_t> ccm_matrix_int_;
+	std::vector<uint16_t> gamma_lut_u16;
+	cv::Mat gamma_lut_u8;
+	float last_gamma_ = -1.0f; // 初始值设为负数，确保第一次必定触发生成
+	int last_bit_depth_ = -1;  // 初始值设为 -1
 
-	LFIsp &compute_lab_stats(const cv::Mat &src, cv::Scalar &mean,
-							 cv::Scalar &stddev);
-	LFIsp &apply_reinhard_transfer(cv::Mat &target, const cv::Scalar &ref_mean,
-								   const cv::Scalar &ref_std);
+	static constexpr int FIXED_BITS = 10;		  // 位移量
+	static constexpr float FIXED_SCALE = 1024.0f; // 缩放因子 (1 << 10)
+
+private:
+	void prepare_lsc_maps(const cv::Mat &raw_wht, int black_level);
+	void prepare_gamma_lut(float gamma, int bitDepth);
+	void prepare_ccm_fixed_point(const std::vector<float> &matrix);
 
 	// SIMD 实现的具体版本
-	LFIsp &blc_simd_u16(cv::Mat &img);
-	LFIsp &blc_simd_u8(cv::Mat &img);
+	LFIsp &blc_simd_u16(cv::Mat &img, int black_level);
+	LFIsp &blc_simd_u8(cv::Mat &img, int black_level);
 
-	LFIsp &dpc_simd_u16(cv::Mat &img, int threshold);
-	LFIsp &dpc_simd_u8(cv::Mat &img, int threshold);
+	LFIsp &dpc_simd_u16(cv::Mat &img, DpcMethod method, int threshold);
+	LFIsp &dpc_simd_u8(cv::Mat &img, DpcMethod method, int threshold);
 
-	LFIsp &lsc_simd_u16(cv::Mat &img);
-	LFIsp &lsc_simd_u8(cv::Mat &img);
+	LFIsp &lsc_simd_u16(cv::Mat &img, float exposure);
+	LFIsp &lsc_simd_u8(cv::Mat &img, float exposure);
 
-	LFIsp &awb_simd_u16(cv::Mat &img);
-	LFIsp &awb_simd_u8(cv::Mat &img);
+	LFIsp &awb_simd_u16(cv::Mat &img, const std::vector<float> &wbgains);
+	LFIsp &awb_simd_u8(cv::Mat &img, const std::vector<float> &wbgains);
 
-	LFIsp &lsc_awb_simd_u16(cv::Mat &img);
-	LFIsp &lsc_awb_simd_u8(cv::Mat &img);
+	LFIsp &lsc_awb_simd_u16(cv::Mat &img, float exposure,
+							const std::vector<float> &wbgains);
+	LFIsp &lsc_awb_simd_u8(cv::Mat &img, float exposure,
+						   const std::vector<float> &wbgains);
 
-	LFIsp &raw_to_8bit_with_gains_simd_u16(cv::Mat &dst_8u, float exposure);
-	LFIsp &raw_to_8bit_with_gains_simd_u8(cv::Mat &dst_8u, float exposure);
+	LFIsp &raw_to_8bit_with_gains_simd_u16(cv::Mat &dst_8u,
+										   const IspConfig &config);
+	LFIsp &raw_to_8bit_with_gains_simd_u8(cv::Mat &dst_8u,
+										  const IspConfig &config);
 
 	LFIsp &ccm_fixed_u16(cv::Mat &img);
 	LFIsp &ccm_fixed_u8(cv::Mat &img);

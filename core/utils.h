@@ -65,5 +65,6 @@ std::string get_base_filename(const std::string &filename);
 cv::Mat gamma_convert(const cv::Mat &src, bool inverse);
 
 ImageFileType checkImageType(const std::string &path);
+int getBlackLevel(const json &j);
 
 #endif

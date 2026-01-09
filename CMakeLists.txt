@@ -1,6 +1,10 @@
 ﻿cmake_minimum_required(VERSION 3.20)
 project(LightFieldLab LANGUAGES CXX)
 
+if(POLICY CMP0146)
+    cmake_policy(SET CMP0146 OLD)
+endif()
+
 # ==============================================================================
 # 1. 项目基础配置
 # ==============================================================================
@@ -20,7 +24,7 @@ if(WIN32)
 
     # --- 编译器选项 ---
     add_compile_options(/arch:AVX2)
-    # 优化指令 (Release/RelWithDebInfo)
+    add_compile_options(/fp:fast)
     add_compile_options($<$<CONFIG:Release>:/O2>)
     add_compile_options($<$<CONFIG:Release>:/Ob2>)
     add_compile_options($<$<CONFIG:RelWithDebInfo>:/O2>)
@@ -44,7 +48,6 @@ elseif(UNIX AND NOT APPLE)
     # --- 编译器选项 ---
     add_compile_options(-mavx2 -march=native)
     add_compile_options($<$<CONFIG:Release>:-O3>)
-    add_compile_options($<$<CONFIG:RelWithDebInfo>:-O3>)
 
     # --- 依赖库路径 ---
     set(OpenCV_DIR "/usr/local/opencv/${CMAKE_BUILD_TYPE}")

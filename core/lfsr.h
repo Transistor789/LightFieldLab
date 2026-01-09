@@ -2,7 +2,6 @@
 #define LFSUPERRES_H
 
 #include "distgssr.h"
-// [移除] #include "lfparams.h"
 
 #include <filesystem>
 #include <opencv2/dnn_superres.hpp>
@@ -10,20 +9,18 @@
 #include <string>
 #include <vector>
 
+enum class SRMethod {
+	NEAREST,
+	LINEAR,
+	CUBIC,
+	LANCZOS,
+	ESPCN,
+	FSRCNN,
+	DISTGSSR
+};
 
 class LFSuperRes {
 public:
-	// [新增] 内部定义枚举，自包含
-	enum class Method {
-		NEAREST,
-		LINEAR,
-		CUBIC,
-		LANCZOS,
-		ESPCN,
-		FSRCNN,
-		DISTGSSR
-	};
-
 	explicit LFSuperRes();
 	~LFSuperRes() = default;
 
@@ -35,12 +32,12 @@ public:
 	 * @return 处理后的图像列表
 	 */
 	std::vector<cv::Mat> upsample(const std::vector<cv::Mat> &views,
-								  Method method);
+								  SRMethod method);
 
 	/**
 	 * @brief 单图处理重载 (方便调用)
 	 */
-	cv::Mat upsample(const cv::Mat &src, Method method);
+	cv::Mat upsample(const cv::Mat &src, SRMethod method);
 
 	// --- 参数设置 (全局配置) ---
 	// Scale, AngRes, PatchSize 不再作为 upsample
@@ -58,16 +55,16 @@ public:
 
 private:
 	// 智能检查与加载
-	bool checkAndLoadModel(Method targetMethod);
+	bool checkAndLoadModel(SRMethod targetMethod);
 
 	// 具体加载逻辑
 	bool loadDistgSSR();
-	bool loadOpenCVDNN(Method method);
+	bool loadOpenCVDNN(SRMethod method);
 
 	// 辅助工具
-	std::string getModelNameFromMethod(Method method) const;
-	int MethodToInterFlag(Method method) const;
-	bool isDeepLearningMethod(Method method) const;
+	std::string getModelNameFromMethod(SRMethod method) const;
+	int MethodToInterFlag(SRMethod method) const;
+	bool isDeepLearningMethod(SRMethod method) const;
 
 private:
 	// --- 核心算法引擎 ---
@@ -84,7 +81,7 @@ private:
 	int m_targetAngRes = 5;
 
 	// --- 当前已加载/生效的状态 (缓存) ---
-	Method m_loadedMethod = Method::CUBIC; // 默认为非DL方法
+	SRMethod m_loadedMethod = SRMethod::CUBIC; // 默认为非DL方法
 	int m_loadedScale = -1;
 	int m_loadedPatchSize = -1;
 	int m_loadedAngRes = -1;

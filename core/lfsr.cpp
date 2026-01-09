@@ -18,7 +18,7 @@ void LFSuperRes::setModelPaths(const std::string &opencvPath,
 
 // --- 核心多图接口 ---
 std::vector<cv::Mat> LFSuperRes::upsample(const std::vector<cv::Mat> &views,
-										  Method method) {
+										  SRMethod method) {
 	if (views.empty()) {
 		std::cerr << "[LFSuperRes] Error: No views loaded!" << std::endl;
 		return {};
@@ -36,14 +36,14 @@ std::vector<cv::Mat> LFSuperRes::upsample(const std::vector<cv::Mat> &views,
 	if (!checkAndLoadModel(method)) {
 		std::cerr << "[LFSuperRes] Model load failed. Falling back to LINEAR."
 				  << std::endl;
-		if (method != Method::LINEAR) {
-			return upsample(views, Method::LINEAR);
+		if (method != SRMethod::LINEAR) {
+			return upsample(views, SRMethod::LINEAR);
 		}
 		return {};
 	}
 
 	// 2. 根据方法分发执行
-	if (method == Method::DISTGSSR) {
+	if (method == SRMethod::DISTGSSR) {
 		return distg.run(views);
 	} else {
 		std::vector<cv::Mat> results;
@@ -69,7 +69,7 @@ std::vector<cv::Mat> LFSuperRes::upsample(const std::vector<cv::Mat> &views,
 }
 
 // --- 单图接口重载 ---
-cv::Mat LFSuperRes::upsample(const cv::Mat &src, Method method) {
+cv::Mat LFSuperRes::upsample(const cv::Mat &src, SRMethod method) {
 	if (src.empty())
 		return cv::Mat();
 
@@ -82,7 +82,7 @@ cv::Mat LFSuperRes::upsample(const cv::Mat &src, Method method) {
 
 	std::vector<cv::Mat> inputs = {src};
 
-	if (method == Method::DISTGSSR) {
+	if (method == SRMethod::DISTGSSR) {
 		std::cerr
 			<< "[LFSuperRes] Warning: DistgSSR requires Light Field (vector)."
 			<< std::endl;
@@ -96,7 +96,7 @@ cv::Mat LFSuperRes::upsample(const cv::Mat &src, Method method) {
 }
 
 // --- 智能加载逻辑 ---
-bool LFSuperRes::checkAndLoadModel(Method targetMethod) {
+bool LFSuperRes::checkAndLoadModel(SRMethod targetMethod) {
 	// 1. 检查是否是传统插值方法 (无需加载文件)
 	if (!isDeepLearningMethod(targetMethod)) {
 		// 仅更新状态记录，直接返回成功
@@ -111,7 +111,7 @@ bool LFSuperRes::checkAndLoadModel(Method targetMethod) {
 
 	// DistgSSR 特有的检查参数
 	bool distgParamChanged = false;
-	if (targetMethod == Method::DISTGSSR) {
+	if (targetMethod == SRMethod::DISTGSSR) {
 		distgParamChanged = (m_loadedPatchSize != m_targetPatchSize)
 							|| (m_loadedAngRes != m_targetAngRes);
 	}
@@ -128,7 +128,7 @@ bool LFSuperRes::checkAndLoadModel(Method targetMethod) {
 
 	// 3. 执行加载
 	bool success = false;
-	if (targetMethod == Method::DISTGSSR) {
+	if (targetMethod == SRMethod::DISTGSSR) {
 		success = loadDistgSSR();
 	} else {
 		success = loadOpenCVDNN(targetMethod);
@@ -196,7 +196,7 @@ bool LFSuperRes::loadDistgSSR() {
 	}
 }
 
-bool LFSuperRes::loadOpenCVDNN(Method method) {
+bool LFSuperRes::loadOpenCVDNN(SRMethod method) {
 	std::string modelName = getModelNameFromMethod(method);
 	if (modelName.empty())
 		return false;
@@ -229,11 +229,11 @@ bool LFSuperRes::loadOpenCVDNN(Method method) {
 
 // --- 辅助函数 ---
 
-std::string LFSuperRes::getModelNameFromMethod(Method method) const {
+std::string LFSuperRes::getModelNameFromMethod(SRMethod method) const {
 	switch (method) {
-		case Method::ESPCN:
+		case SRMethod::ESPCN:
 			return "espcn";
-		case Method::FSRCNN:
+		case SRMethod::FSRCNN:
 			return "fsrcnn";
 		// 如果有 EDSR 等其他模型可以在此添加
 		default:
@@ -241,20 +241,20 @@ std::string LFSuperRes::getModelNameFromMethod(Method method) const {
 	}
 }
 
-int LFSuperRes::MethodToInterFlag(Method method) const {
+int LFSuperRes::MethodToInterFlag(SRMethod method) const {
 	switch (method) {
-		case Method::NEAREST:
+		case SRMethod::NEAREST:
 			return cv::INTER_NEAREST;
-		case Method::CUBIC:
+		case SRMethod::CUBIC:
 			return cv::INTER_CUBIC;
-		case Method::LANCZOS:
+		case SRMethod::LANCZOS:
 			return cv::INTER_LANCZOS4;
 		default:
 			return cv::INTER_LINEAR;
 	}
 }
 
-bool LFSuperRes::isDeepLearningMethod(Method method) const {
-	return (method == Method::ESPCN || method == Method::FSRCNN
-			|| method == Method::DISTGSSR);
+bool LFSuperRes::isDeepLearningMethod(SRMethod method) const {
+	return (method == SRMethod::ESPCN || method == SRMethod::FSRCNN
+			|| method == SRMethod::DISTGSSR);
 }

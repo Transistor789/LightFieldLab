@@ -21,16 +21,19 @@ void fast_preview() {
 	// cv::waitKey();
 
 	LFCalibrate cali(wht_img_gray);
-	cali.config.ceMethod = CentroidsExtract::Method::Contour;
-	cali.config.bayer = BayerPattern::NONE;
-	cali.config.bitDepth = 10;
-	cali.run();
+	LFCalibrate::Config config;
+	config.ceMethod = CentroidsExtract::Method::Contour;
+	config.bayer = BayerPattern::NONE;
+	config.bitDepth = 8;
+	cali.run(config);
 
-	LFIsp isp(j, lf_img, wht_img);
+	IspConfig ispConfig;
+	LFIsp::parseJsonToConfig(j, ispConfig);
+	LFIsp isp(lf_img, wht_img, ispConfig);
 
 	Timer timer;
 	// isp.lsc_awb_fused_fast().demosaic();
-	isp.preview(1.5);
+	isp.preview(ispConfig);
 	timer.stop();
 	timer.print_elapsed_ms();
 	// cv::imshow("", isp.getResult());
@@ -97,9 +100,9 @@ void get_sai() {
 	cv::Mat wht_img_gray;
 	cv::demosaicing(wht_img, wht_img_gray, cv::COLOR_BayerGR2GRAY);
 	// wht_img_gray.convertTo(wht_img_gray, CV_8U, 255.0 / 1023.0);
-
-	LFIsp isp(j, lf_img, wht_img_gray);
-	isp.print_config();
+	IspConfig config;
+	LFIsp::parseJsonToConfig(j, config);
+	LFIsp isp(lf_img, wht_img_gray, config);
 
 	int slice_size = 0, dehex_size = 0;
 	LFIO::LoadLookUpTables("../../data/calibration/lut_extract_9.bin",
@@ -107,13 +110,13 @@ void get_sai() {
 	LFIO::LoadLookUpTables("../../data/calibration/lut_dehex.bin",
 						   isp.maps.dehex, dehex_size);
 
-	Timer timer;
+	IspConfig ispConfig;
+	isp.parseJsonToConfig(j, ispConfig);
 
-	isp.preview(1.0).resample(true);
+	Timer timer;
+	isp.preview(ispConfig).resample(true);
 	// std::cout << "test...\n";
 	// isp.ccm_fast();
-	// isp.color_equalize();
-	// isp.raw_process_fast().demosaic().resample();
 
 	timer.stop();
 	timer.print_elapsed_ms();
