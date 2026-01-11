@@ -1,5 +1,6 @@
 ﻿#include "lfcontrol.h"
 
+#include "colormatcher.h"
 #include "config.h"
 #include "lfcalibrate.h"
 #include "lfdata.h"
@@ -156,7 +157,7 @@ void LFControl::processTask() {
 
 			isp->set_lf_img(img);
 			isp->preview(params.isp).resample(true);
-			lf = std::make_shared<LFData>(isp->getSAIS());
+			lf = std::make_shared<LFData>(isp->getSAIs());
 			params.dynamic.procFrameCount++;
 			if (params.dynamic.showLFP) {
 				emit imageReady(ImageType::Center,
@@ -319,23 +320,31 @@ void LFControl::detectCamera() {
 void LFControl::process() {
 	runAsync(
 		[this] {
-			isp->set_lf_img(lfraw.clone()).process(params.isp);
-
-			if (!params.isp.enableExtract) {
+			if (params.isp.device == Device::CPU) {
+				isp->set_lf_img(lfraw.clone()).process_fast(params.isp);
+				lf = std::make_shared<LFData>(isp->getSAIs());
 				emit imageReady(
 					ImageType::LFP,
 					cvMatToQImage(isp->getResult(), params.image.bitDepth));
-				return; // ---> 提前结束
+			} else {
+				isp->set_lf_gpu(lfraw.clone()).process_gpu(params.isp);
+				lf = std::make_shared<LFData>(isp->getSAIsGpu());
+				emit imageReady(ImageType::LFP,
+								cvMatToQImage(isp->getResultGpu(), 8));
 			}
 
-			lf = std::make_shared<LFData>(isp->getSAIS());
+			// if (!params.isp.enableExtract) {
+			// 	emit imageReady(
+			// 		ImageType::LFP,
+			// 		cvMatToQImage(isp->getResult(), params.image.bitDepth));
+			// 	return; // ---> 提前结束
+			// }
+
 			params.sai.cols = lf->cols;
 			params.sai.rows = lf->rows;
 			params.sai.col = (1 + params.sai.cols) / 2;
 			params.sai.row = (1 + params.sai.rows) / 2;
-			emit imageReady(
-				ImageType::LFP,
-				cvMatToQImage(isp->getResult(), params.image.bitDepth));
+
 			emit imageReady(
 				ImageType::Center,
 				cvMatToQImage(lf->getCenter(), params.image.bitDepth));
@@ -390,7 +399,7 @@ void LFControl::fast_preview() {
 			isp->resample(false);
 			// isp->resample(params.isp.enableDehex);
 
-			lf = std::make_shared<LFData>(isp->getSAIS());
+			lf = std::make_shared<LFData>(isp->getSAIs());
 			params.sai.cols = lf->cols;
 			params.sai.rows = lf->rows;
 			params.sai.col = (1 + params.sai.cols) / 2;
@@ -475,6 +484,23 @@ void LFControl::play() {
 			}
 		},
 		"SAI played");
+}
+
+void LFControl::color_equalize() {
+	runAsync(
+		[this] {
+			if (!lf || lf->data.empty()) {
+				LOG_ERROR(
+					"[Color Equalize] Cancelled: Light field data is empty!");
+				return;
+			}
+
+			ColorMatcher::equalize(lf->data, params.colorEqMethod);
+			emit imageReady(ImageType::Center,
+							cvMatToQImage(lf->getCenter(), 8));
+			emit paramsChanged();
+		},
+		"Color equalize");
 }
 
 void LFControl::refocus() {

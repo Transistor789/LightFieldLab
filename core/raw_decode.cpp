@@ -76,7 +76,7 @@ cv::Mat RawDecoder::DecodeWhiteImage(const std::string &filename,
 	}
 
 	// 3. 应用白平衡和黑电平
-	ApplyWhiteBalance(raw, outMetadata);
+	// ApplyWhiteBalance(raw, outMetadata);
 
 	return raw;
 }

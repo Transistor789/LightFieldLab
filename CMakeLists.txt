@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(LightFieldLab LANGUAGES CXX)
+project(LightFieldLab LANGUAGES CXX CUDA)
 
 if(POLICY CMP0146)
     cmake_policy(SET CMP0146 OLD)
@@ -23,10 +23,10 @@ if(WIN32)
     message(STATUS "Configuring for Windows (MSVC)...")
 
     # --- 编译器选项 ---
-    add_compile_options(/arch:AVX2)
-    add_compile_options(/fp:fast)
-    add_compile_options($<$<CONFIG:Release>:/O2>)
-    add_compile_options($<$<CONFIG:Release>:/Ob2>)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/arch:AVX2>)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/fp:fast>)
+    add_compile_options($<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:CXX>>:/O2>)
+    add_compile_options($<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:CXX>>:/Ob2>)
     add_compile_options($<$<CONFIG:RelWithDebInfo>:/O2>)
     add_compile_options($<$<CONFIG:RelWithDebInfo>:/Ob2>)
 
@@ -70,7 +70,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 message(STATUS "  [OK] Qt6 Version: ${Qt6_VERSION} (Dir: ${Qt6_DIR})")
 
 # --- OpenCV ---
-find_package(OpenCV REQUIRED COMPONENTS core highgui imgproc imgcodecs dnn_superres)
+find_package(OpenCV REQUIRED COMPONENTS core highgui imgproc imgcodecs dnn_superres quality)
 message(STATUS "  [OK] OpenCV Version: ${OpenCV_VERSION} (Dir: ${OpenCV_DIR})")
 
 # --- OpenSSL ---
@@ -137,6 +137,13 @@ set(SRCS_CORE
     core/colormatcher.cpp
     core/trtwrapper.cpp
     core/califinder.cpp
+    core/dpc.cu
+    core/lsc.cu
+    core/awb.cu
+    core/lsc_awb.cu
+    core/ccm.cu
+    core/gc.cu
+    core/ccm_gc.cu
 )
 
 # UI 界面模块
@@ -157,6 +164,7 @@ set(SRCS_UI
 # 5. 目标构建
 # ==============================================================================
 add_executable(${BIN_NAME} ${SRCS_CORE} ${SRCS_UI})
+set_property(TARGET ${BIN_NAME} PROPERTY CUDA_ARCHITECTURES native)
 
 # --- 头文件路径 ---
 target_include_directories(${BIN_NAME} PRIVATE

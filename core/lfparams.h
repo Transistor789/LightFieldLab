@@ -1,6 +1,7 @@
 ﻿#ifndef LFPARAMS_H
 #define LFPARAMS_H
 
+#include "colormatcher.h"
 #include "lfcalibrate.h"
 #include "lfdepth.h"
 #include "lfisp.h"
@@ -49,6 +50,8 @@ struct LFParamsDynamic {
 	int width, height;
 };
 
+struct LFParamsColorEq {};
+
 struct LFParamsRefocus {
 	int crop = 0;
 	float alpha = 1.0f;
@@ -79,6 +82,7 @@ struct LFParams {
 	IspConfig isp;
 	LFParamsDynamic dynamic;
 	LFParamsSAI sai;
+	ColorEqualizeMethod colorEqMethod = ColorEqualizeMethod::Reinhard;
 	LFParamsRefocus refocus;
 	LFParamsSR sr;
 	LFParamsDE de;

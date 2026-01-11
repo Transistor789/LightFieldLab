@@ -54,6 +54,7 @@ public slots:
 	void detectCamera();
 	void updateSAI(int row, int col);
 	void play();
+	void color_equalize();
 	void refocus();
 	void processAllInFocus();
 	void upsample();

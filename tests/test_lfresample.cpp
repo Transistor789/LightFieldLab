@@ -116,12 +116,12 @@ void get_sai() {
 	Timer timer;
 	isp.preview(ispConfig).resample(true);
 	// std::cout << "test...\n";
-	// isp.ccm_fast();
+	// isp.ccm_fast_sai();
 
 	timer.stop();
 	timer.print_elapsed_ms();
 
-	// const auto &sais = isp.getSAIS();
+	// const auto &sais = isp.getSAIs();
 	// std::cout << sais[0].size << std::endl;
 	// for (int i = 0; i < sais.size(); ++i) {
 	// 	// cv::Mat temp;

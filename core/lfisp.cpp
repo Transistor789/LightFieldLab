@@ -1,16 +1,37 @@
 ﻿#include "lfisp.h"
 
-#include "colormatcher.h"
 #include "utils.h"
 
 #include <cmath>
 #include <immintrin.h>
 #include <iostream>
+#include <opencv2/core/cuda.hpp>
 #include <opencv2/core/hal/interface.h>
+#include <opencv2/cudaarithm.hpp>
+#include <opencv2/cudaimgproc.hpp>
+#include <opencv2/cudawarping.hpp>
+#include <opencv2/opencv.hpp>
+#include <vector>
 
-// ============================================================================
-// 本地 Helper 模板函数 (用于标量处理的统一实现，避免代码重复)
-// ============================================================================
+extern void launch_dpc_8u_inplace(cv::cuda::GpuMat &img, int threshold,
+								  cv::cuda::Stream &stream);
+extern void launch_lsc_8u_apply_32f(cv::cuda::GpuMat &img,
+									const cv::cuda::GpuMat &lsc_map,
+									float exposure, cv::cuda::Stream &stream);
+extern void launch_awb_8u(cv::cuda::GpuMat &img, float g00, float g01,
+						  float g10, float g11, cv::cuda::Stream &stream);
+extern void launch_fused_lsc_awb(cv::cuda::GpuMat &img,
+								 const cv::cuda::GpuMat &lsc_map,
+								 float exposure, float g00, float g01,
+								 float g10, float g11,
+								 cv::cuda::Stream &stream);
+extern void launch_ccm_8uc3(cv::cuda::GpuMat &img, const float *m,
+							cv::cuda::Stream &stream);
+extern void launch_gc_8u(cv::cuda::GpuMat &img, float gamma,
+						 cv::cuda::Stream &stream);
+extern void launch_ccm_gamma_fused(cv::cuda::GpuMat &img, const float *m,
+								   float gamma, cv::cuda::Stream &stream);
+
 namespace {
 
 template <typename T>
@@ -60,424 +81,7 @@ void dpc_scalar_impl(cv::Mat &img, int threshold) {
 	}
 }
 
-} // namespace
-
-// ============================================================================
-// LFIsp 类实现
-// ============================================================================
-
-LFIsp::LFIsp() { cv::setNumThreads(cv::getNumberOfCPUs()); }
-
-LFIsp::LFIsp(const cv::Mat &lfp_img) {
-	cv::setNumThreads(cv::getNumberOfCPUs());
-	set_lf_img(lfp_img);
-}
-
-LFIsp::LFIsp(const cv::Mat &lfp_img, const cv::Mat &wht_img,
-			 const IspConfig &config) {
-	cv::setNumThreads(cv::getNumberOfCPUs());
-	set_lf_img(lfp_img);
-	initConfig(wht_img, config);
-}
-
-LFIsp &LFIsp::print_config(const IspConfig &config) {
-	std::cout << "\n================ [LFIsp Config] ================"
-			  << std::endl;
-	std::cout << "Bayer Pattern : " << bayerToString(config.bayer) << std::endl;
-	std::cout << "Bit Depth     : " << config.bitDepth << "-bit" << std::endl;
-	std::cout << "Black Level   : " << config.black_level << std::endl;
-	std::cout << "White Level   : " << config.white_level << std::endl;
-
-	std::cout << "AWB Gains     : [ ";
-	std::cout << std::fixed << std::setprecision(3);
-	if (config.awb_gains.size() >= 4) {
-		std::cout << "Gr:" << config.awb_gains[0] << ", ";
-		std::cout << "R :" << config.awb_gains[1] << ", ";
-		std::cout << "B :" << config.awb_gains[2] << ", ";
-		std::cout << "Gb:" << config.awb_gains[3];
-	} else {
-		for (float g : config.awb_gains) std::cout << g << " ";
-	}
-	std::cout << " ]" << std::endl;
-
-	std::cout << "Gamma         : " << config.gamma << std::endl;
-
-	std::cout << "CCM Matrix    :" << std::endl;
-	if (config.ccm_matrix.size() == 9) {
-		for (int i = 0; i < 3; ++i) {
-			std::cout << "                [ ";
-			for (int j = 0; j < 3; ++j) {
-				float val = config.ccm_matrix[i * 3 + j];
-				std::cout << std::showpos << std::setw(8) << val << " ";
-			}
-			std::cout << std::noshowpos << "]" << std::endl;
-		}
-	} else {
-		std::cout << "                (Invalid size: "
-				  << config.ccm_matrix.size() << ")" << std::endl;
-	}
-	std::cout << "================================================"
-			  << std::endl;
-	std::cout << std::defaultfloat;
-	return *this;
-}
-
-void LFIsp::parseJsonToConfig(const json &j, IspConfig &config) {
-	if (j.contains("bay")) {
-		std::string bay_str = j["bay"].get<std::string>();
-		if (bay_str == "GRBG")
-			config.bayer = BayerPattern::GRBG;
-		else if (bay_str == "RGGB")
-			config.bayer = BayerPattern::RGGB;
-		else if (bay_str == "GBRG")
-			config.bayer = BayerPattern::GBRG;
-		else if (bay_str == "BGGR")
-			config.bayer = BayerPattern::BGGR;
-	}
-
-	if (j.contains("bit")) {
-		config.bitDepth = j["bit"].get<int>();
-	}
-
-	if (j.contains("blc")) {
-		const auto &blc = j["blc"];
-		if (blc.contains("black") && blc["black"].is_array()
-			&& !blc["black"].empty()) {
-			config.black_level = blc["black"][0].get<int>();
-		}
-		if (blc.contains("white") && blc["white"].is_array()
-			&& !blc["white"].empty()) {
-			config.white_level = blc["white"][0].get<int>();
-		}
-	}
-
-	if (j.contains("awb") && j["awb"].is_array()) {
-		config.awb_gains = j["awb"].get<std::vector<float>>();
-	}
-
-	if (j.contains("ccm") && j["ccm"].is_array()) {
-		config.ccm_matrix = j["ccm"].get<std::vector<float>>();
-	}
-
-	if (j.contains("gam")) {
-		config.gamma = j["gam"].get<float>();
-	}
-	config.dpcThreshold = config.white_level >> 3;
-}
-
-LFIsp &LFIsp::set_lf_img(const cv::Mat &img) {
-	if (img.empty())
-		throw std::runtime_error("LF image is empty.");
-	lfp_img_ = img;
-	return *this;
-}
-
-LFIsp &LFIsp::initConfig(const cv::Mat &img, const IspConfig &config) {
-	if (img.empty())
-		throw std::runtime_error("White image is empty.");
-	prepare_lsc_maps(img, config.black_level);
-	prepare_ccm_fixed_point(config.ccm_matrix);
-	prepare_gamma_lut(config.gamma, config.bitDepth);
-
-	return *this;
-}
-
-std::string LFIsp::bayerToString(BayerPattern p) {
-	switch (p) {
-		case BayerPattern::GRBG:
-			return "GRBG";
-		case BayerPattern::RGGB:
-			return "RGGB";
-		case BayerPattern::GBRG:
-			return "GBRG";
-		case BayerPattern::BGGR:
-			return "BGGR";
-		default:
-			return "Unknown";
-	}
-}
-
-// ============================================================================
-// 标量处理流程 (Scalar Implementation)
-// ============================================================================
-
-LFIsp &LFIsp::blc(int black_level) {
-	if (lfp_img_.empty())
-		return *this;
-	cv::setNumThreads(cv::getNumberOfCPUs());
-	cv::subtract(lfp_img_, cv::Scalar(black_level), lfp_img_);
-	return *this;
-}
-
-LFIsp &LFIsp::dpc(int threshold) {
-	if (lfp_img_.empty())
-		return *this;
-	if (lfp_img_.depth() != CV_8U) {
-		dpc_scalar_impl<uint16_t>(lfp_img_, threshold);
-	} else {
-		dpc_scalar_impl<uint8_t>(lfp_img_, threshold);
-	}
-	return *this;
-}
-
-LFIsp &LFIsp::lsc(float exposure) {
-	if (lfp_img_.empty() || lsc_gain_map_.empty())
-		return *this;
-	if (lfp_img_.size() != lsc_gain_map_.size())
-		return *this;
-
-	cv::Mat float_img;
-	lfp_img_.convertTo(float_img, CV_32F);
-	cv::multiply(float_img, lsc_gain_map_, float_img);
-	float_img.convertTo(lfp_img_, lfp_img_.type());
-	return *this;
-}
-
-LFIsp &LFIsp::awb(const std::vector<float> &wbgains) {
-	if (lfp_img_.empty())
-		return *this;
-
-	if (wbgains.size() != 4)
-		return *this;
-
-	float g_tl = wbgains[0];
-	float g_tr = wbgains[1];
-	float g_bl = wbgains[2];
-	float g_br = wbgains[3];
-
-	int rows = lfp_img_.rows;
-	int cols = lfp_img_.cols;
-
-	// 定义通用 AWB 处理 lambda
-	auto apply_awb = [&](auto *ptr_base, float max_val) {
-		for (int r = 0; r < rows; ++r) {
-			auto *ptr = ptr_base + r * cols; // 手动计算行指针（避免 .ptr<T>()）
-			for (int c = 0; c < cols; ++c) {
-				float gain;
-				if (r % 2 == 0) {
-					gain = (c % 2 == 0) ? g_tl : g_tr;
-				} else {
-					gain = (c % 2 == 0) ? g_bl : g_br;
-				}
-				float val = static_cast<float>(ptr[c]) * gain;
-				if (val > max_val)
-					val = max_val;
-				ptr[c] = static_cast<std::decay_t<decltype(ptr[c])>>(val);
-			}
-		}
-	};
-
-	if (lfp_img_.depth() == CV_16U) {
-		apply_awb(lfp_img_.ptr<uint16_t>(), 65535.0f);
-	} else if (lfp_img_.depth() == CV_8U) {
-		apply_awb(lfp_img_.ptr<uint8_t>(), 255.0f);
-	}
-
-	return *this;
-}
-
-LFIsp &LFIsp::process(const IspConfig &config) {
-	if (lfp_img_.empty()) {
-		std::cerr << "[LFISP] Cancelled: Source image is empty.";
-		return *this;
-	}
-
-	if (config.enableBLC) {
-		blc_fast(config.black_level);
-	}
-	if (config.enableDPC) {
-		dpc_fast(config.dpcMethod, config.dpcThreshold);
-	}
-	if (config.enableLSC && config.enableAWB) {
-		lsc_awb_fused_fast(config.lscExp, config.awb_gains);
-	} else if (config.enableLSC) {
-		lsc_fast(config.lscExp);
-	} else if (config.enableAWB) {
-		awb_fast(config.awb_gains);
-	}
-	if (config.enableDemosaic) {
-		demosaic(config.bayer, config.demosaicMethod);
-	}
-
-	if (!config.enableExtract) {
-		std::cerr << "[LFISP] Pipeline stopped early: 'Extract' is disabled in "
-					 "settings."
-				  << std::endl;
-		return *this;
-	}
-	resample(config.enableDehex);
-
-	if (config.enableCCM) {
-		ccm_fast(config.ccm_matrix);
-	}
-	if (config.enableGamma) {
-		gc_fast(config.gamma, config.bitDepth);
-	}
-
-#pragma omp parallel for
-	for (int i = 0; i < sais.size(); ++i) {
-		double scale;
-		if (config.enableGamma && sais[i].depth() == CV_16U) {
-			scale = 255.0 / 65535.0;
-		} else {
-			scale = 255.0 / ((1 << config.bitDepth) - 1);
-		}
-
-		sais[i].convertTo(sais[i], CV_8UC(sais[i].channels()), scale);
-	}
-
-	if (config.enableColorEq) {
-		ColorMatcher::equalize(sais, config.colorEqMethod);
-	}
-
-	return *this;
-}
-
-LFIsp &LFIsp::demosaic(BayerPattern bayer, DemosaicMethod method) {
-	if (lfp_img_.empty())
-		return *this;
-	if (lfp_img_.channels() != 1)
-		return *this;
-
-	int code = get_demosaic_code(bayer, false);
-	cv::demosaicing(lfp_img_, lfp_img_, code);
-	return *this;
-}
-
-LFIsp &LFIsp::ccm(const std::vector<float> &ccm_matrix) {
-	if (lfp_img_.empty())
-		return *this;
-	if (lfp_img_.channels() != 3)
-		return *this;
-
-	cv::Mat m(3, 3, CV_32F, (void *)ccm_matrix.data());
-	cv::transform(lfp_img_, lfp_img_, m);
-	return *this;
-}
-
-// ============================================================================
-// 快速处理流程 (SIMD Implementation Dispatcher)
-// ============================================================================
-
-LFIsp &LFIsp::blc_fast(int black_level) {
-	if (lfp_img_.empty())
-		return *this;
-	if (lfp_img_.depth() == CV_16U) {
-		return blc_simd_u16(lfp_img_, black_level);
-	} else if (lfp_img_.depth() == CV_8U) {
-		return blc_simd_u8(lfp_img_, black_level);
-	}
-	return *this;
-}
-
-LFIsp &LFIsp::dpc_fast(DpcMethod method, int threshold) {
-	if (lfp_img_.empty())
-		return *this;
-	if (lfp_img_.depth() == CV_16U) {
-		dpc_simd_u16(lfp_img_, method, threshold);
-	} else if (lfp_img_.depth() == CV_8U) {
-		dpc_simd_u8(lfp_img_, method, threshold);
-	}
-	return *this;
-}
-
-LFIsp &LFIsp::lsc_fast(float exposure) {
-	if (lfp_img_.empty())
-		return *this;
-
-	if (lsc_gain_map_int_.empty()) {
-		return *this;
-	}
-
-	if (lfp_img_.depth() == CV_16U) {
-		lsc_simd_u16(lfp_img_, exposure);
-	} else if (lfp_img_.depth() == CV_8U) {
-		lsc_simd_u8(lfp_img_, exposure);
-	}
-
-	return *this;
-}
-
-LFIsp &LFIsp::awb_fast(const std::vector<float> &wbgains) {
-	if (lfp_img_.empty())
-		return *this;
-	if (lfp_img_.depth() == CV_16U) {
-		awb_simd_u16(lfp_img_, wbgains);
-	} else if (lfp_img_.depth() == CV_8U) {
-		awb_simd_u8(lfp_img_, wbgains);
-	}
-	return *this;
-}
-
-LFIsp &LFIsp::lsc_awb_fused_fast(float exposure,
-								 const std::vector<float> &wbgains) {
-	if (lfp_img_.empty())
-		return *this;
-
-	if (lsc_gain_map_int_.empty()) {
-		return *this;
-	}
-
-	if (lfp_img_.depth() == CV_16U) {
-		lsc_awb_simd_u16(lfp_img_, exposure, wbgains);
-	} else if (lfp_img_.depth() == CV_8U) {
-		lsc_awb_simd_u8(lfp_img_, exposure, wbgains);
-	}
-
-	return *this;
-}
-
-LFIsp &LFIsp::ccm_fast(const std::vector<float> &ccm_matrix) {
-	if (sais.empty() || sais[0].channels() != 3)
-		return *this;
-
-	if (ccm_matrix_int_.empty() || ccm_matrix != last_ccm_matrix_) {
-		prepare_ccm_fixed_point(ccm_matrix);
-		last_ccm_matrix_ = ccm_matrix;
-	}
-
-	if (lfp_img_.depth() == CV_16U) {
-		for (auto &sai : sais) {
-			ccm_fixed_u16(sai);
-		}
-	} else if (lfp_img_.depth() == CV_8U) {
-		for (auto &sai : sais) {
-			ccm_fixed_u8(sai);
-		}
-	}
-	return *this;
-}
-
-LFIsp &LFIsp::preview(const IspConfig &config) {
-	if (lfp_img_.empty() || config.bayer == BayerPattern::NONE)
-		return *this;
-
-	int rows = lfp_img_.rows;
-	int cols = lfp_img_.cols;
-	cv::Mat raw_8u(rows, cols, CV_8UC1);
-
-	if (lsc_gain_map_int_.empty()) {
-		return *this;
-	}
-
-	// 根据位深分发
-	if (lfp_img_.depth() == CV_16U) {
-		raw_to_8bit_with_gains_simd_u16(raw_8u, config);
-	} else if (lfp_img_.depth() == CV_8U) {
-		raw_to_8bit_with_gains_simd_u8(raw_8u, config);
-	}
-
-	int code = get_demosaic_code(config.bayer, false);
-	cv::demosaicing(raw_8u, lfp_img_, code);
-
-	return *this;
-}
-
-// ============================================================================
-// SIMD 具体实现
-// ============================================================================
-
-LFIsp &LFIsp::blc_simd_u16(cv::Mat &img, int black_level) {
+void blc_simd_u16(cv::Mat &img, int black_level) {
 	uint16_t bl_val = static_cast<uint16_t>(black_level);
 	__m256i v_bl = _mm256_set1_epi16(bl_val);
 
@@ -502,10 +106,9 @@ LFIsp &LFIsp::blc_simd_u16(cv::Mat &img, int black_level) {
 			ptr[c] = (val > bl_val) ? (val - bl_val) : 0;
 		}
 	}
-	return *this;
 }
 
-LFIsp &LFIsp::blc_simd_u8(cv::Mat &img, int black_level) {
+void blc_simd_u8(cv::Mat &img, int black_level) {
 	uint8_t bl_val = static_cast<uint8_t>(black_level);
 	__m256i v_bl = _mm256_set1_epi8(bl_val);
 
@@ -530,10 +133,9 @@ LFIsp &LFIsp::blc_simd_u8(cv::Mat &img, int black_level) {
 			ptr[c] = (val > bl_val) ? (val - bl_val) : 0;
 		}
 	}
-	return *this;
 }
 
-LFIsp &LFIsp::dpc_simd_u16(cv::Mat &img, DpcMethod method, int threshold) {
+void dpc_simd_u16(cv::Mat &img, int threshold) {
 	int rows = img.rows;
 	int cols = img.cols;
 	int border = 2;
@@ -611,10 +213,9 @@ LFIsp &LFIsp::dpc_simd_u16(cv::Mat &img, DpcMethod method, int threshold) {
 			dpc_scalar_kernel(r, c, ptr_curr, ptr_up, ptr_down, threshold);
 		}
 	}
-	return *this;
 }
 
-LFIsp &LFIsp::dpc_simd_u8(cv::Mat &img, DpcMethod method, int threshold) {
+void dpc_simd_u8(cv::Mat &img, int threshold) {
 	int rows = img.rows;
 	int cols = img.cols;
 	int border = 2;
@@ -695,78 +296,10 @@ LFIsp &LFIsp::dpc_simd_u8(cv::Mat &img, DpcMethod method, int threshold) {
 			dpc_scalar_kernel(r, c, ptr_curr, ptr_up, ptr_down, threshold);
 		}
 	}
-	return *this;
 }
 
-void LFIsp::prepare_lsc_maps(const cv::Mat &raw_wht, int black_level) {
-	int rows = raw_wht.rows;
-	int cols = raw_wht.cols;
-
-	cv::Mat float_wht;
-	raw_wht.convertTo(float_wht, CV_32F);
-
-	float bl = static_cast<float>(black_level);
-	cv::subtract(float_wht, cv::Scalar(bl), float_wht);
-	cv::max(float_wht, 1.0f, float_wht);
-
-	int half_h = rows / 2;
-	int half_w = cols / 2;
-	std::vector<cv::Mat> channels(4);
-	for (int k = 0; k < 4; ++k) channels[k].create(half_h, half_w, CV_32F);
-
-#pragma omp parallel for
-	for (int r = 0; r < half_h; ++r) {
-		const float *ptr_row0 = float_wht.ptr<float>(2 * r);
-		const float *ptr_row1 = float_wht.ptr<float>(2 * r + 1);
-		float *p0 = channels[0].ptr<float>(r);
-		float *p1 = channels[1].ptr<float>(r);
-		float *p2 = channels[2].ptr<float>(r);
-		float *p3 = channels[3].ptr<float>(r);
-
-		for (int c = 0; c < half_w; ++c) {
-			p0[c] = ptr_row0[2 * c];
-			p1[c] = ptr_row0[2 * c + 1];
-			p2[c] = ptr_row1[2 * c];
-			p3[c] = ptr_row1[2 * c + 1];
-		}
-	}
-
-#pragma omp parallel for
-	for (int k = 0; k < 4; ++k) {
-		cv::GaussianBlur(channels[k], channels[k], cv::Size(7, 7), 0);
-	}
-
-	std::vector<double> maxVals(4);
-	for (int k = 0; k < 4; ++k) {
-		double localMax;
-		cv::minMaxLoc(channels[k], nullptr, &localMax);
-		if (localMax < 1e-6)
-			localMax = 1.0;
-		maxVals[k] = localMax;
-	}
-
-	lsc_gain_map_.create(rows, cols, CV_32F);
-
-#pragma omp parallel for
-	for (int r = 0; r < half_h; ++r) {
-		float *dst0 = lsc_gain_map_.ptr<float>(2 * r);
-		float *dst1 = lsc_gain_map_.ptr<float>(2 * r + 1);
-		const float *p0 = channels[0].ptr<float>(r);
-		const float *p1 = channels[1].ptr<float>(r);
-		const float *p2 = channels[2].ptr<float>(r);
-		const float *p3 = channels[3].ptr<float>(r);
-
-		for (int c = 0; c < half_w; ++c) {
-			dst0[2 * c] = (float)maxVals[0] / p0[c];
-			dst0[2 * c + 1] = (float)maxVals[1] / p1[c];
-			dst1[2 * c] = (float)maxVals[2] / p2[c];
-			dst1[2 * c + 1] = (float)maxVals[3] / p3[c];
-		}
-	}
-	lsc_gain_map_.convertTo(lsc_gain_map_int_, CV_16U, FIXED_SCALE);
-}
-
-LFIsp &LFIsp::lsc_simd_u16(cv::Mat &img, float exposure) {
+void lsc_simd_u16(cv::Mat &img, const cv::Mat &lsc_gain_map_int,
+				  float exposure) {
 	int rows = img.rows;
 	int cols = img.cols;
 
@@ -776,7 +309,7 @@ LFIsp &LFIsp::lsc_simd_u16(cv::Mat &img, float exposure) {
 #pragma omp parallel for
 	for (int r = 0; r < rows; ++r) {
 		uint16_t *ptr_src = img.ptr<uint16_t>(r);
-		const uint16_t *ptr_gain = lsc_gain_map_int_.ptr<uint16_t>(r);
+		const uint16_t *ptr_gain = lsc_gain_map_int.ptr<uint16_t>(r);
 		int c = 0;
 		for (; c <= cols - 16; c += 16) {
 			__m256i v_src = _mm256_loadu_si256((const __m256i *)(ptr_src + c));
@@ -822,10 +355,10 @@ LFIsp &LFIsp::lsc_simd_u16(cv::Mat &img, float exposure) {
 			ptr_src[c] = (uint16_t)val;
 		}
 	}
-	return *this;
 }
 
-LFIsp &LFIsp::lsc_simd_u8(cv::Mat &img, float exposure) {
+void lsc_simd_u8(cv::Mat &img, const cv::Mat &lsc_gain_map_int,
+				 float exposure) {
 	int rows = img.rows;
 	int cols = img.cols;
 
@@ -836,7 +369,7 @@ LFIsp &LFIsp::lsc_simd_u8(cv::Mat &img, float exposure) {
 #pragma omp parallel for
 	for (int r = 0; r < rows; ++r) {
 		uint8_t *ptr_src = img.ptr<uint8_t>(r);
-		const uint16_t *ptr_gain = lsc_gain_map_int_.ptr<uint16_t>(r);
+		const uint16_t *ptr_gain = lsc_gain_map_int.ptr<uint16_t>(r);
 		int c = 0;
 		for (; c <= cols - 16; c += 16) {
 			__m128i v_src_small =
@@ -887,10 +420,9 @@ LFIsp &LFIsp::lsc_simd_u8(cv::Mat &img, float exposure) {
 			ptr_src[c] = (uint8_t)val;
 		}
 	}
-	return *this;
 }
 
-LFIsp &LFIsp::awb_simd_u16(cv::Mat &img, const std::vector<float> &wbgains) {
+void awb_simd_u16(cv::Mat &img, const std::vector<float> &wbgains) {
 	int rows = img.rows;
 	int cols = img.cols;
 	const float scale = FIXED_SCALE;
@@ -954,10 +486,9 @@ LFIsp &LFIsp::awb_simd_u16(cv::Mat &img, const std::vector<float> &wbgains) {
 			ptr1[c] = (val1 > 65535) ? 65535 : (uint16_t)val1;
 		}
 	}
-	return *this;
 }
 
-LFIsp &LFIsp::awb_simd_u8(cv::Mat &img, const std::vector<float> &wbgains) {
+void awb_simd_u8(cv::Mat &img, const std::vector<float> &wbgains) {
 	int rows = img.rows;
 	int cols = img.cols;
 	const float scale = FIXED_SCALE;
@@ -1014,13 +545,179 @@ LFIsp &LFIsp::awb_simd_u8(cv::Mat &img, const std::vector<float> &wbgains) {
 			ptr_src[c] = (uint8_t)val;
 		}
 	}
-	return *this;
 }
 
-LFIsp &LFIsp::raw_to_8bit_with_gains_simd_u16(cv::Mat &dst_8u,
-											  const IspConfig &config) {
-	int rows = lfp_img_.rows;
-	int cols = lfp_img_.cols;
+void lsc_awb_simd_u16(cv::Mat &img, float exposure,
+					  const cv::Mat &lsc_gain_map_int,
+					  const std::vector<float> &wbgains) {
+	int rows = img.rows;
+	int cols = img.cols;
+	const float scale = FIXED_SCALE;
+
+	// [修改] 将 exposure 乘入 AWB 基础增益
+	float exp_gain = exposure;
+
+	uint16_t g_tl = static_cast<uint16_t>(wbgains[0] * scale * exp_gain);
+	uint16_t g_tr = static_cast<uint16_t>(wbgains[1] * scale * exp_gain);
+	uint16_t g_bl = static_cast<uint16_t>(wbgains[2] * scale * exp_gain);
+	uint16_t g_br = static_cast<uint16_t>(wbgains[3] * scale * exp_gain);
+
+	uint32_t p_row0 = (static_cast<uint32_t>(g_tr) << 16) | g_tl;
+	__m256i v_awb_row0 = _mm256_set1_epi32(p_row0);
+	uint32_t p_row1 = (static_cast<uint32_t>(g_br) << 16) | g_bl;
+	__m256i v_awb_row1 = _mm256_set1_epi32(p_row1);
+
+#pragma omp parallel for
+	for (int r = 0; r < rows; ++r) {
+		uint16_t *ptr_src = img.ptr<uint16_t>(r);
+		const uint16_t *ptr_lsc = lsc_gain_map_int.ptr<uint16_t>(r);
+		__m256i v_awb = (r % 2 == 0) ? v_awb_row0 : v_awb_row1;
+
+		int c = 0;
+		for (; c <= cols - 16; c += 16) {
+			__m256i v_lsc = _mm256_loadu_si256((const __m256i *)(ptr_lsc + c));
+
+			__m256i v_lsc_lo =
+				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_lsc));
+			__m256i v_lsc_hi =
+				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_lsc, 1));
+			__m256i v_awb_lo =
+				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_awb));
+			__m256i v_awb_hi =
+				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb, 1));
+
+			// 这里不需要改，因为 awb 变量已经包含了 lscExp
+			__m256i v_gain_lo = _mm256_srli_epi32(
+				_mm256_mullo_epi32(v_lsc_lo, v_awb_lo), FIXED_BITS);
+			__m256i v_gain_hi = _mm256_srli_epi32(
+				_mm256_mullo_epi32(v_lsc_hi, v_awb_hi), FIXED_BITS);
+
+			__m256i v_src = _mm256_loadu_si256((const __m256i *)(ptr_src + c));
+			__m256i v_src_lo =
+				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src));
+			__m256i v_src_hi =
+				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src, 1));
+
+			v_src_lo = _mm256_srli_epi32(
+				_mm256_mullo_epi32(v_src_lo, v_gain_lo), FIXED_BITS);
+			v_src_hi = _mm256_srli_epi32(
+				_mm256_mullo_epi32(v_src_hi, v_gain_hi), FIXED_BITS);
+
+			__m256i v_res = _mm256_packus_epi32(v_src_lo, v_src_hi);
+			v_res = _mm256_permute4x64_epi64(v_res, _MM_SHUFFLE(3, 1, 2, 0));
+			_mm256_storeu_si256((__m256i *)(ptr_src + c), v_res);
+		}
+
+		uint16_t awb_0 = (r % 2 == 0) ? g_tl : g_bl;
+		uint16_t awb_1 = (r % 2 == 0) ? g_tr : g_br;
+		for (; c < cols; ++c) {
+			uint16_t lsc = ptr_lsc[c];
+			uint16_t awb = (c % 2 == 0) ? awb_0 : awb_1;
+			uint32_t total_gain = ((uint32_t)lsc * awb) >> FIXED_BITS;
+			uint32_t val = ((uint32_t)ptr_src[c] * total_gain) >> FIXED_BITS;
+			if (val > 65535)
+				val = 65535;
+			ptr_src[c] = static_cast<uint16_t>(val);
+		}
+	}
+}
+
+void lsc_awb_simd_u8(cv::Mat &img, float exposure,
+					 const cv::Mat &lsc_gain_map_int,
+					 const std::vector<float> &wbgains) {
+	int rows = img.rows;
+	int cols = img.cols;
+	const float scale = FIXED_SCALE;
+
+	// [修改] 引入 lscExp
+	float exp_gain = exposure;
+
+	uint16_t g_tl = static_cast<uint16_t>(wbgains[0] * scale * exp_gain);
+	uint16_t g_tr = static_cast<uint16_t>(wbgains[1] * scale * exp_gain);
+	uint16_t g_bl = static_cast<uint16_t>(wbgains[2] * scale * exp_gain);
+	uint16_t g_br = static_cast<uint16_t>(wbgains[3] * scale * exp_gain);
+
+	uint32_t p_row0 = (static_cast<uint32_t>(g_tr) << 16) | g_tl;
+	__m256i v_awb_row0 = _mm256_set1_epi32(p_row0);
+	uint32_t p_row1 = (static_cast<uint32_t>(g_br) << 16) | g_bl;
+	__m256i v_awb_row1 = _mm256_set1_epi32(p_row1);
+
+#pragma omp parallel for
+	for (int r = 0; r < rows; ++r) {
+		uint8_t *ptr_src = img.ptr<uint8_t>(r);
+		const uint16_t *ptr_lsc = lsc_gain_map_int.ptr<uint16_t>(r);
+		__m256i v_awb = (r % 2 == 0) ? v_awb_row0 : v_awb_row1;
+
+		int c = 0;
+		for (; c <= cols - 32; c += 32) {
+			__m256i v_src_32 =
+				_mm256_loadu_si256((const __m256i *)(ptr_src + c));
+			__m256i v_lsc_0 =
+				_mm256_loadu_si256((const __m256i *)(ptr_lsc + c));
+			__m256i v_lsc_1 =
+				_mm256_loadu_si256((const __m256i *)(ptr_lsc + c + 16));
+
+			auto process_half = [&](__m128i v_p_8,
+									__m256i v_lsc_16) -> __m256i {
+				__m256i v_p_lo = _mm256_cvtepu8_epi32(v_p_8);
+				__m256i v_p_hi =
+					_mm256_cvtepu8_epi32(_mm_unpackhi_epi64(v_p_8, v_p_8));
+
+				__m256i v_lsc_lo =
+					_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_lsc_16));
+				__m256i v_lsc_hi = _mm256_cvtepu16_epi32(
+					_mm256_extracti128_si256(v_lsc_16, 1));
+
+				__m256i v_awb_lo =
+					_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_awb));
+				__m256i v_awb_hi =
+					_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb, 1));
+
+				__m256i v_gain_lo = _mm256_srli_epi32(
+					_mm256_mullo_epi32(v_lsc_lo, v_awb_lo), FIXED_BITS);
+				__m256i v_gain_hi = _mm256_srli_epi32(
+					_mm256_mullo_epi32(v_lsc_hi, v_awb_hi), FIXED_BITS);
+
+				v_p_lo = _mm256_srli_epi32(
+					_mm256_mullo_epi32(v_p_lo, v_gain_lo), FIXED_BITS);
+				v_p_hi = _mm256_srli_epi32(
+					_mm256_mullo_epi32(v_p_hi, v_gain_hi), FIXED_BITS);
+
+				__m256i v_res_16 = _mm256_packus_epi32(v_p_lo, v_p_hi);
+				return _mm256_permute4x64_epi64(v_res_16,
+												_MM_SHUFFLE(3, 1, 2, 0));
+			};
+
+			__m256i v_res_0 =
+				process_half(_mm256_castsi256_si128(v_src_32), v_lsc_0);
+			__m256i v_res_1 =
+				process_half(_mm256_extracti128_si256(v_src_32, 1), v_lsc_1);
+
+			__m256i v_res_u8 = _mm256_packus_epi16(v_res_0, v_res_1);
+			v_res_u8 =
+				_mm256_permute4x64_epi64(v_res_u8, _MM_SHUFFLE(3, 1, 2, 0));
+			_mm256_storeu_si256((__m256i *)(ptr_src + c), v_res_u8);
+		}
+
+		uint16_t awb_0 = (r % 2 == 0) ? g_tl : g_bl;
+		uint16_t awb_1 = (r % 2 == 0) ? g_tr : g_br;
+		for (; c < cols; ++c) {
+			uint16_t lsc = ptr_lsc[c];
+			uint16_t awb = (c % 2 == 0) ? awb_0 : awb_1;
+			uint32_t total_gain = ((uint32_t)lsc * awb) >> FIXED_BITS;
+			uint32_t val = ((uint32_t)ptr_src[c] * total_gain) >> FIXED_BITS;
+			if (val > 255)
+				val = 255;
+			ptr_src[c] = static_cast<uint8_t>(val);
+		}
+	}
+}
+
+void raw_to_8bit_with_gains_simd_u16(cv::Mat &src, cv::Mat &dst,
+									 const IspConfig &config,
+									 const cv::Mat &lsc_map) {
+	int rows = src.rows;
+	int cols = src.cols;
 
 	uint16_t bl_val = static_cast<uint16_t>(config.black_level);
 	__m256i v_bl = _mm256_set1_epi16(bl_val);
@@ -1051,8 +748,7 @@ LFIsp &LFIsp::raw_to_8bit_with_gains_simd_u16(cv::Mat &dst_8u,
 	uint32_t p_row1 = (static_cast<uint32_t>(g_br) << 16) | g_bl;
 	__m256i v_awb_row1 = _mm256_set1_epi32(p_row1);
 
-	bool has_lsc_runtime = !lsc_gain_map_int_.empty()
-						   && lsc_gain_map_int_.size() == lfp_img_.size();
+	bool has_lsc_runtime = !lsc_map.empty() && lsc_map.size() == src.size();
 
 	// =========================================================
 	// 核心计算 Kernel (定义在循环外，强制内联)
@@ -1122,17 +818,17 @@ LFIsp &LFIsp::raw_to_8bit_with_gains_simd_u16(cv::Mat &dst_8u,
 
 #pragma omp parallel for
 		for (int r = 0; r < rows; ++r) {
-			const uint16_t *src = lfp_img_.ptr<uint16_t>(r);
-			uint8_t *dst = dst_8u.ptr<uint8_t>(r);
+			uint8_t *pSrc = src.ptr<uint8_t>(r);
+			uint8_t *pDst = dst.ptr<uint8_t>(r);
 
 			const uint16_t *lsc_ptr =
-				HAS_LSC ? lsc_gain_map_int_.ptr<uint16_t>(r) : nullptr;
+				HAS_LSC ? lsc_map.ptr<uint16_t>(r) : nullptr;
 			__m256i v_awb = (r % 2 == 0) ? v_awb_row0 : v_awb_row1;
 
 			int c = 0;
 			for (; c <= cols - 16; c += 16) {
 				// Load 16 pixels (16-bit)
-				__m256i v_src = _mm256_loadu_si256((const __m256i *)(src + c));
+				__m256i v_src = _mm256_loadu_si256((const __m256i *)(pSrc + c));
 				v_src = _mm256_subs_epu16(v_src, v_bl); // Subtract BL
 
 				__m256i v_res_16;
@@ -1159,7 +855,7 @@ LFIsp &LFIsp::raw_to_8bit_with_gains_simd_u16(cv::Mat &dst_8u,
 				// Pack 两个 128-bit (16x u16) -> 一个 128-bit (16x u8)
 				__m128i v_res_u8 = _mm_packus_epi16(v_res_lo_128, v_res_hi_128);
 
-				_mm_storeu_si128((__m128i *)(dst + c), v_res_u8);
+				_mm_storeu_si128((__m128i *)(pDst + c), v_res_u8);
 			}
 
 			// Scalar Cleanup
@@ -1167,7 +863,7 @@ LFIsp &LFIsp::raw_to_8bit_with_gains_simd_u16(cv::Mat &dst_8u,
 			uint16_t awb_1 = (r % 2 == 0) ? g_tr : g_br;
 
 			for (; c < cols; ++c) {
-				uint32_t val = src[c];
+				uint32_t val = pSrc[c];
 				val = (val > bl_val) ? (val - bl_val) : 0;
 
 				if constexpr (HAS_LSC) {
@@ -1178,7 +874,7 @@ LFIsp &LFIsp::raw_to_8bit_with_gains_simd_u16(cv::Mat &dst_8u,
 				val = (val * awb) >> FIXED_BITS;
 				if (val > 255)
 					val = 255;
-				dst[c] = static_cast<uint8_t>(val);
+				pDst[c] = static_cast<uint8_t>(val);
 			}
 		}
 	};
@@ -1188,14 +884,13 @@ LFIsp &LFIsp::raw_to_8bit_with_gains_simd_u16(cv::Mat &dst_8u,
 	} else {
 		run_loop(std::false_type{});
 	}
-
-	return *this;
 }
 
-LFIsp &LFIsp::raw_to_8bit_with_gains_simd_u8(cv::Mat &dst_8u,
-											 const IspConfig &config) {
-	int rows = lfp_img_.rows;
-	int cols = lfp_img_.cols;
+void raw_to_8bit_with_gains_simd_u8(cv::Mat &src, cv::Mat &dst,
+									const IspConfig &config,
+									const cv::Mat &lsc_map) {
+	int rows = src.rows;
+	int cols = src.cols;
 
 	int bl_shift = (config.bitDepth > 8) ? (config.bitDepth - 8) : 0;
 	uint8_t bl_val = static_cast<uint8_t>(config.black_level >> bl_shift);
@@ -1226,8 +921,7 @@ LFIsp &LFIsp::raw_to_8bit_with_gains_simd_u8(cv::Mat &dst_8u,
 	uint32_t p_row1 = (static_cast<uint32_t>(g_br) << 16) | g_bl;
 	__m256i v_awb_row1 = _mm256_set1_epi32(p_row1);
 
-	bool has_lsc_runtime = !lsc_gain_map_int_.empty()
-						   && lsc_gain_map_int_.size() == lfp_img_.size();
+	bool has_lsc_runtime = !lsc_map.empty() && lsc_map.size() == src.size();
 
 	// 定义核心处理逻辑的宏或内联 lambda (避免捕获开销，纯计算)
 	// 这里使用 Lambda static 技巧，强制内联
@@ -1298,19 +992,19 @@ LFIsp &LFIsp::raw_to_8bit_with_gains_simd_u8(cv::Mat &dst_8u,
 
 #pragma omp parallel for
 		for (int r = 0; r < rows; ++r) {
-			uint8_t *src = lfp_img_.ptr<uint8_t>(r);
-			uint8_t *dst = dst_8u.ptr<uint8_t>(r);
+			uint8_t *pSrc = src.ptr<uint8_t>(r);
+			uint8_t *pDst = dst.ptr<uint8_t>(r);
 
 			// 优化：指针定义
 			const uint16_t *lsc_ptr =
-				HAS_LSC ? lsc_gain_map_int_.ptr<uint16_t>(r) : nullptr;
+				HAS_LSC ? lsc_map.ptr<uint16_t>(r) : nullptr;
 			__m256i v_awb = (r % 2 == 0) ? v_awb_row0 : v_awb_row1;
 
 			int c = 0;
 			for (; c <= cols - 32; c += 32) {
 				// Load 32 pixels
 				__m256i v_src_32 =
-					_mm256_loadu_si256((const __m256i *)(src + c));
+					_mm256_loadu_si256((const __m256i *)(pSrc + c));
 				v_src_32 = _mm256_subs_epu8(v_src_32, v_bl); // Subtract BL
 
 				// Split into two 128-bit lanes (16 pixels each) expanded to
@@ -1343,7 +1037,7 @@ LFIsp &LFIsp::raw_to_8bit_with_gains_simd_u8(cv::Mat &dst_8u,
 				v_res_u8 =
 					_mm256_permute4x64_epi64(v_res_u8, _MM_SHUFFLE(3, 1, 2, 0));
 
-				_mm256_storeu_si256((__m256i *)(dst + c), v_res_u8);
+				_mm256_storeu_si256((__m256i *)(pDst + c), v_res_u8);
 			}
 
 			// Scalar Cleanup
@@ -1351,7 +1045,7 @@ LFIsp &LFIsp::raw_to_8bit_with_gains_simd_u8(cv::Mat &dst_8u,
 			uint16_t awb_1 = (r % 2 == 0) ? g_tr : g_br;
 
 			for (; c < cols; ++c) {
-				uint32_t val = src[c];
+				uint32_t val = pSrc[c];
 				val = (val > bl_val) ? (val - bl_val) : 0;
 
 				if constexpr (HAS_LSC) {
@@ -1362,7 +1056,7 @@ LFIsp &LFIsp::raw_to_8bit_with_gains_simd_u8(cv::Mat &dst_8u,
 				val = (val * awb) >> FIXED_BITS;
 				if (val > 255)
 					val = 255;
-				dst[c] = static_cast<uint8_t>(val);
+				pDst[c] = static_cast<uint8_t>(val);
 			}
 		}
 	};
@@ -1372,196 +1066,19 @@ LFIsp &LFIsp::raw_to_8bit_with_gains_simd_u8(cv::Mat &dst_8u,
 	} else {
 		run_loop(std::false_type{});
 	}
-
-	return *this;
 }
 
-LFIsp &LFIsp::lsc_awb_simd_u16(cv::Mat &img, float exposure,
-							   const std::vector<float> &wbgains) {
-	int rows = img.rows;
-	int cols = img.cols;
-	const float scale = FIXED_SCALE;
-
-	// [修改] 将 exposure 乘入 AWB 基础增益
-	float exp_gain = exposure;
-
-	uint16_t g_tl = static_cast<uint16_t>(wbgains[0] * scale * exp_gain);
-	uint16_t g_tr = static_cast<uint16_t>(wbgains[1] * scale * exp_gain);
-	uint16_t g_bl = static_cast<uint16_t>(wbgains[2] * scale * exp_gain);
-	uint16_t g_br = static_cast<uint16_t>(wbgains[3] * scale * exp_gain);
-
-	uint32_t p_row0 = (static_cast<uint32_t>(g_tr) << 16) | g_tl;
-	__m256i v_awb_row0 = _mm256_set1_epi32(p_row0);
-	uint32_t p_row1 = (static_cast<uint32_t>(g_br) << 16) | g_bl;
-	__m256i v_awb_row1 = _mm256_set1_epi32(p_row1);
-
-#pragma omp parallel for
-	for (int r = 0; r < rows; ++r) {
-		uint16_t *ptr_src = img.ptr<uint16_t>(r);
-		const uint16_t *ptr_lsc = lsc_gain_map_int_.ptr<uint16_t>(r);
-		__m256i v_awb = (r % 2 == 0) ? v_awb_row0 : v_awb_row1;
-
-		int c = 0;
-		for (; c <= cols - 16; c += 16) {
-			__m256i v_lsc = _mm256_loadu_si256((const __m256i *)(ptr_lsc + c));
-
-			__m256i v_lsc_lo =
-				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_lsc));
-			__m256i v_lsc_hi =
-				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_lsc, 1));
-			__m256i v_awb_lo =
-				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_awb));
-			__m256i v_awb_hi =
-				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb, 1));
-
-			// 这里不需要改，因为 awb 变量已经包含了 lscExp
-			__m256i v_gain_lo = _mm256_srli_epi32(
-				_mm256_mullo_epi32(v_lsc_lo, v_awb_lo), FIXED_BITS);
-			__m256i v_gain_hi = _mm256_srli_epi32(
-				_mm256_mullo_epi32(v_lsc_hi, v_awb_hi), FIXED_BITS);
-
-			__m256i v_src = _mm256_loadu_si256((const __m256i *)(ptr_src + c));
-			__m256i v_src_lo =
-				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src));
-			__m256i v_src_hi =
-				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src, 1));
-
-			v_src_lo = _mm256_srli_epi32(
-				_mm256_mullo_epi32(v_src_lo, v_gain_lo), FIXED_BITS);
-			v_src_hi = _mm256_srli_epi32(
-				_mm256_mullo_epi32(v_src_hi, v_gain_hi), FIXED_BITS);
-
-			__m256i v_res = _mm256_packus_epi32(v_src_lo, v_src_hi);
-			v_res = _mm256_permute4x64_epi64(v_res, _MM_SHUFFLE(3, 1, 2, 0));
-			_mm256_storeu_si256((__m256i *)(ptr_src + c), v_res);
-		}
-
-		uint16_t awb_0 = (r % 2 == 0) ? g_tl : g_bl;
-		uint16_t awb_1 = (r % 2 == 0) ? g_tr : g_br;
-		for (; c < cols; ++c) {
-			uint16_t lsc = ptr_lsc[c];
-			uint16_t awb = (c % 2 == 0) ? awb_0 : awb_1;
-			uint32_t total_gain = ((uint32_t)lsc * awb) >> FIXED_BITS;
-			uint32_t val = ((uint32_t)ptr_src[c] * total_gain) >> FIXED_BITS;
-			if (val > 65535)
-				val = 65535;
-			ptr_src[c] = static_cast<uint16_t>(val);
-		}
-	}
-	return *this;
-}
-
-LFIsp &LFIsp::lsc_awb_simd_u8(cv::Mat &img, float exposure,
-							  const std::vector<float> &wbgains) {
-	int rows = img.rows;
-	int cols = img.cols;
-	const float scale = FIXED_SCALE;
-
-	// [修改] 引入 lscExp
-	float exp_gain = exposure;
-
-	uint16_t g_tl = static_cast<uint16_t>(wbgains[0] * scale * exp_gain);
-	uint16_t g_tr = static_cast<uint16_t>(wbgains[1] * scale * exp_gain);
-	uint16_t g_bl = static_cast<uint16_t>(wbgains[2] * scale * exp_gain);
-	uint16_t g_br = static_cast<uint16_t>(wbgains[3] * scale * exp_gain);
-
-	uint32_t p_row0 = (static_cast<uint32_t>(g_tr) << 16) | g_tl;
-	__m256i v_awb_row0 = _mm256_set1_epi32(p_row0);
-	uint32_t p_row1 = (static_cast<uint32_t>(g_br) << 16) | g_bl;
-	__m256i v_awb_row1 = _mm256_set1_epi32(p_row1);
-
-#pragma omp parallel for
-	for (int r = 0; r < rows; ++r) {
-		uint8_t *ptr_src = img.ptr<uint8_t>(r);
-		const uint16_t *ptr_lsc = lsc_gain_map_int_.ptr<uint16_t>(r);
-		__m256i v_awb = (r % 2 == 0) ? v_awb_row0 : v_awb_row1;
-
-		int c = 0;
-		for (; c <= cols - 32; c += 32) {
-			__m256i v_src_32 =
-				_mm256_loadu_si256((const __m256i *)(ptr_src + c));
-			__m256i v_lsc_0 =
-				_mm256_loadu_si256((const __m256i *)(ptr_lsc + c));
-			__m256i v_lsc_1 =
-				_mm256_loadu_si256((const __m256i *)(ptr_lsc + c + 16));
-
-			auto process_half = [&](__m128i v_p_8,
-									__m256i v_lsc_16) -> __m256i {
-				__m256i v_p_lo = _mm256_cvtepu8_epi32(v_p_8);
-				__m256i v_p_hi =
-					_mm256_cvtepu8_epi32(_mm_unpackhi_epi64(v_p_8, v_p_8));
-
-				__m256i v_lsc_lo =
-					_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_lsc_16));
-				__m256i v_lsc_hi = _mm256_cvtepu16_epi32(
-					_mm256_extracti128_si256(v_lsc_16, 1));
-
-				__m256i v_awb_lo =
-					_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_awb));
-				__m256i v_awb_hi =
-					_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb, 1));
-
-				__m256i v_gain_lo = _mm256_srli_epi32(
-					_mm256_mullo_epi32(v_lsc_lo, v_awb_lo), FIXED_BITS);
-				__m256i v_gain_hi = _mm256_srli_epi32(
-					_mm256_mullo_epi32(v_lsc_hi, v_awb_hi), FIXED_BITS);
-
-				v_p_lo = _mm256_srli_epi32(
-					_mm256_mullo_epi32(v_p_lo, v_gain_lo), FIXED_BITS);
-				v_p_hi = _mm256_srli_epi32(
-					_mm256_mullo_epi32(v_p_hi, v_gain_hi), FIXED_BITS);
-
-				__m256i v_res_16 = _mm256_packus_epi32(v_p_lo, v_p_hi);
-				return _mm256_permute4x64_epi64(v_res_16,
-												_MM_SHUFFLE(3, 1, 2, 0));
-			};
-
-			__m256i v_res_0 =
-				process_half(_mm256_castsi256_si128(v_src_32), v_lsc_0);
-			__m256i v_res_1 =
-				process_half(_mm256_extracti128_si256(v_src_32, 1), v_lsc_1);
-
-			__m256i v_res_u8 = _mm256_packus_epi16(v_res_0, v_res_1);
-			v_res_u8 =
-				_mm256_permute4x64_epi64(v_res_u8, _MM_SHUFFLE(3, 1, 2, 0));
-			_mm256_storeu_si256((__m256i *)(ptr_src + c), v_res_u8);
-		}
-
-		uint16_t awb_0 = (r % 2 == 0) ? g_tl : g_bl;
-		uint16_t awb_1 = (r % 2 == 0) ? g_tr : g_br;
-		for (; c < cols; ++c) {
-			uint16_t lsc = ptr_lsc[c];
-			uint16_t awb = (c % 2 == 0) ? awb_0 : awb_1;
-			uint32_t total_gain = ((uint32_t)lsc * awb) >> FIXED_BITS;
-			uint32_t val = ((uint32_t)ptr_src[c] * total_gain) >> FIXED_BITS;
-			if (val > 255)
-				val = 255;
-			ptr_src[c] = static_cast<uint8_t>(val);
-		}
-	}
-	return *this;
-}
-
-// 确保在类中定义或在此处定义 saturate 辅助函数 (OpenCV已有)
-// 假设 ccm_matrix_int_ 是标准的 RGB->RGB 矩阵 (Row0: R, Row1: G, Row2: B)
-
-// 确保包含必要的头文件
-
-// ============================================================================
-// CCM SIMD Implementation
-// ============================================================================
-
-LFIsp &LFIsp::ccm_fixed_u16(cv::Mat &img) {
+void ccm_fixed_u16(cv::Mat &img, const std::vector<int32_t> &ccm_matrix_int) {
 	int rows = img.rows;
 	int cols = img.cols;
 
 	// [修正 1] 显式定义标量系数，供 SIMD 初始化和底部的标量循环使用
-	const int32_t c00 = ccm_matrix_int_[0], c01 = ccm_matrix_int_[1],
-				  c02 = ccm_matrix_int_[2];
-	const int32_t c10 = ccm_matrix_int_[3], c11 = ccm_matrix_int_[4],
-				  c12 = ccm_matrix_int_[5];
-	const int32_t c20 = ccm_matrix_int_[6], c21 = ccm_matrix_int_[7],
-				  c22 = ccm_matrix_int_[8];
+	const int32_t c00 = ccm_matrix_int[0], c01 = ccm_matrix_int[1],
+				  c02 = ccm_matrix_int[2];
+	const int32_t c10 = ccm_matrix_int[3], c11 = ccm_matrix_int[4],
+				  c12 = ccm_matrix_int[5];
+	const int32_t c20 = ccm_matrix_int[6], c21 = ccm_matrix_int[7],
+				  c22 = ccm_matrix_int[8];
 
 	// 1. 准备矩阵系数 (广播到 SIMD 寄存器)
 	const __m256i v_c00 = _mm256_set1_epi32(c00);
@@ -1669,20 +1186,19 @@ LFIsp &LFIsp::ccm_fixed_u16(cv::Mat &img) {
 			ptr[idx + 2] = cv::saturate_cast<uint16_t>(std::max(0, r_new));
 		}
 	}
-	return *this;
 }
 
-LFIsp &LFIsp::ccm_fixed_u8(cv::Mat &img) {
+void ccm_fixed_u8(cv::Mat &img, const std::vector<int32_t> &ccm_matrix_int) {
 	int rows = img.rows;
 	int cols = img.cols;
 
 	// [修正 1] 同样显式定义标量系数
-	const int32_t c00 = ccm_matrix_int_[0], c01 = ccm_matrix_int_[1],
-				  c02 = ccm_matrix_int_[2];
-	const int32_t c10 = ccm_matrix_int_[3], c11 = ccm_matrix_int_[4],
-				  c12 = ccm_matrix_int_[5];
-	const int32_t c20 = ccm_matrix_int_[6], c21 = ccm_matrix_int_[7],
-				  c22 = ccm_matrix_int_[8];
+	const int32_t c00 = ccm_matrix_int[0], c01 = ccm_matrix_int[1],
+				  c02 = ccm_matrix_int[2];
+	const int32_t c10 = ccm_matrix_int[3], c11 = ccm_matrix_int[4],
+				  c12 = ccm_matrix_int[5];
+	const int32_t c20 = ccm_matrix_int[6], c21 = ccm_matrix_int[7],
+				  c22 = ccm_matrix_int[8];
 
 	const __m256i v_c00 = _mm256_set1_epi32(c00);
 	const __m256i v_c01 = _mm256_set1_epi32(c01);
@@ -1771,8 +1287,867 @@ LFIsp &LFIsp::ccm_fixed_u8(cv::Mat &img) {
 			ptr[idx + 2] = cv::saturate_cast<uint8_t>(std::max(0, r_new));
 		}
 	}
+}
+
+inline void row_simd_u16_to_u8(const uint16_t *src, uint8_t *dst, int width,
+							   float alpha, float beta) {
+	int x = 0;
+
+	__m256 v_alpha = _mm256_set1_ps(alpha);
+	__m256 v_beta = _mm256_set1_ps(beta);
+
+	for (; x <= width - 16; x += 16) {
+		__m256i v_src_u16 = _mm256_loadu_si256((const __m256i *)(src + x));
+
+		__m256i v_src_i32_lo =
+			_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src_u16));
+		__m256i v_src_i32_hi =
+			_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src_u16, 1));
+
+		__m256 v_f32_lo = _mm256_cvtepi32_ps(v_src_i32_lo);
+		__m256 v_f32_hi = _mm256_cvtepi32_ps(v_src_i32_hi);
+
+		v_f32_lo = _mm256_fmadd_ps(v_f32_lo, v_alpha, v_beta);
+		v_f32_hi = _mm256_fmadd_ps(v_f32_hi, v_alpha, v_beta);
+
+		__m256i v_res_i32_lo = _mm256_cvtps_epi32(v_f32_lo);
+		__m256i v_res_i32_hi = _mm256_cvtps_epi32(v_f32_hi);
+
+		__m256i v_res_i16 = _mm256_packus_epi32(v_res_i32_lo, v_res_i32_hi);
+
+		__m256i v_res_u8_scrambled =
+			_mm256_packus_epi16(v_res_i16, _mm256_setzero_si256());
+
+		v_res_i16 =
+			_mm256_permute4x64_epi64(v_res_i16, _MM_SHUFFLE(3, 1, 2, 0));
+
+		__m256i v_zero = _mm256_setzero_si256();
+		__m256i v_res_u8 = _mm256_packus_epi16(v_res_i16, v_zero);
+
+		v_res_u8 = _mm256_permute4x64_epi64(v_res_u8, _MM_SHUFFLE(3, 1, 2, 0));
+
+		_mm_storeu_si128((__m128i *)(dst + x),
+						 _mm256_castsi256_si128(v_res_u8));
+	}
+
+	for (; x < width; ++x) {
+		float val = (float)src[x];
+		float res = val * alpha + beta;
+		res = (res > 255.0f) ? 255.0f : (res < 0.0f ? 0.0f : res);
+		dst[x] = (uint8_t)res;
+	}
+}
+
+inline void row_simd_u8_to_u8(const uint8_t *src, uint8_t *dst, int width,
+							  float alpha, float beta) {
+	int x = 0;
+	__m256 v_alpha = _mm256_set1_ps(alpha);
+	__m256 v_beta = _mm256_set1_ps(beta);
+
+	for (; x <= width - 16; x += 16) {
+		__m128i v_src_u8 = _mm_loadu_si128((const __m128i *)(src + x));
+		__m256i v_src_u16 = _mm256_cvtepu8_epi16(v_src_u8);
+
+		__m256i v_src_i32_lo =
+			_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src_u16));
+		__m256i v_src_i32_hi =
+			_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src_u16, 1));
+
+		__m256 v_f32_lo = _mm256_cvtepi32_ps(v_src_i32_lo);
+		__m256 v_f32_hi = _mm256_cvtepi32_ps(v_src_i32_hi);
+
+		v_f32_lo = _mm256_fmadd_ps(v_f32_lo, v_alpha, v_beta);
+		v_f32_hi = _mm256_fmadd_ps(v_f32_hi, v_alpha, v_beta);
+
+		__m256i v_res_i32_lo = _mm256_cvtps_epi32(v_f32_lo);
+		__m256i v_res_i32_hi = _mm256_cvtps_epi32(v_f32_hi);
+
+		__m256i v_res_i16 = _mm256_packus_epi32(v_res_i32_lo, v_res_i32_hi);
+		v_res_i16 =
+			_mm256_permute4x64_epi64(v_res_i16, _MM_SHUFFLE(3, 1, 2, 0));
+
+		__m256i v_res_u8 =
+			_mm256_packus_epi16(v_res_i16, _mm256_setzero_si256());
+		v_res_u8 = _mm256_permute4x64_epi64(v_res_u8, _MM_SHUFFLE(3, 1, 2, 0));
+
+		_mm_storeu_si128((__m128i *)(dst + x),
+						 _mm256_castsi256_si128(v_res_u8));
+	}
+
+	for (; x < width; ++x) {
+		float val = (float)src[x];
+		float res = val * alpha + beta;
+		res = (res > 255.0f) ? 255.0f : (res < 0.0f ? 0.0f : res);
+		dst[x] = (uint8_t)res;
+	}
+}
+
+} // namespace
+
+// ============================================================================
+// LFIsp 类实现
+// ============================================================================
+
+LFIsp::LFIsp() { cv::setNumThreads(cv::getNumberOfCPUs()); }
+
+LFIsp::LFIsp(const cv::Mat &lfp_img) {
+	cv::setNumThreads(cv::getNumberOfCPUs());
+	set_lf_img(lfp_img);
+}
+
+LFIsp::LFIsp(const cv::Mat &lfp_img, const cv::Mat &wht_img,
+			 const IspConfig &config) {
+	cv::setNumThreads(cv::getNumberOfCPUs());
+	set_lf_img(lfp_img);
+	initConfig(wht_img, config);
+}
+
+LFIsp &LFIsp::print_config(const IspConfig &config) {
+	std::cout << "\n================ [LFIsp Config] ================"
+			  << std::endl;
+	std::cout << "Bayer Pattern : " << bayerToString(config.bayer) << std::endl;
+	std::cout << "Bit Depth     : " << config.bitDepth << "-bit" << std::endl;
+	std::cout << "Black Level   : " << config.black_level << std::endl;
+	std::cout << "White Level   : " << config.white_level << std::endl;
+
+	std::cout << "AWB Gains     : [ ";
+	std::cout << std::fixed << std::setprecision(3);
+	if (config.awb_gains.size() >= 4) {
+		std::cout << "Gr:" << config.awb_gains[0] << ", ";
+		std::cout << "R :" << config.awb_gains[1] << ", ";
+		std::cout << "B :" << config.awb_gains[2] << ", ";
+		std::cout << "Gb:" << config.awb_gains[3];
+	} else {
+		for (float g : config.awb_gains) std::cout << g << " ";
+	}
+	std::cout << " ]" << std::endl;
+
+	std::cout << "Gamma         : " << config.gamma << std::endl;
+
+	std::cout << "CCM Matrix    :" << std::endl;
+	if (config.ccm_matrix.size() == 9) {
+		for (int i = 0; i < 3; ++i) {
+			std::cout << "                [ ";
+			for (int j = 0; j < 3; ++j) {
+				float val = config.ccm_matrix[i * 3 + j];
+				std::cout << std::showpos << std::setw(8) << val << " ";
+			}
+			std::cout << std::noshowpos << "]" << std::endl;
+		}
+	} else {
+		std::cout << "                (Invalid size: "
+				  << config.ccm_matrix.size() << ")" << std::endl;
+	}
+	std::cout << "================================================"
+			  << std::endl;
+	std::cout << std::defaultfloat;
 	return *this;
 }
+
+void LFIsp::parseJsonToConfig(const json &j, IspConfig &config) {
+	if (j.contains("bay")) {
+		std::string bay_str = j["bay"].get<std::string>();
+		if (bay_str == "GRBG")
+			config.bayer = BayerPattern::GRBG;
+		else if (bay_str == "RGGB")
+			config.bayer = BayerPattern::RGGB;
+		else if (bay_str == "GBRG")
+			config.bayer = BayerPattern::GBRG;
+		else if (bay_str == "BGGR")
+			config.bayer = BayerPattern::BGGR;
+	}
+
+	if (j.contains("bit")) {
+		config.bitDepth = j["bit"].get<int>();
+	}
+
+	if (j.contains("blc")) {
+		const auto &blc = j["blc"];
+		if (blc.contains("black") && blc["black"].is_array()
+			&& !blc["black"].empty()) {
+			config.black_level = blc["black"][0].get<int>();
+		}
+		if (blc.contains("white") && blc["white"].is_array()
+			&& !blc["white"].empty()) {
+			config.white_level = blc["white"][0].get<int>();
+		}
+	}
+
+	if (j.contains("awb") && j["awb"].is_array()) {
+		config.awb_gains = j["awb"].get<std::vector<float>>();
+	}
+
+	if (j.contains("ccm") && j["ccm"].is_array()) {
+		config.ccm_matrix = j["ccm"].get<std::vector<float>>();
+	}
+
+	if (j.contains("gam")) {
+		config.gamma = j["gam"].get<float>();
+	}
+} // parseJsonToConfig
+
+LFIsp &LFIsp::set_lf_img(const cv::Mat &img) {
+	if (img.empty())
+		throw std::runtime_error("LF image is empty.");
+	lfp_img_ = img;
+	return *this;
+} // set_lf_img
+
+LFIsp &LFIsp::initConfig(const cv::Mat &img, const IspConfig &config) {
+	if (img.empty())
+		throw std::runtime_error("White image is empty.");
+	prepare_lsc_maps(img, config.black_level);
+	prepare_ccm_fixed_point(config.ccm_matrix);
+	prepare_gamma_lut(config.gamma, 8);
+
+	return *this;
+} // initConfig
+
+std::string LFIsp::bayerToString(BayerPattern p) {
+	switch (p) {
+		case BayerPattern::GRBG:
+			return "GRBG";
+		case BayerPattern::RGGB:
+			return "RGGB";
+		case BayerPattern::GBRG:
+			return "GBRG";
+		case BayerPattern::BGGR:
+			return "BGGR";
+		case BayerPattern::NONE:
+			return "NONE";
+		default:
+			return "Unknown";
+	}
+} // bayerToString
+
+// ============================================================================
+// 标量处理流程 (Scalar Implementation)
+// ============================================================================
+
+LFIsp &LFIsp::blc(int black_level, int white_level) {
+	if (lfp_img_.empty()) {
+		return *this;
+	}
+	double bl = static_cast<double>(black_level);
+	double wl = static_cast<double>(white_level);
+
+	double effective_range = wl - bl;
+	if (effective_range < 1.0)
+		effective_range = 1.0; // 防止除零
+
+	double alpha = 255.0 / effective_range;
+	double beta = -bl * alpha;
+
+	lfp_img_.convertTo(lfp_img_, CV_8U, alpha, beta);
+	return *this;
+} // blc
+
+LFIsp &LFIsp::dpc(int threshold) {
+	if (lfp_img_.empty())
+		return *this;
+	if (lfp_img_.depth() != CV_8U) {
+		dpc_scalar_impl<uint16_t>(lfp_img_, threshold);
+	} else {
+		dpc_scalar_impl<uint8_t>(lfp_img_, threshold);
+	}
+	return *this;
+} // dpc
+
+LFIsp &LFIsp::lsc(float exposure) {
+	if (lfp_img_.empty() || lsc_gain_map_.empty())
+		return *this;
+	if (lfp_img_.size() != lsc_gain_map_.size())
+		return *this;
+
+	cv::Mat float_img;
+	lfp_img_.convertTo(float_img, CV_32F);
+	cv::multiply(float_img, lsc_gain_map_, float_img);
+	float_img.convertTo(lfp_img_, lfp_img_.type());
+	return *this;
+} // lsc
+
+LFIsp &LFIsp::awb(const std::vector<float> &wbgains) {
+	if (lfp_img_.empty())
+		return *this;
+
+	if (wbgains.size() != 4)
+		return *this;
+
+	float g_tl = wbgains[0];
+	float g_tr = wbgains[1];
+	float g_bl = wbgains[2];
+	float g_br = wbgains[3];
+
+	int rows = lfp_img_.rows;
+	int cols = lfp_img_.cols;
+
+	// 定义通用 AWB 处理 lambda
+	auto apply_awb = [&](auto *ptr_base, float max_val) {
+		for (int r = 0; r < rows; ++r) {
+			auto *ptr = ptr_base + r * cols; // 手动计算行指针（避免 .ptr<T>()）
+			for (int c = 0; c < cols; ++c) {
+				float gain;
+				if (r % 2 == 0) {
+					gain = (c % 2 == 0) ? g_tl : g_tr;
+				} else {
+					gain = (c % 2 == 0) ? g_bl : g_br;
+				}
+				float val = static_cast<float>(ptr[c]) * gain;
+				if (val > max_val)
+					val = max_val;
+				ptr[c] = static_cast<std::decay_t<decltype(ptr[c])>>(val);
+			}
+		}
+	};
+
+	if (lfp_img_.depth() == CV_16U) {
+		apply_awb(lfp_img_.ptr<uint16_t>(), 65535.0f);
+	} else if (lfp_img_.depth() == CV_8U) {
+		apply_awb(lfp_img_.ptr<uint8_t>(), 255.0f);
+	}
+
+	return *this;
+} // awb
+
+LFIsp &LFIsp::demosaic(BayerPattern bayer, DemosaicMethod method) {
+	if (lfp_img_.empty())
+		return *this;
+	if (lfp_img_.channels() != 1)
+		return *this;
+
+	int code = get_demosaic_code(bayer, false);
+	cv::demosaicing(lfp_img_, lfp_img_, code);
+	return *this;
+} // demosaic
+
+LFIsp &LFIsp::ccm(const std::vector<float> &ccm_matrix) {
+	if (lfp_img_.empty() || lfp_img_.channels() != 3)
+		return *this;
+
+	// 1. 必须转为 RGB，否则矩阵乘法会错位
+	cv::cvtColor(lfp_img_, lfp_img_, cv::COLOR_BGR2RGB);
+
+	// 2. 执行变换
+	cv::Mat m(3, 3, CV_32F, (void *)ccm_matrix.data());
+	cv::transform(lfp_img_, lfp_img_, m);
+
+	// 3. 转回 BGR (如果你后面还需要 BGR)
+	cv::cvtColor(lfp_img_, lfp_img_, cv::COLOR_RGB2BGR);
+
+	return *this;
+} // ccm
+
+LFIsp &LFIsp::gc(float gamma) {
+	// 1. 基础检查
+	if (lfp_img_.empty())
+		return *this;
+	if (gamma < 1e-5)
+		return *this; // 防止除零
+
+	cv::Mat float_img;
+	lfp_img_.convertTo(float_img, CV_32F, 1.0 / 255.0);
+	cv::pow(float_img, gamma, float_img);
+	float_img.convertTo(lfp_img_, CV_8U, 255.0);
+
+	return *this;
+} // gc
+
+LFIsp &LFIsp::process(const IspConfig &config) {
+	ScopedTimer t_total(" Total Process", profiler_cpu, config.benchmark);
+
+	if (lfp_img_.empty()) {
+		std::cerr << "[LFISP] Cancelled: Cancelled: No source image available.";
+		return *this;
+	}
+
+	{
+		ScopedTimer t("BLC", profiler_cpu, config.benchmark);
+		if (config.enableBLC) {
+			blc(config.black_level, config.white_level);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'BLC' is disabled in settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("Convert", profiler_cpu, config.benchmark);
+		if (lfp_img_gpu.depth() != CV_8U) {
+			lfp_img_gpu.convertTo(lfp_img_gpu, CV_8U,
+								  255.0 / ((1 << config.bitDepth) - 1));
+		}
+	}
+	{
+		ScopedTimer t("DPC", profiler_cpu, config.benchmark);
+		if (config.enableDPC) {
+			dpc(config.dpcThreshold);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'DPC' is disabled in settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("LSC", profiler_cpu, config.benchmark);
+		if (config.enableLSC) {
+			lsc(config.lscExp);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'LSC' is disabled in settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("AWB", profiler_cpu, config.benchmark);
+		if (config.enableAWB) {
+			awb(config.awb_gains);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'AWB' is disabled in settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("Demosaic", profiler_cpu, config.benchmark);
+		if (config.enableDemosaic) {
+			demosaic(config.bayer, config.demosaicMethod);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Demosaic' is disabled in settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("CCM", profiler_cpu, config.benchmark);
+		if (config.enableCCM) {
+			ccm(config.ccm_matrix);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'CCM' is disabled in settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("Gamma", profiler_cpu, config.benchmark);
+		if (config.enableGamma) {
+			gc(config.gamma);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Gamma correction' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("Resample", profiler_cpu, config.benchmark);
+		if (config.enableExtract) {
+			resample(config.enableDehex);
+			if (!config.enableDehex) {
+				std::cout << "[LFISP] Pipeline: 'Dehex' is disabled in "
+							 "settings."
+						  << std::endl;
+			}
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Extract' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+
+	return *this;
+}
+
+// ============================================================================
+// 快速处理流程 (SIMD Implementation Dispatcher)
+// ============================================================================
+
+LFIsp &LFIsp::blc_fast(int black_level) {
+	if (lfp_img_.empty())
+		return *this;
+	if (lfp_img_.depth() == CV_16U) {
+		blc_simd_u16(lfp_img_, black_level);
+	} else if (lfp_img_.depth() == CV_8U) {
+		blc_simd_u8(lfp_img_, black_level);
+	}
+	return *this;
+} // blc_fast
+
+LFIsp &LFIsp::blc_fast(int black_level, int white_level) {
+	if (lfp_img_.empty())
+		return *this;
+
+	// 1. 计算系数 (与 GPU 版本完全一致)
+	double bl = static_cast<double>(black_level);
+	double wl = static_cast<double>(white_level);
+	double effective_range = wl - bl;
+	if (effective_range < 1.0)
+		effective_range = 1.0;
+
+	float alpha = static_cast<float>(255.0 / effective_range);
+	float beta = static_cast<float>(-bl * alpha);
+
+	// 2. 准备 8-bit 输出矩阵 (不再原地修改，因为位深变了)
+	cv::Mat dst(lfp_img_.rows, lfp_img_.cols, CV_8U);
+
+	// 3. 展平处理 (如果是连续内存，视为一行处理，减少循环开销)
+	// 注意：create 出来的 dst 可能会有 padding，需检查 isContinuous
+	int rows = lfp_img_.rows;
+	int cols = lfp_img_.cols;
+	bool is_cont = lfp_img_.isContinuous() && dst.isContinuous();
+
+	if (is_cont) {
+		cols = rows * cols;
+		rows = 1;
+	}
+
+	// 4. 并行计算
+	if (lfp_img_.depth() == CV_16U) {
+#pragma omp parallel for
+		for (int r = 0; r < rows; ++r) {
+			const uint16_t *src_ptr = lfp_img_.ptr<uint16_t>(r);
+			uint8_t *dst_ptr = dst.ptr<uint8_t>(r);
+			row_simd_u16_to_u8(src_ptr, dst_ptr, cols, alpha, beta);
+		}
+	} else if (lfp_img_.depth() == CV_8U) {
+#pragma omp parallel for
+		for (int r = 0; r < rows; ++r) {
+			const uint8_t *src_ptr = lfp_img_.ptr<uint8_t>(r);
+			uint8_t *dst_ptr = dst.ptr<uint8_t>(r);
+			row_simd_u8_to_u8(src_ptr, dst_ptr, cols, alpha, beta);
+		}
+	}
+
+	// 5. 替换原图
+	lfp_img_ = dst;
+
+	return *this;
+} // blc_fast
+
+LFIsp &LFIsp::dpc_fast(DpcMethod method, int threshold) {
+	if (lfp_img_.empty())
+		return *this;
+	if (lfp_img_.depth() == CV_16U) {
+		dpc_simd_u16(lfp_img_, threshold);
+	} else if (lfp_img_.depth() == CV_8U) {
+		dpc_simd_u8(lfp_img_, threshold);
+	}
+	return *this;
+} // dpc_fast
+
+LFIsp &LFIsp::lsc_fast(float exposure) {
+	if (lfp_img_.empty())
+		return *this;
+
+	if (lsc_gain_map_int_.empty()) {
+		return *this;
+	}
+
+	if (lfp_img_.depth() == CV_16U) {
+		lsc_simd_u16(lfp_img_, lsc_gain_map_int_, exposure);
+	} else if (lfp_img_.depth() == CV_8U) {
+		lsc_simd_u8(lfp_img_, lsc_gain_map_int_, exposure);
+	}
+
+	return *this;
+} // lsc_fast
+
+LFIsp &LFIsp::awb_fast(const std::vector<float> &wbgains) {
+	if (lfp_img_.empty())
+		return *this;
+	if (lfp_img_.depth() == CV_16U) {
+		awb_simd_u16(lfp_img_, wbgains);
+	} else if (lfp_img_.depth() == CV_8U) {
+		awb_simd_u8(lfp_img_, wbgains);
+	}
+	return *this;
+} // awb_fast
+
+LFIsp &LFIsp::lsc_awb_fused_fast(float exposure,
+								 const std::vector<float> &wbgains) {
+	if (lfp_img_.empty())
+		return *this;
+
+	if (lsc_gain_map_int_.empty()) {
+		return *this;
+	}
+
+	if (lfp_img_.depth() == CV_16U) {
+		lsc_awb_simd_u16(lfp_img_, exposure, lsc_gain_map_int_, wbgains);
+	} else if (lfp_img_.depth() == CV_8U) {
+		lsc_awb_simd_u8(lfp_img_, exposure, lsc_gain_map_int_, wbgains);
+	}
+
+	return *this;
+} // lsc_awb_fused_fast
+
+LFIsp &LFIsp::ccm_fast(const std::vector<float> &ccm_matrix) {
+	if (lfp_img_.empty() || lfp_img_.channels() != 3)
+		return *this;
+
+	if (ccm_matrix_int_.empty() || ccm_matrix != last_ccm_matrix_) {
+		prepare_ccm_fixed_point(ccm_matrix);
+		last_ccm_matrix_ = ccm_matrix;
+	}
+	if (lfp_img_.depth() == CV_16U) {
+		ccm_fixed_u16(lfp_img_, ccm_matrix_int_);
+	} else if (lfp_img_.depth() == CV_8U) {
+		ccm_fixed_u8(lfp_img_, ccm_matrix_int_);
+	}
+	return *this;
+} // ccm_fast
+
+LFIsp &LFIsp::gc_fast(float gamma, int bitDepth) {
+	if (lfp_img_.empty())
+		return *this;
+
+	int depth = lfp_img_.depth();
+
+	bool gamma_changed = std::abs(gamma - last_gamma_) > 1e-6f;
+	bool bitdepth_changed = (bitDepth != last_bit_depth_);
+
+	if (depth == CV_8U) {
+		if (gamma_lut_u8.empty() || gamma_changed) {
+			prepare_gamma_lut(gamma, 8);
+			last_gamma_ = gamma;
+			last_bit_depth_ = 8;
+		}
+		cv::LUT(lfp_img_, gamma_lut_u8, lfp_img_);
+	} else if (depth == CV_16U) {
+		if (gamma_lut_u16.empty() || gamma_changed || bitdepth_changed) {
+			prepare_gamma_lut(gamma, bitDepth);
+			last_gamma_ = gamma;
+			last_bit_depth_ = bitDepth;
+		}
+		cv::LUT(lfp_img_, gamma_lut_u8, lfp_img_);
+	}
+
+	return *this;
+} // gc_fast
+
+LFIsp &LFIsp::ccm_fast_sai(const std::vector<float> &ccm_matrix) {
+	if (sais.empty() || sais[0].channels() != 3)
+		return *this;
+
+	if (ccm_matrix_int_.empty() || ccm_matrix != last_ccm_matrix_) {
+		prepare_ccm_fixed_point(ccm_matrix);
+		last_ccm_matrix_ = ccm_matrix;
+	}
+
+	if (lfp_img_.depth() == CV_16U) {
+		for (auto &sai : sais) {
+			ccm_fixed_u16(sai, lsc_gain_map_int_);
+		}
+	} else if (lfp_img_.depth() == CV_8U) {
+		for (auto &sai : sais) {
+			ccm_fixed_u8(sai, lsc_gain_map_int_);
+		}
+	}
+	return *this;
+} // ccm_fast_sai
+
+LFIsp &LFIsp::preview(const IspConfig &config) {
+	if (lfp_img_.empty() || config.bayer == BayerPattern::NONE)
+		return *this;
+
+	int rows = lfp_img_.rows;
+	int cols = lfp_img_.cols;
+	cv::Mat raw_8u(rows, cols, CV_8UC1);
+
+	if (lsc_gain_map_int_.empty()) {
+		return *this;
+	}
+
+	// 根据位深分发
+	if (lfp_img_.depth() == CV_16U) {
+		raw_to_8bit_with_gains_simd_u16(lfp_img_, raw_8u, config,
+										lsc_gain_map_int_);
+	} else if (lfp_img_.depth() == CV_8U) {
+		raw_to_8bit_with_gains_simd_u8(lfp_img_, raw_8u, config,
+									   lsc_gain_map_int_);
+	}
+
+	int code = get_demosaic_code(config.bayer, false);
+	cv::demosaicing(raw_8u, lfp_img_, code);
+
+	return *this;
+} // preview
+
+LFIsp &LFIsp::process_fast(const IspConfig &config) {
+	ScopedTimer t_total("Total Process", profiler_fast, config.benchmark);
+
+	if (lfp_img_.empty()) {
+		std::cerr << "[LFISP] Cancelled: Cancelled: No source image available.";
+		return *this;
+	}
+
+	{
+		ScopedTimer t("BLC", profiler_fast, config.benchmark);
+		if (config.enableBLC) {
+			// blc_fast(config.black_level);
+			blc_fast(config.black_level, config.white_level);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'BLC' is disabled in settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("Convert", profiler_fast, config.benchmark);
+		if (lfp_img_.depth() != CV_8U) {
+			lfp_img_.convertTo(lfp_img_, CV_8U,
+							   255.0 / ((1 << config.bitDepth) - 1));
+		}
+	}
+
+	{
+		ScopedTimer t("DPC", profiler_fast, config.benchmark);
+		if (config.enableDPC) {
+			dpc_fast(config.dpcMethod, config.dpcThreshold);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'DPC' is disabled in settings."
+					  << std::endl;
+		}
+	}
+	if (config.enableLSC && config.enableAWB) {
+		ScopedTimer t("LSC+AWB", profiler_fast, config.benchmark);
+		lsc_awb_fused_fast(config.lscExp, config.awb_gains);
+	} else {
+		{
+			ScopedTimer t("LSC", profiler_fast, config.benchmark);
+			if (config.enableLSC) {
+				lsc_fast(config.lscExp);
+			} else {
+				std::cout << "[LFISP] Pipeline: 'LSC' is disabled in settings."
+						  << std::endl;
+			}
+		}
+		{
+			ScopedTimer t("AWB", profiler_fast, config.benchmark);
+			if (config.enableAWB) {
+				awb_fast(config.awb_gains);
+			} else {
+				std::cout << "[LFISP] Pipeline: 'AWB' is disabled in settings."
+						  << std::endl;
+			}
+		}
+	}
+	{
+		ScopedTimer t("Demosaic", profiler_fast, config.benchmark);
+		if (config.enableDemosaic) {
+			demosaic(config.bayer, config.demosaicMethod);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Demosaic' is disabled in settings."
+					  << std::endl;
+		}
+	}
+
+	{
+		ScopedTimer t("CCM", profiler_fast, config.benchmark);
+		if (config.enableCCM) {
+			ccm_fast(config.ccm_matrix);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'CCM' is disabled in settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("Gamma", profiler_fast, config.benchmark);
+		if (config.enableGamma) {
+			gc_fast(config.gamma, 8);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Gamma correction' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("Resample", profiler_fast, config.benchmark);
+		if (config.enableExtract) {
+			resample(config.enableDehex);
+			if (!config.enableDehex) {
+				std::cout << "[LFISP] Pipeline: 'Dehex' is disabled in "
+							 "settings."
+						  << std::endl;
+			}
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Extract' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+
+	return *this;
+} // process_fast
+
+void LFIsp::prepare_lsc_maps(const cv::Mat &raw_wht, int black_level) {
+	int rows = raw_wht.rows;
+	int cols = raw_wht.cols;
+
+	cv::Mat float_wht;
+	raw_wht.convertTo(float_wht, CV_32F);
+
+	float bl = static_cast<float>(black_level);
+	cv::subtract(float_wht, cv::Scalar(bl), float_wht);
+	cv::max(float_wht, 1.0f, float_wht);
+
+	int half_h = rows / 2;
+	int half_w = cols / 2;
+	std::vector<cv::Mat> channels(4);
+	for (int k = 0; k < 4; ++k) channels[k].create(half_h, half_w, CV_32F);
+
+#pragma omp parallel for
+	for (int r = 0; r < half_h; ++r) {
+		const float *ptr_row0 = float_wht.ptr<float>(2 * r);
+		const float *ptr_row1 = float_wht.ptr<float>(2 * r + 1);
+		float *p0 = channels[0].ptr<float>(r);
+		float *p1 = channels[1].ptr<float>(r);
+		float *p2 = channels[2].ptr<float>(r);
+		float *p3 = channels[3].ptr<float>(r);
+
+		for (int c = 0; c < half_w; ++c) {
+			p0[c] = ptr_row0[2 * c];
+			p1[c] = ptr_row0[2 * c + 1];
+			p2[c] = ptr_row1[2 * c];
+			p3[c] = ptr_row1[2 * c + 1];
+		}
+	}
+
+#pragma omp parallel for
+	for (int k = 0; k < 4; ++k) {
+		cv::GaussianBlur(channels[k], channels[k], cv::Size(7, 7), 0);
+	}
+
+	std::vector<double> maxVals(4);
+	for (int k = 0; k < 4; ++k) {
+		double localMax;
+		cv::minMaxLoc(channels[k], nullptr, &localMax);
+		if (localMax < 1e-6)
+			localMax = 1.0;
+		maxVals[k] = localMax;
+	}
+
+	lsc_gain_map_.create(rows, cols, CV_32F);
+
+#pragma omp parallel for
+	for (int r = 0; r < half_h; ++r) {
+		float *dst0 = lsc_gain_map_.ptr<float>(2 * r);
+		float *dst1 = lsc_gain_map_.ptr<float>(2 * r + 1);
+		const float *p0 = channels[0].ptr<float>(r);
+		const float *p1 = channels[1].ptr<float>(r);
+		const float *p2 = channels[2].ptr<float>(r);
+		const float *p3 = channels[3].ptr<float>(r);
+
+		for (int c = 0; c < half_w; ++c) {
+			dst0[2 * c] = (float)maxVals[0] / p0[c];
+			dst0[2 * c + 1] = (float)maxVals[1] / p1[c];
+			dst1[2 * c] = (float)maxVals[2] / p2[c];
+			dst1[2 * c + 1] = (float)maxVals[3] / p3[c];
+		}
+	}
+	lsc_gain_map_.convertTo(lsc_gain_map_int_, CV_16U, FIXED_SCALE);
+	lsc_map_gpu.upload(lsc_gain_map_);
+} // prepare_lsc_maps
+
+// 确保在类中定义或在此处定义 saturate 辅助函数 (OpenCV已有)
+// 假设 ccm_matrix_int_ 是标准的 RGB->RGB 矩阵 (Row0: R, Row1: G, Row2: B)
+
+// 确保包含必要的头文件
+
+// ============================================================================
+// CCM SIMD Implementation
+// ============================================================================
 
 void LFIsp::prepare_ccm_fixed_point(const std::vector<float> &matrix) {
 	if (matrix.empty())
@@ -1785,7 +2160,7 @@ void LFIsp::prepare_ccm_fixed_point(const std::vector<float> &matrix) {
 		ccm_matrix_int_[i] = static_cast<int32_t>(matrix[i] * scale + 0.5f);
 	}
 	return;
-}
+} // prepare_ccm_fixed_point
 
 LFIsp &LFIsp::resample(bool dehex) {
 	int num_views = maps.extract.size() / 2;
@@ -1804,7 +2179,7 @@ LFIsp &LFIsp::resample(bool dehex) {
 		sais[i] = temp;
 	}
 	return *this;
-}
+} // resample
 
 void LFIsp::prepare_gamma_lut(float gamma, int bitDepth) {
 	float g = gamma > 0 ? gamma : 0.4166f;
@@ -1867,12 +2242,12 @@ void LFIsp::prepare_gamma_lut(float gamma, int bitDepth) {
 			p[i] = cv::saturate_cast<uchar>(std::pow(i / 255.0, g) * 255.0);
 		}
 	}
-}
+} // prepare_gamma_lut
 
 // =========================================================
-// 新增: gc_fast (针对 sais 的 Gamma + 转 8-bit)
+// 新增: gc_fast_sai (针对 sais 的 Gamma + 转 8-bit)
 // =========================================================
-LFIsp &LFIsp::gc_fast(float gamma, int bitDepth) {
+LFIsp &LFIsp::gc_fast_sai(float gamma, int bitDepth) {
 	if (sais.empty())
 		return *this;
 
@@ -1948,4 +2323,357 @@ LFIsp &LFIsp::gc_fast(float gamma, int bitDepth) {
 	}
 
 	return *this;
-}
+} // gc_fast_sai
+
+//  GPU
+LFIsp &LFIsp::set_lf_gpu(const cv::Mat &img) {
+	if (img.empty()) {
+		return *this;
+	}
+	lfp_img_gpu.upload(img);
+	return *this;
+} // set_lf_gpu
+
+cv::Mat LFIsp::getResultGpu() {
+	cv::Mat temp;
+	lfp_img_gpu.download(temp);
+	temp.convertTo(temp, CV_8U);
+	return temp;
+} // getResultGpu
+
+std::vector<cv::Mat> LFIsp::getSAIsGpu() {
+	std::vector<cv::Mat> views(sais_gpu.size());
+	for (int i = 0; i < sais_gpu.size(); ++i) {
+		sais_gpu[i].download(views[i]);
+	}
+	return views;
+} // getSAIsGpu
+
+void LFIsp::update_resample_maps() {
+	extract_maps_gpu.resize(maps.extract.size());
+	for (int i = 0; i < maps.extract.size(); ++i) {
+		extract_maps_gpu[i].upload(maps.extract[i]);
+	}
+
+	dehex_maps_gpu.resize(maps.dehex.size());
+	for (int i = 0; i < maps.dehex.size(); ++i) {
+		dehex_maps_gpu[i].upload(maps.dehex[i]);
+	}
+} // update_resample_maps
+
+LFIsp &LFIsp::blc_gpu(int black_level, int white_level) {
+	if (lfp_img_gpu.empty()) {
+		return *this;
+	}
+	double bl = static_cast<double>(black_level);
+	double wl = static_cast<double>(white_level);
+
+	double effective_range = wl - bl;
+	if (effective_range < 1.0)
+		effective_range = 1.0; // 防止除零
+
+	double alpha = 255.0 / effective_range; // 缩放系数
+	double beta = -bl * alpha;				// 偏移系数
+
+	lfp_img_gpu.convertTo(lfp_img_gpu, CV_8U, alpha, beta, stream);
+	return *this;
+} // blc_gpu
+
+LFIsp &LFIsp::dpc_gpu(int threshold) {
+	if (lfp_img_gpu.empty())
+		return *this;
+
+	launch_dpc_8u_inplace(lfp_img_gpu, threshold, stream);
+
+	return *this;
+} // dpc_gpu
+
+LFIsp &LFIsp::lsc_gpu(float exposure) {
+	// 检查非空
+	if (lfp_img_gpu.empty() || lsc_map_gpu.empty())
+		return *this;
+
+	launch_lsc_8u_apply_32f(lfp_img_gpu, lsc_map_gpu, exposure, stream);
+
+	return *this;
+} // lsc_gpu
+
+LFIsp &LFIsp::awb_gpu(const std::vector<float> &wbgains) {
+	if (lfp_img_gpu.empty())
+		return *this;
+
+	if (wbgains.size() < 4)
+		return *this;
+
+	launch_awb_8u(lfp_img_gpu, wbgains[0], wbgains[1], wbgains[2], wbgains[3],
+				  stream);
+
+	return *this;
+} // awb_gpu
+
+LFIsp &LFIsp::lsc_awb_fused_gpu(float exposure,
+								const std::vector<float> &wbgains) {
+	// 1. 基础检查
+	if (lfp_img_gpu.empty() || lsc_map_gpu.empty())
+		return *this;
+	if (lfp_img_gpu.type() != CV_8UC1)
+		lfp_img_gpu.convertTo(lfp_img_gpu, CV_8U); // 确保 8U
+	if (lsc_map_gpu.type() != CV_32FC1)
+		return *this; // Map 必须是 Float
+	if (wbgains.size() < 4)
+		return *this;
+
+	// 3. 调用融合 Kernel
+	launch_fused_lsc_awb(lfp_img_gpu, lsc_map_gpu, exposure, wbgains[0],
+						 wbgains[1], wbgains[2], wbgains[3], stream);
+
+	return *this;
+} // lsc_awb_fused_gpu
+
+LFIsp &LFIsp::demosaic_gpu(BayerPattern bayer) {
+	if (lfp_img_gpu.empty())
+		return *this;
+
+	if (lfp_img_gpu.depth() != CV_8U) {
+		cv::cuda::GpuMat temp;
+		lfp_img_gpu.convertTo(temp, CV_8U);
+		lfp_img_gpu = temp;
+	}
+
+	int code = -1;
+	switch (bayer) {
+		case BayerPattern::RGGB:
+			// 第一行 RG -> Input=BayerRG
+			code = cv::cuda::COLOR_BayerRG2BGR_MHT;
+			break;
+
+		case BayerPattern::GRBG:
+			// 第一行 GR -> Input=BayerGR (你之前写成了 GB，这是错的)
+			code = cv::cuda::COLOR_BayerGR2BGR_MHT;
+			break;
+
+		case BayerPattern::GBRG:
+			// 第一行 GB -> Input=BayerGB (你之前写成了 GR，这是错的)
+			code = cv::cuda::COLOR_BayerGB2BGR_MHT;
+			break;
+
+		case BayerPattern::BGGR:
+			// 第一行 BG -> Input=BayerBG
+			code = cv::cuda::COLOR_BayerBG2BGR_MHT;
+			break;
+
+		default:
+			return *this;
+	}
+
+	if (code >= 0) {
+		cv::cuda::GpuMat dst_bgr;
+		cv::cuda::demosaicing(lfp_img_gpu, dst_bgr, code);
+		lfp_img_gpu = dst_bgr;
+	}
+
+	return *this;
+} // demosaic_gpu
+
+LFIsp &LFIsp::resample_gpu(bool dehex) {
+	if (lfp_img_gpu.empty()) {
+		return *this;
+	}
+
+	if (maps.extract.empty()) {
+		return *this;
+	} else if (extract_maps_gpu.empty()) {
+		update_resample_maps();
+	}
+
+	int num_views = extract_maps_gpu.size() / 2;
+	sais_gpu.clear();
+	sais_gpu.resize(num_views);
+
+	for (int i = 0; i < num_views; ++i) {
+		cv::cuda::GpuMat extracted;
+		cv::cuda::remap(lfp_img_gpu, extracted, extract_maps_gpu[2 * i],
+						extract_maps_gpu[2 * i + 1], cv::INTER_LINEAR,
+						cv::BORDER_REPLICATE);
+
+		if (dehex && !dehex_maps_gpu.empty()) {
+			cv::cuda::remap(extracted, sais_gpu[i], dehex_maps_gpu[0],
+							dehex_maps_gpu[1], cv::INTER_LINEAR,
+							cv::BORDER_REPLICATE);
+		} else {
+			sais_gpu[i] = extracted;
+		}
+	}
+	return *this;
+} // resample_gpu
+
+LFIsp &LFIsp::ccm_gpu(const std::vector<float> &ccm_matrix) {
+	if (lfp_img_gpu.empty() || lfp_img_gpu.type() != CV_8UC3) {
+		std::cout << "[LFISP] CCM: Invalid image type." << std::endl;
+		return *this;
+	}
+
+	if (ccm_matrix.size() < 9) {
+		std::cout << "[LFISP] CCM: Invalid ccm matrix." << std::endl;
+		return *this;
+	}
+
+	launch_ccm_8uc3(lfp_img_gpu, ccm_matrix.data(), stream);
+
+	return *this;
+} // ccm_gpu
+
+LFIsp &LFIsp::gc_gpu(float gamma) {
+	// 1. 检查输入
+	if (lfp_img_gpu.empty())
+		return *this;
+
+	// 只支持 8U 类型
+	int depth = lfp_img_gpu.depth();
+	if (depth != CV_8U) {
+		// 如果不是 8U，直接返回或者报错
+		// 因为 Gamma 放在最后一步，此时图像理应是 8-bit
+		return *this;
+	}
+
+	// 2. 检查 Gamma 值
+	// 如果 Gamma 接近 1.0，不需要做任何操作
+	if (std::abs(gamma - 1.0f) < 1e-5)
+		return *this;
+	if (gamma < 1e-5)
+		return *this; // 防止除以 0
+
+	// 3. 调用 Kernel
+	launch_gc_8u(lfp_img_gpu, gamma, stream);
+
+	return *this;
+} // gc_gpu
+
+// 外部声明
+
+LFIsp &LFIsp::ccm_gamma_fused_gpu(const std::vector<float> &ccm_matrix,
+								  float gamma) {
+	// 1. 检查输入：必须是 8UC3 (Demosaic 之后的图)
+	if (lfp_img_gpu.empty() || lfp_img_gpu.type() != CV_8UC3) {
+		return *this;
+	}
+
+	// 2. 检查矩阵维度
+	if (ccm_matrix.size() < 9) {
+		return *this;
+	}
+
+	// 3. 处理 Gamma 值
+	// 如果你想变亮 (标准 Gamma 2.2)，这里应该传入 1.0/2.2 ≈ 0.45
+	// 如果你在 Config 里存的是 2.2，就在这里取倒数
+	// 如果你在 Config 里存的是 0.45，就直接传
+	float gamma_val = (std::abs(gamma) > 1e-5) ? gamma : 1.0f;
+
+	// 如果你的 config.gamma 是 2.2，建议用下面这行：
+	// float gamma_val = 1.0f / gamma;
+
+	// 4. 调用融合 Kernel
+	launch_ccm_gamma_fused(lfp_img_gpu, ccm_matrix.data(), gamma_val, stream);
+
+	return *this;
+} // ccm_gamma_fused_gpu
+
+LFIsp &LFIsp::process_gpu(const IspConfig &config) {
+	ScopedTimer t_total(" Total Process", profiler_gpu, config.benchmark);
+
+	if (lfp_img_gpu.empty()) {
+		std::cerr << "[LFISP] Cancelled: Cancelled: No source image available.";
+		return *this;
+	}
+	{
+		ScopedTimer t("BLC", profiler_gpu, config.benchmark);
+		if (config.enableBLC) {
+			blc_gpu(config.black_level, config.white_level);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'BLC' is disabled in settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("Convert", profiler_gpu, config.benchmark);
+		if (lfp_img_gpu.depth() != CV_8U) {
+			lfp_img_gpu.convertTo(lfp_img_gpu, CV_8U,
+								  255.0 / ((1 << config.bitDepth) - 1));
+		}
+	}
+
+	{
+		ScopedTimer t("DPC", profiler_gpu, config.benchmark);
+		if (config.enableDPC) {
+			dpc_gpu(config.dpcThreshold);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'DPC' is disabled in settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("LSC", profiler_gpu, config.benchmark);
+		if (config.enableLSC) {
+			lsc_gpu(config.lscExp);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'LSC' is disabled in settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("AWB", profiler_gpu, config.benchmark);
+		if (config.enableAWB) {
+			awb_gpu(config.awb_gains);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'AWB' is disabled in settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("Demosaic", profiler_gpu, config.benchmark);
+		if (config.enableDemosaic) {
+			demosaic_gpu(config.bayer);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Demosaic' is disabled in settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("CCM", profiler_gpu, config.benchmark);
+		if (config.enableCCM) {
+			ccm_gpu(config.ccm_matrix);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'CCM' is disabled in settings."
+					  << std::endl;
+		}
+	}
+
+	{
+		ScopedTimer t("Gamma", profiler_gpu, config.benchmark);
+		if (config.enableGamma) {
+			gc_gpu(config.gamma);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Gamma correction' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+
+	{
+		ScopedTimer t("Resample", profiler_gpu, config.benchmark);
+		if (config.enableExtract) {
+			resample_gpu(config.enableDehex);
+			if (!config.enableDehex) {
+				std::cout << "[LFISP] Pipeline: 'Dehex' is disabled in "
+							 "settings."
+						  << std::endl;
+			}
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Extract' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+
+	return *this;
+} // process_gpu

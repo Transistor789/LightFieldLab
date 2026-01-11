@@ -24,6 +24,13 @@ set(SRCS_ALGO
     ${SOURCE_DIR}/centers_extract.cpp
     ${SOURCE_DIR}/centers_sort.cpp
     ${SOURCE_DIR}/hexgrid_fit.cpp
+    ${SOURCE_DIR}/dpc.cu
+    ${SOURCE_DIR}/lsc.cu
+    ${SOURCE_DIR}/awb.cu
+    ${SOURCE_DIR}/lsc_awb.cu
+    ${SOURCE_DIR}/ccm.cu
+    ${SOURCE_DIR}/gc.cu
+    ${SOURCE_DIR}/ccm_gc.cu
 )
 
 # 深度学习/推理模块: TensorRT Wrapper, LFMBase, LFSRBase, LFDispBase
@@ -84,14 +91,17 @@ target_link_libraries(test_lfrefocus PRIVATE ${LIBS_BASIC})
 # Test: Calibration
 add_executable(test_lfcalibrate test_lfcalibrate.cpp ${SRCS_COMMON} ${SRCS_ALGO})
 target_link_libraries(test_lfcalibrate PRIVATE ${LIBS_BASIC} ${LIBS_CUDA_CV})
+set_property(TARGET test_lfcalibrate PROPERTY CUDA_ARCHITECTURES native)
 
 # Test: ISP Pipeline
 add_executable(test_isp test_isp.cpp ${SRCS_COMMON} ${SRCS_ALGO})
 target_link_libraries(test_isp PRIVATE ${LIBS_BASIC} ${LIBS_CUDA_CV})
+set_property(TARGET test_isp PROPERTY CUDA_ARCHITECTURES native)
 
 # Test: Resample
 add_executable(test_lfresample test_lfresample.cpp ${SRCS_COMMON} ${SRCS_ALGO})
-target_link_libraries(test_lfresample PRIVATE ${LIBS_BASIC} opencv_cudaimgproc opencv_cudaarithm CUDA::cudart)
+target_link_libraries(test_lfresample PRIVATE ${LIBS_BASIC} ${LIBS_CUDA_CV})
+set_property(TARGET test_lfresample PROPERTY CUDA_ARCHITECTURES native)
 
 # Linux 下这几个算法通常需要 Eigen3
 if(UNIX)

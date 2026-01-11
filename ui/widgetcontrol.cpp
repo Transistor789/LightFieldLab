@@ -191,7 +191,6 @@ WidgetControl::WidgetControl(QWidget *parent)
 		bool subEnable = val && ui->checkBoxExtract->isChecked();
 
 		ui->checkBoxDehex->setEnabled(subEnable);
-		ui->checkBoxColorEq->setEnabled(subEnable);
 		ui->comboBoxColorEq->setEnabled(subEnable);
 	});
 
@@ -209,16 +208,11 @@ WidgetControl::WidgetControl(QWidget *parent)
 			params_->isp.enableExtract = val;
 
 		ui->checkBoxDehex->setEnabled(val);
-		ui->checkBoxColorEq->setEnabled(val);
 		ui->comboBoxColorEq->setEnabled(val);
 	});
 	connect(ui->checkBoxDehex, &QCheckBox::toggled, this, [this](bool val) {
 		if (params_)
 			params_->isp.enableDehex = val;
-	});
-	connect(ui->checkBoxColorEq, &QCheckBox::toggled, this, [this](bool val) {
-		if (params_)
-			params_->isp.enableColorEq = val;
 	});
 
 	connect(ui->comboBoxDPCAlgo, &QComboBox::currentIndexChanged, this,
@@ -274,8 +268,12 @@ WidgetControl::WidgetControl(QWidget *parent)
 			});
 	connect(ui->comboBoxColorEq, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
-				params_->isp.colorEqMethod =
+				params_->colorEqMethod =
 					static_cast<ColorEqualizeMethod>(index);
+			});
+	connect(ui->comboBoxDevice, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				params_->isp.device = static_cast<Device>(index);
 			});
 	connect(ui->btnFastPreview, &QPushButton::clicked, this,
 			&WidgetControl::requestFastPreview);
@@ -353,6 +351,9 @@ WidgetControl::WidgetControl(QWidget *parent)
 
 	// 6. 后处理 (Refocus, SR, DE)
 
+	// Color equalize
+	connect(ui->pushButtonColorEq, &QPushButton::clicked, this,
+			[this] { emit requestColorEq(); });
 	// Refocus
 	connect(ui->spinBoxRefocusCrop, &QSpinBox::valueChanged, this,
 			[this](int value) {
@@ -448,7 +449,6 @@ void WidgetControl::updateUI() {
 	setValSilent(ui->checkBoxGamma, params_->isp.enableGamma);
 	setValSilent(ui->checkBoxExtract, params_->isp.enableExtract);
 	setValSilent(ui->checkBoxDehex, params_->isp.enableDehex);
-	setValSilent(ui->checkBoxColorEq, params_->isp.enableColorEq);
 
 	setValSilent(ui->comboBoxDPCAlgo, params_->isp.dpcMethod);
 	setValSilent(ui->spinBoxThreshold, params_->isp.dpcThreshold);
@@ -463,7 +463,10 @@ void WidgetControl::updateUI() {
 
 	setValSilent(ui->comboBoxDemosaicAlgo, params_->isp.demosaicMethod);
 	setValSilent(ui->doubleSpinBoxGamma, params_->isp.gamma);
-	setValSilent(ui->comboBoxColorEq, params_->isp.colorEqMethod);
+	setValSilent(ui->comboBoxDevice, params_->isp.device);
+
+	// ColorEq
+	setValSilent(ui->comboBoxColorEq, params_->colorEqMethod);
 
 	// Dynamic
 	ui->spinBoxCamera->setEnabled(!params_->dynamic.cameraID.empty());
