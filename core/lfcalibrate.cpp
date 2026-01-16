@@ -8,11 +8,14 @@
 
 #include <format>
 #include <numeric> // for std::iota
+#include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/types.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 using json = nlohmann::json;
 
@@ -30,7 +33,7 @@ void LFCalibrate::setImage(const cv::Mat &img) {
 	}
 }
 
-void LFCalibrate::run(const LFCalibrate::Config &cfg) {
+void LFCalibrate::run(const CalibrateConfig &cfg) {
 	if (_white_img.empty()) {
 		throw std::runtime_error(
 			"LFCalibrate: No image set. Call setImage() first.");
@@ -90,6 +93,94 @@ void LFCalibrate::run(const LFCalibrate::Config &cfg) {
 	if (cfg.genLUT) {
 		computeExtractMaps(cfg.views);
 		computeDehexMaps();
+	}
+}
+
+void LFCalibrate::run(const cv::Mat &img, const CalibrateConfig &config) {
+	if (img.empty()) {
+		throw std::runtime_error(
+			"LFCalibrate: No image set. Call setImage() first.");
+	}
+
+	cv::Mat temp;
+	if (config.orientation == Orientation::VERT) {
+		cv::transpose(img, temp);
+	} else {
+		temp = img;
+	}
+
+	// -------------------------------------------------------------------------
+	// 1. 预处理：消除 Bayer 棋盘格
+	// -------------------------------------------------------------------------
+	if (config.bayer != BayerPattern::NONE) {
+		// 使用高斯模糊平滑 Bayer 纹理，保留几何质心
+		cv::GaussianBlur(temp, temp, cv::Size(3, 3), 0);
+	}
+
+	// -------------------------------------------------------------------------
+	// 2. 预处理：位深归一化 (转 8-bit)
+	// -------------------------------------------------------------------------
+	if (temp.depth() != CV_8U) {
+		double scale = 1.0;
+		if (config.bitDepth > 8) {
+			scale = 255.0 / ((1 << config.bitDepth) - 1);
+		} else if (temp.depth() == CV_16U) {
+			scale = 255.0 / 65535.0;
+		}
+		temp.convertTo(temp, CV_8U, scale);
+	}
+
+	// -------------------------------------------------------------------------
+	// 3. 质心提取 (Centroids Extract)
+	// -------------------------------------------------------------------------
+	CentroidsExtract ce(temp);
+	if (config.autoEstimate) {
+		ce.run(config.ceMethod);
+		_diameter = ce.getEstimatedM();
+	} else {
+		ce.run(config.ceMethod, config.diameter);
+		_diameter = config.diameter;
+	}
+
+	// -------------------------------------------------------------------------
+	// 4. 排序与网格化 (Centroids Sort)
+	// -------------------------------------------------------------------------
+	CentroidsSort cs(ce.getPoints(), ce.getPitch());
+	cs.run2(); // 使用泛洪填充算法
+
+	// [关键修改] 获取并保存奇偶行相位
+	_hex_odd = cs.getHexOdd();
+
+	// -------------------------------------------------------------------------
+	// 5. 网格拟合 (HexGrid Fit)
+	// -------------------------------------------------------------------------
+	HexGridFitter hgf(cs.getPoints(), cs.getPointsSize(), _hex_odd);
+
+	// 使用快速鲁棒拟合
+	hgf.fitFastRobust(2.0f, 1500);
+
+	_points = hgf.predict();
+
+	if (config.genLUT) {
+		computeExtractMaps(config.views);
+		computeDehexMaps();
+		if (config.orientation == Orientation::VERT) {
+			for (size_t i = 0; i < _extract_maps.size(); i += 2) {
+				cv::transpose(_extract_maps[i], _extract_maps[i]);
+				cv::transpose(_extract_maps[i + 1], _extract_maps[i + 1]);
+				std::swap(_extract_maps[i], _extract_maps[i + 1]);
+			}
+			for (size_t i = 0; i < _dehex_maps.size(); i += 2) {
+				cv::transpose(_dehex_maps[i], _dehex_maps[i]);
+				cv::transpose(_dehex_maps[i + 1], _dehex_maps[i + 1]);
+				std::swap(_dehex_maps[i], _dehex_maps[i + 1]);
+			}
+			for (auto &col : _points) {
+				for (auto &pt : col) {
+					std::swap(pt.x, pt.y);
+				}
+			}
+		}
 	}
 }
 

@@ -2,6 +2,7 @@
 #define LFPARAMS_H
 
 #include "colormatcher.h"
+#include "json.hpp"
 #include "lfcalibrate.h"
 #include "lfdepth.h"
 #include "lfisp.h"
@@ -13,7 +14,7 @@
 #include <vector>
 
 struct LFParamsPath {
-	std::string lfp, sai, white, extractLUT, dehexLUT;
+	std::string lfp, sai, white, extractLUT, dehexLUT, srModel, deModel;
 };
 
 struct LFParamsImage {
@@ -33,7 +34,7 @@ struct LFParamsSAI {
 };
 
 struct LFParamsCalibrate {
-	LFCalibrate::Config config;
+	CalibrateConfig config;
 };
 
 struct LFParamsDynamic {
@@ -45,7 +46,7 @@ struct LFParamsDynamic {
 	std::atomic<int> procFrameCount{0};
 	bool showLFP = true;
 	bool showSAI = true;
-	BayerPattern bayer; // TODO
+	BayerPattern bayer;
 	int bitDepth;
 	int width, height;
 };
@@ -60,25 +61,23 @@ struct LFParamsRefocus {
 
 struct LFParamsSR {
 	int scale = 2;
-	int patchSize = 196;
+	int patchSize = 128;
 	int views = 5;
 	SRMethod method = SRMethod::NEAREST;
 };
 
 struct LFParamsDE {
-	enum class Color { Gray, Jet, Plasma };
-
 	DEMethod method = DEMethod::DistgDisp;
-	Color color = Color::Gray;
-	int patchSize = 196;
-	int views = 5;
+	DEColor color = DEColor::Gray;
+	int patchSize = 128;
+	int views = 9;
 };
 
 struct LFParams {
 	ImageFileType imageType = ImageFileType::Lytro;
 	LFParamsImage image;
 	LFParamsPath path;
-	LFCalibrate::Config calibrate;
+	CalibrateConfig calibrate;
 	IspConfig isp;
 	LFParamsDynamic dynamic;
 	LFParamsSAI sai;
@@ -88,4 +87,54 @@ struct LFParams {
 	LFParamsDE de;
 };
 
+NLOHMANN_JSON_SERIALIZE_ENUM(ImageFileType, {{ImageFileType::Lytro, "Lytro"},
+											 {ImageFileType::Raw, "Raw"},
+											 {ImageFileType::Normal, "Normal"}})
+
+NLOHMANN_JSON_SERIALIZE_ENUM(BayerPattern, {{BayerPattern::NONE, "NONE"},
+											{BayerPattern::RGGB, "RGGB"},
+											{BayerPattern::GRBG, "GRBG"},
+											{BayerPattern::GBRG, "GBRG"},
+											{BayerPattern::BGGR, "BGGR"}})
+
+NLOHMANN_JSON_SERIALIZE_ENUM(ExtractMethod,
+							 {{ExtractMethod::Contour, "Contour"},
+							  {ExtractMethod::GrayGravity, "GrayGravity"},
+							  {ExtractMethod::CCA, "CCA"},
+							  {ExtractMethod::LOG_NMS, "LOG_NMS"}})
+
+NLOHMANN_JSON_SERIALIZE_ENUM(Orientation, {{Orientation::HORZ, "HORZ"},
+										   {Orientation::VERT, "VERT"}})
+
+NLOHMANN_JSON_SERIALIZE_ENUM(DpcMethod, {{DpcMethod::Diretional, "Diretional"}})
+
+NLOHMANN_JSON_SERIALIZE_ENUM(DemosaicMethod,
+							 {{DemosaicMethod::Bilinear, "Bilinear"},
+							  {DemosaicMethod::Gray, "EdgeAware"},
+							  {DemosaicMethod::VGN, "VGN"},
+							  {DemosaicMethod::EA, "EA"}})
+
+NLOHMANN_JSON_SERIALIZE_ENUM(Device,
+							 {{Device::CPU, "CPU"}, {Device::GPU, "GPU"}})
+
+NLOHMANN_JSON_SERIALIZE_ENUM(ColorEqualizeMethod,
+							 {{ColorEqualizeMethod::Reinhard, "Reinhard"},
+							  {ColorEqualizeMethod::HistMatch, "HistMatch"},
+							  {ColorEqualizeMethod::MKL, "MKL"},
+							  {ColorEqualizeMethod::MVGD, "MVGD"},
+							  {ColorEqualizeMethod::HM_MKL_HM, "HM_MKL_HM"},
+							  {ColorEqualizeMethod::HM_MVGD_HM, "HM_MVGD_HM"}})
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(LFParamsPath, lfp, sai, white, extractLUT,
+								   dehexLUT, srModel, deModel)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(CalibrateConfig, genLUT, saveLUT,
+								   autoEstimate, diameter, bitDepth, views,
+								   bayer, ceMethod, orientation)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(IspConfig, dpcThreshold, lscExp, enableBLC,
+								   enableDPC, enableLSC, enableAWB,
+								   enableDemosaic, enableCCM, enableGamma,
+								   enableExtract, enableDehex, benchmark,
+								   dpcMethod, demosaicMethod, device)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(LFParams, imageType, path, calibrate, isp,
+								   colorEqMethod)
 #endif

@@ -19,10 +19,10 @@ enum class SRMethod {
 	DISTGSSR
 };
 
-class LFSuperRes {
+class LFSuperResolution {
 public:
-	explicit LFSuperRes();
-	~LFSuperRes() = default;
+	explicit LFSuperResolution();
+	~LFSuperResolution() = default;
 
 	/**
 	 * @brief 执行超分辨率处理 (核心接口)
@@ -77,7 +77,7 @@ private:
 
 	// --- 目标参数 (用户设定) ---
 	int m_targetScale = 2;
-	int m_targetPatchSize = 196;
+	int m_targetPatchSize = 128;
 	int m_targetAngRes = 5;
 
 	// --- 当前已加载/生效的状态 (缓存) ---

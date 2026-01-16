@@ -54,12 +54,15 @@ public slots:
 	void detectCamera();
 	void updateSAI(int row, int col);
 	void play();
-	void color_equalize();
 	void refocus();
 	void processAllInFocus();
+	void color_equalize();
 	void upsample();
 	void depth();
 	void colorChanged(int index);
+
+	void loadSettings();
+	void saveSettings();
 
 signals:
 	void updateSAI(const cv::Mat &img);
@@ -89,10 +92,6 @@ private:
 					LOG_INFO(std::format("{} finished. (Time: {:.2f} ms)",
 										 taskName.toStdString(), costMs));
 
-					// 5. (进阶) 如果你在 UI
-					// 上做了状态栏显示，可以在这里发射信号 emit
-					// taskFinished(taskName, costMs);
-
 				} catch (const std::exception &e) {
 					LOG_ERROR(std::format("{} failed: {}",
 										  taskName.toStdString(), e.what()));
@@ -117,8 +116,8 @@ private:
 	std::unique_ptr<LFCalibrate> cal;
 	std::unique_ptr<LFIsp> isp;
 	std::unique_ptr<LFRefocus> ref;
-	std::unique_ptr<LFSuperRes> sr;
-	std::unique_ptr<LFDisp> dep;
+	std::unique_ptr<LFSuperResolution> sr;
+	std::unique_ptr<LFDepthEstimation> dep;
 	std::unique_ptr<LFCapture> cap;
 
 	// --- 线程与同步 ---
@@ -130,5 +129,5 @@ private:
 	std::mutex m_queueMtx;
 	std::condition_variable m_queueCv;
 };
-
+// TODO
 #endif

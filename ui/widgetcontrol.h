@@ -56,7 +56,9 @@ signals:
 	void requestColorEq();
 	void requestRefocus();
 	void requestSR();
+	void requestSRModel(const QString &path);
 	void requestDE();
+	void requestDEModel(const QString &path);
 	void requestChangingColor(int index);
 
 	void setRefocusCrop(int value);

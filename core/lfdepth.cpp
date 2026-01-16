@@ -5,22 +5,26 @@
 
 // [移除] #include "lfparams.h"
 
-bool LFDisp::depth(const std::vector<cv::Mat> &views, DEMethod method) {
+bool LFDepthEstimation::depth(const std::vector<cv::Mat> &views,
+							  DEMethod method) {
 	if (views.empty()) {
-		std::cerr << "[LFDisp] Error: Empty views input." << std::endl;
+		std::cerr << "[LFDepthEstimation] Error: Empty views input."
+				  << std::endl;
 		return false;
 	}
 
 	if (views[0].depth() != CV_8U) {
-		std::cerr << "[LFDisp] Error: Input views must be 8-bit (CV_8U)."
-				  << std::endl;
+		std::cerr
+			<< "[LFDepthEstimation] Error: Input views must be 8-bit (CV_8U)."
+			<< std::endl;
 		return false;
 	}
 
 	// --- 智能加载：检查并按需加载模型 ---
 	// 将 method 传入，与内部状态比对
 	if (!checkAndLoadModel(method)) {
-		std::cerr << "[LFDisp] Abort: Model check/load failed." << std::endl;
+		std::cerr << "[LFDepthEstimation] Abort: Model check/load failed."
+				  << std::endl;
 		return false;
 	}
 
@@ -37,9 +41,9 @@ bool LFDisp::depth(const std::vector<cv::Mat> &views, DEMethod method) {
 	return true;
 }
 
-const cv::Mat &LFDisp::getRawMap() const { return m_rawMap; }
+const cv::Mat &LFDepthEstimation::getRawMap() const { return m_rawMap; }
 
-cv::Mat LFDisp::getGrayVisual() const {
+cv::Mat LFDepthEstimation::getGrayVisual() const {
 	if (m_rawMap.empty())
 		return cv::Mat();
 
@@ -49,7 +53,7 @@ cv::Mat LFDisp::getGrayVisual() const {
 	return normMap;
 }
 
-cv::Mat LFDisp::getJetVisual() const {
+cv::Mat LFDepthEstimation::getJetVisual() const {
 	cv::Mat gray = getGrayVisual();
 	if (gray.empty())
 		return cv::Mat();
@@ -60,7 +64,7 @@ cv::Mat LFDisp::getJetVisual() const {
 	return colorMap;
 }
 
-cv::Mat LFDisp::getPlasmaVisual() const {
+cv::Mat LFDepthEstimation::getPlasmaVisual() const {
 	cv::Mat gray = getGrayVisual();
 	if (gray.empty())
 		return cv::Mat();
@@ -71,7 +75,19 @@ cv::Mat LFDisp::getPlasmaVisual() const {
 	return colorMap;
 }
 
-bool LFDisp::checkAndLoadModel(DEMethod targetMethod) {
+cv::Mat LFDepthEstimation::getVisualizedResult(DEColor color) const {
+	cv::Mat result;
+	if (color == DEColor::Gray) {
+		result = getGrayVisual();
+	} else if (color == DEColor::Jet) {
+		result = getJetVisual();
+	} else if (color == DEColor::Plasma) {
+		result = getPlasmaVisual();
+	}
+	return result;
+}
+
+bool LFDepthEstimation::checkAndLoadModel(DEMethod targetMethod) {
 	// 1. 检查状态是否发生变化
 	bool methodChanged = (m_loadedMethod != targetMethod);
 	bool paramChanged = (m_loadedAngRes != m_targetAngRes)
@@ -90,7 +106,8 @@ bool LFDisp::checkAndLoadModel(DEMethod targetMethod) {
 	// 打印调试信息
 	std::string methodName =
 		(targetMethod == DEMethod::DistgDisp) ? "DistgDisp" : "OACC";
-	std::cout << "[LFDisp] Model change detected. Reloading..." << std::endl;
+	std::cout << "[LFDepthEstimation] Model change detected. Reloading..."
+			  << std::endl;
 	std::cout << "   Target DEMethod: " << methodName << std::endl;
 	std::cout << "   Target Path:   " << modelPath << std::endl;
 
@@ -107,11 +124,12 @@ bool LFDisp::checkAndLoadModel(DEMethod targetMethod) {
 		m_loadedPatchSize = m_targetPatchSize;
 		m_loadedMethod = targetMethod; // 记录当前加载的是哪种方法
 
-		std::cout << "[LFDisp] Model loaded successfully." << std::endl;
+		std::cout << "[LFDepthEstimation] Model loaded successfully."
+				  << std::endl;
 		return true;
 
 	} catch (const std::exception &e) {
-		std::cerr << "[LFDisp] Failed to load model: " << modelPath
+		std::cerr << "[LFDepthEstimation] Failed to load model: " << modelPath
 				  << "\nReason: " << e.what() << std::endl;
 
 		// 如果加载失败，重置状态为无效，强制下次必须重试
@@ -120,8 +138,8 @@ bool LFDisp::checkAndLoadModel(DEMethod targetMethod) {
 	}
 }
 
-std::string LFDisp::getModelPath(DEMethod method, int angRes,
-								 int patchSize) const {
+std::string LFDepthEstimation::getModelPath(DEMethod method, int angRes,
+											int patchSize) const {
 	// 基础名称前缀
 	std::string prefix;
 	if (method == DEMethod::DistgDisp) {
@@ -143,6 +161,6 @@ std::string LFDisp::getModelPath(DEMethod method, int angRes,
 
 	// 使用 format 拼接路径
 	// 格式: data/{DEMethod}_{Ang}x{Ang}_{Patch}_FP16_{OS}.engine
-	return std::format("data/{}_{}x{}_{}_FP16_{}.engine", prefix, angRes,
+	return std::format("models/{}_{}x{}_{}_FP16_{}.engine", prefix, angRes,
 					   angRes, patchSize, osSuffix);
 }

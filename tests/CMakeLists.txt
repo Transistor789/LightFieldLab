@@ -188,3 +188,15 @@ foreach(TGT test_openssl test_lfload test_lfrefocus test_config test_lfcalibrate
     target_include_directories(${TGT} PRIVATE ${OPENSSL_INCLUDE_DIR})
     target_link_directories(${TGT} PRIVATE "${OPENSSL_ROOT_DIR}/lib")
 endforeach()
+
+add_executable(test_log
+    test_log.cpp
+    ${SOURCE_DIR}/utils.cpp
+    ${SOURCE_DIR}/centers_extract.cpp
+    ${SOURCE_DIR}/centers_sort.cpp
+    ${SOURCE_DIR}/hexgrid_fit.cpp
+    ${SOURCE_DIR}/lfcalibrate.cpp
+    ${SOURCE_DIR}/utils.cpp
+)
+target_include_directories(test_log PRIVATE "${Eigen_DIR}")
+target_link_libraries(test_log PRIVATE ${OpenCV_LIBS})

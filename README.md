@@ -59,12 +59,10 @@ LightFieldLab/
 ├── ui/                 # Qt 用户界面源码
 ├── data/               # 资源文件
 │   ├── calibration/    # 标定中间数据 (bin/png)
-│   ├── opencv_srmodel/ # OpenCV自带超分模型
-│   ├── *_Windows.engine        # 转换后的 TensorRT 推理引擎
-│   ├── *.onnx          # ONNX 模型文件
 │   └── *.json/lfr      # 示例光场数据
-├── python/             # 模型导出工具
-│   ├── export_onnx_all.py # PyTorch 模型转 ONNX 脚本
+├── models/             # 模型导出工具
+│   ├── *.onnx          # ONNX 模型文件
+│   ├── *_Windows.engine        # 转换后的 TensorRT 推理引擎
 │   └── *.pth/*.py      # 原始 PyTorch 权重与定义
 ├── tests/              # 单元测试 (GTest/独立可执行程序)
 └── CMakeLists.txt      # CMake 构建脚本

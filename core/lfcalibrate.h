@@ -19,19 +19,22 @@ struct adl_serializer<cv::Point2f> {
 };
 } // namespace nlohmann
 
+enum class Orientation { HORZ, VERT };
+
+struct CalibrateConfig {
+	bool genLUT = false;
+	bool saveLUT = false;
+	bool autoEstimate = false;
+	int diameter = 0;
+	int bitDepth = 8;
+	int views = 9;
+	BayerPattern bayer = BayerPattern::NONE;
+	ExtractMethod ceMethod = ExtractMethod::Contour;
+	Orientation orientation = Orientation::HORZ;
+};
+
 class LFCalibrate {
 public:
-	struct Config {
-		bool genLUT = true;
-		bool saveLUT = false;
-		bool autoEstimate = true;
-		int diameter = 0;
-		int bitDepth = 8;
-		int views = 9;
-		BayerPattern bayer = BayerPattern::NONE;
-		CentroidsExtract::Method ceMethod = CentroidsExtract::Method::Contour;
-	};
-
 	// 显式构造函数
 	explicit LFCalibrate() = default;
 	explicit LFCalibrate(const cv::Mat &white_img);
@@ -40,7 +43,8 @@ public:
 	void setImage(const cv::Mat &img);
 
 	// 核心运行流程：检测、排序、拟合
-	void run(const LFCalibrate::Config &cfg);
+	void run(const CalibrateConfig &cfg);
+	void run(const cv::Mat &img, const CalibrateConfig &cfg);
 
 	// 工具函数
 	void savePoints(const std::string &filename);

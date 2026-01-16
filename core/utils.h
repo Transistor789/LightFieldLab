@@ -67,4 +67,7 @@ cv::Mat gamma_convert(const cv::Mat &src, bool inverse);
 ImageFileType checkImageType(const std::string &path);
 int getBlackLevel(const json &j);
 
+std::string type2str(int type);
+void print_mat_info(const std::string &name, const cv::Mat &img);
+
 #endif

@@ -96,7 +96,7 @@ int main() {
 	ssr.setCenterOnly(center_only);
 
 	ssr.readEngine(
-		std::format("../data/DistgSSR_{}x_1x1x{}x{}_FP16_Windows.engine",
+		std::format("../models/DistgSSR_{}x_1x1x{}x{}_FP16_Windows.engine",
 					target_scale, 5 * target_patch, 5 * target_patch));
 
 	Timer timer;

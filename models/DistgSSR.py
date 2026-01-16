@@ -194,59 +194,15 @@ def MacPI2SAI(x, angRes):
     out = x.view(b, c, hu, wv)
     return out
 
+import utils
+
 if __name__ == "__main__":
-    import os
-    
-    # 1. 配置模型参数
-    angRes = 5   # 角度分辨率 (5x5)
-    factor = 2   # 超分倍率 (4x)
-    output_onnx_name = f"DistgSSR_{factor}xSR_{angRes}x{angRes}.onnx"
-
-    # 2. 初始化模型
-    # 建议先在 CPU 上导出，兼容性更好；如果报错再尝试 .cuda()
-    device = torch.device("cpu") 
-    model = Net(angRes=angRes, factor=factor).to(device)
-    model.eval()
-
-    # 加载权重 (如果有训练好的 .pth 文件，请取消注释并修改路径)
-    # model_path = "path/to/your/model.pth"
-    # state_dict = torch.load(model_path, map_location=device)
-    # model.load_state_dict(state_dict)
-
-    # 3. 构造 Dummy Input (样板输入)
-    # 尺寸必须是 angRes 的倍数。
-    # 这里假设输入是 SAI 阵列拼接图，格式为 [B, 1, angRes*H, angRes*W]
-    H_dummy, W_dummy = 32, 32
-    dummy_input = torch.randn(1, 1, H_dummy * angRes, W_dummy * angRes).to(device)
-
-    # 4. 执行 ONNX 导出
-    print(f"Starting export: {output_onnx_name} ...")
-    torch.onnx.export(
-        model,
-        dummy_input,
-        output_onnx_name,
-        export_params=True,        # 导出训练好的参数权重
-        opset_version=14,          # 推荐 14，对动态尺寸和 resize 支持较好
-        do_constant_folding=True,  # 优化常量折叠
-        input_names=['input'],     # 输入节点名称
-        output_names=['output'],   # 输出节点名称
-        dynamic_axes={
-            'input': {
-                0: 'batch_size',   # Batch 维度动态
-                2: 'height',       # 高度动态
-                3: 'width'         # 宽度动态
-            },
-            'output': {
-                0: 'batch_size',
-                2: 'out_height',
-                3: 'out_width'
-            }
-        }
-    )
-    print(f"Success! Model saved to {output_onnx_name}")
-    print("\n[Check Dimensions]")
-    print(f"Dummy Input Shape: {dummy_input.shape}")
-    # 简单的验证性推理
-    with torch.no_grad():
-        output = model(dummy_input)
-    print(f"Dummy Output Shape: {output.shape}")
+    ANG_RES = 5
+    factors = [2, 4]
+    for factor in factors:
+        MODEL_PATH = f"models/DistgSSR_{factor}x_{ANG_RES}x{ANG_RES}.pth.tar" 
+        ONNX_PATH = f"models/DistgSSR_{factor}x_{ANG_RES}x{ANG_RES}.onnx"
+        
+        net = Net(angRes=ANG_RES, factor=factor).cpu()
+        utils.load_checkpoint(net, MODEL_PATH)
+        utils.export_to_onnx(net, ONNX_PATH, ANG_RES)

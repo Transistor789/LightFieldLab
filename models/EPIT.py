@@ -256,3 +256,76 @@ class get_model(nn.Module):
         out = sr_y_bicubic + y_residual
         
         return out
+    
+
+def export_epit_to_onnx(scale, angRes, model_path, onnx_save_path):
+    print(f"正在准备导出: Scale={scale}, AngRes={angRes}")
+    
+    # 1. 初始化模型
+    device = torch.device('cpu')
+    model = get_model(angRes=angRes, scale=scale).to(device)
+    
+    # 2. 加载权重
+    if os.path.exists(model_path):
+        checkpoint = torch.load(model_path, map_location=device)
+        # 兼容性处理：如果 checkpoint 是字典则取 'state_dict'，否则直接加载
+        if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
+            state_dict = checkpoint['state_dict']
+        else:
+            state_dict = checkpoint
+            
+        # 移除可能存在的 'module.' 前缀 (DataParallel 遗留)
+        new_state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+        model.load_state_dict(new_state_dict, strict=True)
+        print(f"成功加载权重: {model_path}")
+    else:
+        print(f"警告: 未找到权重文件 {model_path}，将导出随机初始化的模型。")
+
+    model.eval()
+
+    # 3. 创建虚拟输入 (B, C, U, V, H, W)
+    # 假设输入分辨率为 32x32，你可以根据需要调整
+    h, w = 32, 32
+    dummy_input = torch.randn(1, 1, angRes, angRes, h, w, device=device)
+
+    # 4. 执行导出
+    print("开始转换 ONNX...")
+    try:
+        torch.onnx.export(
+            model,
+            dummy_input,
+            onnx_save_path,
+            export_params=True,
+            opset_version=16, # 建议使用 16+ 以获得最佳兼容性
+            do_constant_folding=True,
+            input_names=['input_lr'],
+            output_names=['output_sr'],
+            # 设置动态维度（可选）：允许推理时改变 H, W
+            dynamic_axes={
+                'input_lr': {4: 'height', 5: 'width'},
+                'output_sr': {4: 'height_sr', 5: 'width_sr'}
+            }
+        )
+        print(f"导出成功! 保存路径: {onnx_save_path}")
+    except Exception as e:
+        print(f"导出失败: {str(e)}")
+
+# =========================================================================
+# Main 运行入口
+# =========================================================================
+if __name__ == '__main__':
+    # 基础配置
+    ANG_RES = 5  # 5x5 光场
+    
+    # 定义任务：(scale, pth_path, onnx_path)
+    tasks = [
+        (2, "models/EPIT_2x_5x5.pth", "models/EPIT_2x_5x5.onnx"),
+        (4, "models/EPIT_4x_5x5.pth", "models/EPIT_4x_5x5.onnx")
+    ]
+    
+    # 确保文件夹存在
+    os.makedirs("models", exist_ok=True)
+
+    for scale, pth, onnx_p in tasks:
+        export_epit_to_onnx(scale, ANG_RES, pth, onnx_p)
+        print("-" * 50)

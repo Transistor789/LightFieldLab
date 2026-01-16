@@ -7,7 +7,7 @@
 
 int main() {
 	auto lf = LFIO::ReadSAI("../data/bedroom");
-	LFDisp disp;
+	LFDepthEstimation disp;
 
 	disp.setPatchSize(196);
 	Timer timer;

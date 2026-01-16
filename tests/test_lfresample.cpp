@@ -21,8 +21,8 @@ void fast_preview() {
 	// cv::waitKey();
 
 	LFCalibrate cali(wht_img_gray);
-	LFCalibrate::Config config;
-	config.ceMethod = CentroidsExtract::Method::Contour;
+	CalibrateConfig config;
+	config.ceMethod = ExtractMethod::Contour;
 	config.bayer = BayerPattern::NONE;
 	config.bitDepth = 8;
 	cali.run(config);

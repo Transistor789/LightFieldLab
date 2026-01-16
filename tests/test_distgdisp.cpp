@@ -16,9 +16,10 @@ void test() {
 	// 2. 初始化
 	DistgDisp dispenser;
 	std::string enginePath =
-		std::format("../data/OACC-Net_9x9_{}_FP16_Windows.engine", patchSize);
+		std::format("../models/OACC-Net_9x9_{}_FP16_Windows.engine", patchSize);
 	// std::string enginePath =
-	// 	std::format("../data/DistgDisp_9x9_{}_FP16_Windows.engine", patchSize);
+	// 	std::format("../models/DistgDisp_9x9_{}_FP16_Windows.engine",
+	// patchSize);
 	dispenser.readEngine(enginePath);
 
 	// 【关键】配置类
@@ -53,7 +54,7 @@ void patch_test() {
 	auto lf = LFIO::ReadSAI("../data/bedroom");
 
 	DistgDisp disp;
-	disp.readEngine("../data/DistgDisp_9x9_196_FP16_Windows.engine");
+	disp.readEngine("../models/DistgDisp_9x9_196_FP16_Windows.engine");
 	disp.setPatchSize(196);
 
 	Timer timer;
@@ -61,7 +62,7 @@ void patch_test() {
 	timer.stop();
 	timer.print_elapsed_ms();
 
-	disp.readEngine("../data/DistgDisp_9x9_128_FP16_Windows.engine");
+	disp.readEngine("../models/DistgDisp_9x9_128_FP16_Windows.engine");
 	disp.setPatchSize(128);
 
 	timer.start();

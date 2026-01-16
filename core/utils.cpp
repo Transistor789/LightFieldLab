@@ -394,3 +394,77 @@ int getBlackLevel(const json &j) {
 		return -1; // 或者选择其他方式来表示错误，比如抛出异常或使用 optional
 	}
 }
+
+std::string type2str(int type) {
+	std::string r;
+
+	uchar depth = type & CV_MAT_DEPTH_MASK;
+	uchar chans = 1 + (type >> CV_CN_SHIFT);
+
+	switch (depth) {
+		case CV_8U:
+			r = "8U";
+			break;
+		case CV_8S:
+			r = "8S";
+			break;
+		case CV_16U:
+			r = "16U";
+			break;
+		case CV_16S:
+			r = "16S";
+			break;
+		case CV_32S:
+			r = "32S";
+			break;
+		case CV_32F:
+			r = "32F";
+			break;
+		case CV_64F:
+			r = "64F";
+			break;
+		default:
+			r = "User";
+			break;
+	}
+
+	r += "C";
+	r += std::to_string(chans);
+
+	return r;
+}
+
+void print_mat_info(const std::string &name, const cv::Mat &img) {
+	if (img.empty()) {
+		std::cout << "[" << name << "] is Empty!" << std::endl;
+		return;
+	}
+
+	std::cout << "=== Info: " << name << " ===" << std::endl;
+
+	// 1. 基础维度与类型
+	std::cout << "  Dim:      " << img.cols << "x" << img.rows << " (WxH)"
+			  << std::endl;
+	std::cout << "  Type:     " << type2str(img.type())
+			  << " (Enum: " << img.type() << ")" << std::endl;
+	std::cout << "  Channels: " << img.channels() << std::endl;
+
+	// 2. 内存布局 (对 SIMD/CUDA 很重要)
+	std::cout << "  Cont.:    " << (img.isContinuous() ? "True" : "False")
+			  << std::endl;
+	std::cout << "  Step:     " << img.step << " bytes (Stride)" << std::endl;
+
+	// 3. 统计信息 (检查数据是否正常)
+	// 注意：多通道图像 minMaxLoc 默认只找单通道，这里为了简单只检查 reshape
+	// 后的全局极值
+	double minVal, maxVal;
+	cv::minMaxLoc(img.reshape(1), &minVal, &maxVal);
+	cv::Scalar meanVal = cv::mean(img);
+
+	std::cout << "  Min/Max:  [" << minVal << ", " << maxVal << "]"
+			  << std::endl;
+	std::cout << "  Mean:     " << meanVal
+			  << std::endl; // 输出格式通常是 [B, G, R, 0]
+
+	std::cout << "========================" << std::endl;
+}

@@ -20,11 +20,11 @@
 // 【修复点】：根据操作系统定义模型路径类型
 #ifdef _WIN32
 // Windows: 使用宽字符
-const std::wstring MODEL_PATH = L"../data/DistgSSR_2x_5x5.onnx";
+const std::wstring MODEL_PATH = L"../models/DistgSSR_2x_5x5.onnx";
 // using ORTCHAR_T = wchar_t;
 #else
 // Linux: 使用标准字符
-const std::string MODEL_PATH = "../data/DistgSSR_2x_5x5.onnx";
+const std::string MODEL_PATH = "../models/DistgSSR_2x_5x5.onnx";
 // using ORTCHAR_T = char;
 #endif
 

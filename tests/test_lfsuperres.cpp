@@ -17,7 +17,7 @@ int main() {
 	auto center = lf->getCenter();
 	cv::imshow("ORIGINAL", center);
 
-	LFSuperRes sr;
+	LFSuperResolution sr;
 	sr.setScale(2);
 
 	auto res_cubic = sr.upsample(center, SRMethod::CUBIC);

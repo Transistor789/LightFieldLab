@@ -3,6 +3,7 @@
 #include "centers_extract.h"
 #include "colormatcher.h"
 #include "dialogccm.h"
+#include "lfcalibrate.h"
 #include "lfdepth.h"
 #include "lfisp.h"
 #include "lfparams.h"
@@ -13,22 +14,28 @@
 #include <qcheckbox.h>
 #include <qcombobox.h>
 #include <qcontainerfwd.h>
+#include <qline.h>
 #include <qlineedit.h>
 #include <qpushbutton.h>
 #include <qspinbox.h>
 #include <qtmetamacros.h>
+#include <qtoolbutton.h>
+#include <sys/stat.h>
 
 WidgetControl::WidgetControl(QWidget *parent)
 	: QWidget(parent), ui(new Ui::WidgetControl) {
 	ui->setupUi(this);
 
-	// 1. 加载文件/文件夹
+	// 光场原图
+	connect(ui->lineEditLFP, &QLineEdit::textChanged, this,
+			[this](QString str) { params_->path.lfp = str.toStdString(); });
 	QMenu *menuOpenLFP = new QMenu(this);
 	menuOpenLFP->addAction("原图", this, [this] {
 		QString path = QFileDialog::getOpenFileName(
 			this, "打开光场图像", "",
 			"*.lfp *.lfr *.raw *.png *.bmp *jpeg *.jpg");
 		if (!path.isEmpty() && params_) {
+			params_->path.lfp = path.toStdString();
 			ui->lineEditLFP->setText(path);
 			emit requestLoadLFP(path);
 		}
@@ -38,19 +45,36 @@ WidgetControl::WidgetControl(QWidget *parent)
 			this, "打开子孔径图像", "",
 			QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
 		if (!path.isEmpty() && params_) {
+			params_->path.sai = path.toStdString();
 			ui->lineEditLFP->setText(path);
 			emit requestLoadSAI(path);
 		}
 	});
-	ui->toolButtonLF->setMenu(menuOpenLFP);
+	ui->toolButtonLFBrowse->setMenu(menuOpenLFP);
+	connect(ui->toolButtonLFPOpen, &QToolButton::clicked, this, [this] {
+		QString path = ui->lineEditLFP->text();
+		if (path.isEmpty() || !params_)
+			return;
+		QFileInfo checkInfo(path);
+		if (checkInfo.exists()) {
+			if (checkInfo.isFile()) {
+				emit requestLoadLFP(path);
+			} else if (checkInfo.isDir()) {
+				emit requestLoadSAI(path);
+			}
+		}
+	});
 
-	// 加载白图像
+	// 标定白图
+	connect(ui->lineEditWhite, &QLineEdit::textChanged, this,
+			[this](QString str) { params_->path.white = str.toStdString(); });
 	QMenu *menuOpenCali = new QMenu(this);
 	menuOpenCali->addAction("文件夹", this, [this] {
 		QString path = QFileDialog::getExistingDirectory(
 			this, "打开标定数据所在文件夹", "",
 			QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
 		if (!path.isEmpty() && params_) {
+			params_->path.white = path.toStdString();
 			ui->lineEditWhite->setText(path);
 		}
 	});
@@ -59,32 +83,26 @@ WidgetControl::WidgetControl(QWidget *parent)
 			this, "打开白图像", "",
 			"*.lfp *.lfr *.raw *.png *.bmp *jpeg *.jpg");
 		if (!path.isEmpty() && params_) {
+			params_->path.white = path.toStdString();
 			ui->lineEditWhite->setText(path);
 			emit requestLoadWhite(path);
 		}
 	});
-	ui->toolButtonWhite->setMenu(menuOpenCali);
+	ui->toolButtonWhiteBrowse->setMenu(menuOpenCali);
+	connect(ui->toolButtonWhiteOpen, &QToolButton::clicked, this, [this] {
+		QString path = ui->lineEditWhite->text();
+		if (path.isEmpty() || !params_)
+			return;
 
-	// 加载 LUT
-	connect(ui->toolButtonExtract, &QToolButton::clicked, this, [this] {
-		QString path = QFileDialog::getOpenFileName(this, "打开子孔径提取表",
-													"", "LUT (*.bin)");
-		if (!path.isEmpty() && params_) {
-			ui->lineEditExtract->setText(path);
-			emit requestLoadExtractLUT(path);
-		}
-	});
-	connect(ui->toolButtonDehex, &QToolButton::clicked, this, [this] {
-		QString path = QFileDialog::getOpenFileName(this, "打开Dehex表", "",
-													"LUT (*.bin)");
-		if (!path.isEmpty() && params_) {
-			ui->lineEditDehex->setText(path);
-			emit requestLoadDehexLUT(path);
+		QFileInfo checkInfo(path);
+		if (checkInfo.exists()) {
+			if (checkInfo.isFile()) {
+				emit requestLoadWhite(path);
+			}
 		}
 	});
 
-	// 2. 基础参数 (Info)
-
+	// 图像信息
 	connect(ui->comboBoxType, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
 				params_->imageType = static_cast<ImageFileType>(index);
@@ -95,125 +113,101 @@ WidgetControl::WidgetControl(QWidget *parent)
 			});
 	connect(ui->comboBoxBayer, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
-				if (params_)
-					params_->image.bayer = static_cast<BayerPattern>(index);
+				params_->image.bayer = static_cast<BayerPattern>(index);
 			});
 	connect(ui->comboBoxBit, &QComboBox::currentIndexChanged, this,
-			[this](int index) {
-				if (params_)
-					params_->image.bitDepth = 8 + 2 * index;
-			});
+			[this](int index) { params_->image.bitDepth = 8 + 2 * index; });
 	connect(ui->lineEditHeight, &QLineEdit::textChanged, this,
-			[this](QString str) {
-				if (params_)
-					params_->image.height = str.toInt();
-			});
+			[this](QString str) { params_->image.height = str.toInt(); });
 	connect(ui->lineEditWidth, &QLineEdit::textChanged, this,
-			[this](QString str) {
-				if (params_)
-					params_->image.height = str.toInt();
-			});
+			[this](QString str) { params_->image.height = str.toInt(); });
 
-	// 3. 标定与预处理 (Calibration)
+	// 提取表
+	connect(
+		ui->lineEditExtract, &QLineEdit::textChanged, this,
+		[this](QString str) { params_->path.extractLUT = str.toStdString(); });
+	connect(ui->toolButtonExtractOpen, &QToolButton::clicked, this, [this] {
+		emit requestLoadExtractLUT(
+			QString::fromStdString(params_->path.extractLUT));
+	});
+	connect(ui->toolButtonExtractBrowse, &QToolButton::clicked, this, [this] {
+		QString path = QFileDialog::getOpenFileName(this, "打开子孔径提取表",
+													"", "LUT (*.bin)");
+		if (!path.isEmpty() && params_) {
+			params_->path.extractLUT = path.toStdString();
+			ui->lineEditExtract->setText(path);
+			emit requestLoadExtractLUT(path);
+		}
+	});
 
-	// connect(ui->checkBoxCaliDemosaic, &QCheckBox::toggled, this,
-	// 		[this](bool active) {
-	// 			if (params_) {
-	// 				params_->calibrate.demosaic = active;
-	// 			}
-	// 		});
+	// Dehex表
+	connect(
+		ui->lineEditDehex, &QLineEdit::textChanged, this,
+		[this](QString str) { params_->path.dehexLUT = str.toStdString(); });
+	connect(ui->toolButtonDehexOpen, &QToolButton::clicked, this, [this] {
+		emit requestLoadDehexLUT(
+			QString::fromStdString(params_->path.dehexLUT));
+	});
+	connect(ui->toolButtonDehexBrowse, &QToolButton::clicked, this, [this] {
+		QString path = QFileDialog::getOpenFileName(this, "打开Dehex表", "",
+													"LUT (*.bin)");
+		if (!path.isEmpty() && params_) {
+			params_->path.dehexLUT = path.toStdString();
+			ui->lineEditDehex->setText(path);
+			emit requestLoadDehexLUT(path);
+		}
+	});
+
+	connect(ui->comboBoxLayout, &QComboBox::currentIndexChanged, this,
+			[this](int index) {
+				params_->calibrate.orientation =
+					static_cast<Orientation>(index);
+			}); // 排列
 	connect(ui->checkBoxDiameter, &QCheckBox::toggled, this,
 			[this](bool active) {
 				ui->spinBoxDiameter->setEnabled(!active);
 				params_->calibrate.autoEstimate = active;
-			});
+			}); // 微透镜尺寸
 	connect(ui->spinBoxDiameter, &QSpinBox::valueChanged, this,
 			[this](int value) {
-				if (params_)
-					params_->calibrate.diameter = value;
-			});
+				params_->calibrate.diameter = value;
+			}); // 微透镜尺寸
 	connect(ui->comboBoxDetectAlgo, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
-				if (params_)
-					params_->calibrate.ceMethod =
-						static_cast<CentroidsExtract::Method>(index);
-			});
-	connect(ui->checkBoxGenLUT, &QCheckBox::toggled, this, [this](bool value) {
-		if (params_)
-			params_->calibrate.genLUT = value;
-	});
-	connect(ui->checkBoxSaveLUT, &QCheckBox::toggled, this, [this](bool value) {
-		if (params_)
-			params_->calibrate.saveLUT = value;
-	});
+				params_->calibrate.ceMethod = static_cast<ExtractMethod>(index);
+			}); // 检测方法
 	connect(ui->spinBoxLUTViews, &QSpinBox::valueChanged, this,
-			[this](int value) {
-				if (params_)
-					params_->calibrate.views = value;
-			});
-
-	// 按钮动作
+			[this](int value) { params_->calibrate.views = value; }); // 视角数
+	connect(ui->checkBoxGenLUT, &QCheckBox::toggled, this, [this](bool value) {
+		params_->calibrate.genLUT = value;
+	}); // 生成查找表
+	connect(ui->checkBoxSaveLUT, &QCheckBox::toggled, this, [this](bool value) {
+		params_->calibrate.saveLUT = value;
+	}); // 保存查找表
 	connect(ui->btnCalibrate, &QPushButton::clicked, this,
-			&WidgetControl::requestCalibrate);
+			&WidgetControl::requestCalibrate); // 标定按钮
 
 	// 4. ISP 管道控制
-
-	connect(ui->checkBoxDPC, &QCheckBox::toggled, this, [this](bool val) {
-		if (params_)
-			params_->isp.enableDPC = val;
-	});
-	connect(ui->checkBoxBLC, &QCheckBox::toggled, this, [this](bool val) {
-		if (params_)
-			params_->isp.enableBLC = val;
-	});
-	connect(ui->checkBoxLSC, &QCheckBox::toggled, this, [this](bool val) {
-		if (params_)
-			params_->isp.enableLSC = val;
-	});
-	connect(ui->checkBoxWB, &QCheckBox::toggled, this, [this](bool val) {
-		if (params_)
-			params_->isp.enableAWB = val;
-	});
-
-	connect(ui->checkBoxDemosaic, &QCheckBox::toggled, this, [this](bool val) {
-		if (params_)
-			params_->isp.enableDemosaic = val;
-
-		// 1. 控制直接隶属于 Demosaic 的子项
-		ui->checkBoxCCM->setEnabled(val);
-		ui->btnSetCCM->setEnabled(val);
-		ui->checkBoxGamma->setEnabled(val);
-		ui->doubleSpinBoxGamma->setEnabled(val);
-
-		// 2. 控制中间层 Extract 的可用性
-		ui->checkBoxExtract->setEnabled(val);
-
-		bool subEnable = val && ui->checkBoxExtract->isChecked();
-
-		ui->checkBoxDehex->setEnabled(subEnable);
-		ui->comboBoxColorEq->setEnabled(subEnable);
-	});
-
-	connect(ui->checkBoxCCM, &QCheckBox::toggled, this, [this](bool val) {
-		if (params_)
-			params_->isp.enableCCM = val;
-	});
-	connect(ui->checkBoxGamma, &QCheckBox::toggled, this, [this](bool val) {
-		if (params_)
-			params_->isp.enableGamma = val;
-	});
-
+	connect(ui->checkBoxDPC, &QCheckBox::toggled, this,
+			[this](bool val) { params_->isp.enableDPC = val; });
+	connect(ui->checkBoxBLC, &QCheckBox::toggled, this,
+			[this](bool val) { params_->isp.enableBLC = val; });
+	connect(ui->checkBoxLSC, &QCheckBox::toggled, this,
+			[this](bool val) { params_->isp.enableLSC = val; });
+	connect(ui->checkBoxWB, &QCheckBox::toggled, this,
+			[this](bool val) { params_->isp.enableAWB = val; });
+	connect(ui->checkBoxDemosaic, &QCheckBox::toggled, this,
+			[this](bool val) { params_->isp.enableDemosaic = val; });
+	connect(ui->checkBoxCCM, &QCheckBox::toggled, this,
+			[this](bool val) { params_->isp.enableCCM = val; });
+	connect(ui->checkBoxGamma, &QCheckBox::toggled, this,
+			[this](bool val) { params_->isp.enableGamma = val; });
 	connect(ui->checkBoxExtract, &QCheckBox::toggled, this, [this](bool val) {
-		if (params_)
-			params_->isp.enableExtract = val;
-
+		params_->isp.enableExtract = val;
 		ui->checkBoxDehex->setEnabled(val);
-		ui->comboBoxColorEq->setEnabled(val);
 	});
-	connect(ui->checkBoxDehex, &QCheckBox::toggled, this, [this](bool val) {
-		if (params_)
-			params_->isp.enableDehex = val;
-	});
+	connect(ui->checkBoxDehex, &QCheckBox::toggled, this,
+			[this](bool val) { params_->isp.enableDehex = val; });
 
 	connect(ui->comboBoxDPCAlgo, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
@@ -255,8 +249,6 @@ WidgetControl::WidgetControl(QWidget *parent)
 					static_cast<DemosaicMethod>(index);
 			});
 	connect(ui->btnSetCCM, &QPushButton::clicked, this, [this] {
-		if (!params_)
-			return;
 		DialogCCM dialog(params_->isp.ccm_matrix, this);
 		if (dialog.exec() == QDialog::Accepted) {
 			updateUI();
@@ -319,22 +311,15 @@ WidgetControl::WidgetControl(QWidget *parent)
 
 	// 5. 子孔径与播放 (SAI)
 	connect(ui->spinBoxHorz, &QSpinBox::valueChanged, this, [this](int value) {
-		if (!params_)
-			return;
 		params_->sai.col = value;
 		emit requestSAI(params_->sai.row, value);
 	});
 	connect(ui->spinBoxVert, &QSpinBox::valueChanged, this, [this](int value) {
-		if (!params_)
-			return;
 		params_->sai.row = value;
 		emit requestSAI(value, params_->sai.col);
 	});
-	// 【关键修复】播放按钮连接移到这里，只会连接一次
 	connect(ui->pushButtonViewPlay, &QPushButton::toggled, this,
 			[this](bool value) {
-				if (!params_)
-					return;
 				params_->sai.isPlaying = value;
 				ui->pushButtonViewPlay->setText(value ? "停止" : "播放");
 				if (value) {
@@ -342,8 +327,6 @@ WidgetControl::WidgetControl(QWidget *parent)
 				}
 			});
 	connect(ui->pushButtonViewCenter, &QPushButton::clicked, this, [this] {
-		if (!params_)
-			return;
 		params_->sai.row = (params_->sai.rows + 1) / 2;
 		params_->sai.col = (params_->sai.cols + 1) / 2;
 		emit requestSAI(params_->sai.row, params_->sai.col);
@@ -356,14 +339,10 @@ WidgetControl::WidgetControl(QWidget *parent)
 			[this] { emit requestColorEq(); });
 	// Refocus
 	connect(ui->spinBoxRefocusCrop, &QSpinBox::valueChanged, this,
-			[this](int value) {
-				if (params_)
-					params_->refocus.crop = value;
-			});
+			[this](int value) { params_->refocus.crop = value; });
 	connect(ui->doubleSpinBoxRefocusShift, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) {
-				if (params_)
-					params_->refocus.shift = static_cast<float>(value);
+				params_->refocus.shift = static_cast<float>(value);
 			});
 	connect(ui->btnRefocus, &QPushButton::clicked, this,
 			&WidgetControl::requestRefocus);
@@ -371,29 +350,24 @@ WidgetControl::WidgetControl(QWidget *parent)
 	// SR
 	connect(ui->comboBoxSRAlgo, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
-				if (params_)
-					params_->sr.method = static_cast<SRMethod>(index);
-			});
+				params_->sr.method = static_cast<SRMethod>(index);
+			}); // 算法选择
 	connect(ui->comboBoxSRScale, &QComboBox::currentIndexChanged, this,
-			[this](int index) {
-				if (params_)
-					params_->sr.scale = index + 2;
-			});
-	connect(ui->btnSR, &QPushButton::clicked, this, &WidgetControl::requestSR);
+			[this](int index) { params_->sr.scale = index + 2; }); // 倍数
+	connect(ui->btnSR, &QPushButton::clicked, this,
+			&WidgetControl::requestSR); // 运行按钮
 
 	// DE
-	connect(ui->comboBoxDepthAlgo, &QComboBox::currentIndexChanged, this,
+	connect(
+		ui->comboBoxDEAlgo, &QComboBox::currentIndexChanged, this,
+		[this](int index) { params_->de.color = static_cast<DEColor>(index); });
+	connect(ui->comboBoxDEColor, &QComboBox::currentIndexChanged, this,
 			[this](int index) {
-				if (params_)
-					params_->de.method = static_cast<DEMethod>(index);
-			});
-	connect(ui->comboBoxDepthPatchColor, &QComboBox::currentIndexChanged, this,
-			[this](int index) {
-				if (params_)
-					params_->de.color = static_cast<LFParamsDE::Color>(index);
+				params_->de.color = static_cast<DEColor>(index);
 				emit requestChangingColor(index);
-			});
-	connect(ui->btnDE, &QPushButton::clicked, this, &WidgetControl::requestDE);
+			}); // 改变颜色
+	connect(ui->btnDE, &QToolButton::clicked, this,
+			&WidgetControl::requestDE); // 运行按钮
 }
 
 WidgetControl::~WidgetControl() { delete ui; }
@@ -401,9 +375,7 @@ WidgetControl::~WidgetControl() { delete ui; }
 // setupParams 现在只负责设置指针和刷新 UI，不再进行信号连接
 void WidgetControl::setupParams(LFParams *params) {
 	params_ = params;
-	if (params_) {
-		updateUI();
-	}
+	updateUI();
 }
 
 void WidgetControl::updateUI() {
@@ -432,6 +404,7 @@ void WidgetControl::updateUI() {
 
 	// Calibrate (补全遗漏参数)
 	ui->spinBoxDiameter->setEnabled(!params_->calibrate.autoEstimate);
+	setValSilent(ui->comboBoxLayout, params_->calibrate.orientation);
 	setValSilent(ui->spinBoxDiameter, params_->calibrate.diameter);
 	setValSilent(ui->checkBoxDiameter, params_->calibrate.autoEstimate);
 	setValSilent(ui->comboBoxDetectAlgo, params_->calibrate.ceMethod);
@@ -469,11 +442,11 @@ void WidgetControl::updateUI() {
 	setValSilent(ui->comboBoxColorEq, params_->colorEqMethod);
 
 	// Dynamic
-	ui->spinBoxCamera->setEnabled(!params_->dynamic.cameraID.empty());
 	if (!params_->dynamic.cameraID.empty()) {
 		ui->labelCamera->setText(
-			"检测到设备数: "
-			+ QString::number(params_->dynamic.cameraID.size()));
+			QString("设备ID: %1").arg(params_->dynamic.cameraID[0]));
+	} else {
+		ui->labelCamera->setText(QString("无可用设备"));
 	}
 	setValSilent(ui->checkBoxShowLFP, params_->dynamic.showLFP);
 	setValSilent(ui->checkBoxShowSAI, params_->dynamic.showSAI);
@@ -496,7 +469,6 @@ void WidgetControl::updateUI() {
 	setValSilent(ui->comboBoxSRScale, params_->sr.scale - 2);
 
 	// DE
-	setValSilent(ui->comboBoxDepthAlgo, params_->de.method);
-	setValSilent(ui->comboBoxDepthPatchColor,
-				 static_cast<int>(params_->de.color));
+	setValSilent(ui->comboBoxDEAlgo, params_->de.method);
+	setValSilent(ui->comboBoxDEColor, static_cast<int>(params_->de.color));
 }

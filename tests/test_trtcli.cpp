@@ -8,9 +8,9 @@ int main() {
 	config.inputName = "input";
 	config.optShape = "1x1x780x540";
 	config.trtexecPath = "trtexec";
-	config.onnxPath = "../data/DistgSSR_2xSR_5x5_780x540.onnx";
+	config.onnxPath = "../models/DistgSSR_2xSR_5x5_780x540.onnx";
 	config_Windows.enginePath =
-		"../data/DistgSSR_2xSR_5x5_780x540_Windows.engine";
+		"../models/DistgSSR_2xSR_5x5_780x540_Windows.engine";
 
 	config.fp16 = true; // 开启 FP16
 

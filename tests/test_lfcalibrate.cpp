@@ -41,7 +41,7 @@ void test_module() {
 
 	CentroidsExtract ce(img);
 
-	ce.run(CentroidsExtract::Method::Contour);
+	ce.run(ExtractMethod::Contour);
 	timer.stop();
 
 	std::vector<cv::Point2f> pts = ce.getPoints();
@@ -141,7 +141,7 @@ void test_calibrate() {
 	cv::demosaicing(img, demosic, cv::COLOR_BayerGB2GRAY);
 	demosic.convertTo(demosic, CV_8U, 255.0 / 1023.0);
 	imshowRaw("demosic", demosic);
-	cv::imwrite("../../data/demosaic.png", demosic);
+	cv::imwrite("../../models/Demosaic.png", demosic);
 	cv::waitKey();
 
 	// LFCalibrate cali(img);
@@ -179,8 +179,8 @@ void test_lut() {
 	LFCalibrate cali(img);
 	Timer timer;
 
-	LFCalibrate::Config config;
-	config.ceMethod = CentroidsExtract::Method::Contour;
+	CalibrateConfig config;
+	config.ceMethod = ExtractMethod::Contour;
 	config.bayer = BayerPattern::NONE;
 	config.bitDepth = 8;
 	cali.run(config);
@@ -268,7 +268,7 @@ void test_detach() {
 
 	cv::imwrite("../data/gray.png", gray);
 	cv::imwrite("../data/enhanced.png", enhanced);
-	cv::imwrite("../data/dog.png", dog);
+	cv::imwrite("../models/Dog.png", dog);
 	cv::imwrite("../data/binary.png", binary);
 
 	cv::waitKey();

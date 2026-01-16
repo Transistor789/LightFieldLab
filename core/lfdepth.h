@@ -8,10 +8,11 @@
 #include <vector>
 
 enum class DEMethod { DistgDisp, OACC };
+enum class DEColor { Gray, Jet, Plasma };
 
-class LFDisp {
+class LFDepthEstimation {
 public:
-	explicit LFDisp() = default;
+	explicit LFDepthEstimation() = default;
 
 	/**
 	 * @brief 计算深度图
@@ -27,7 +28,7 @@ public:
 	cv::Mat getGrayVisual() const;
 	cv::Mat getJetVisual() const;
 	cv::Mat getPlasmaVisual() const;
-
+	cv::Mat getVisualizedResult(DEColor color) const;
 	// 参数设置 (分辨率和PatchSize通常是全局配置，保留Setter)
 	void setAngRes(int angRes) { m_targetAngRes = angRes; }
 	void setPatchSize(int patchSize) { m_targetPatchSize = patchSize; }
@@ -44,7 +45,7 @@ private:
 
 	// --- 参数状态管理 ---
 	int m_targetAngRes = 9;		 // 用户设定的目标角度分辨率
-	int m_targetPatchSize = 196; // 用户设定的目标 Patch 大小
+	int m_targetPatchSize = 128; // 用户设定的目标 Patch 大小
 
 	// --- 当前已加载的模型状态 (缓存) ---
 	int m_loadedAngRes = -1;					   // 当前引擎的角度分辨率

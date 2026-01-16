@@ -88,7 +88,7 @@ public:
 	// openmp+simd
 	LFIsp &blc_fast(int black_level);
 	LFIsp &blc_fast(int black_level, int white_level);
-	LFIsp &dpc_fast(DpcMethod method, int threshold = 100); // TODO
+	LFIsp &dpc_fast(DpcMethod method, int threshold = 100);
 	LFIsp &lsc_fast(float exposure);
 	LFIsp &awb_fast(const std::vector<float> &wbgains);
 	LFIsp &lsc_awb_fused_fast(float exposure,

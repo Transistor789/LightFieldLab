@@ -221,9 +221,15 @@ add_custom_target(CopyDependencies ALL COMMENT "Checking and copying runtime res
 # 2. [通用] 拷贝 Data 目录
 #    现在这段逻辑在 if(WIN32) 之外，所有平台都会把源码下的 data 拷到 build/data
 add_custom_command(TARGET CopyDependencies POST_BUILD
+    # 拷贝 data 文件夹
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     "${CMAKE_SOURCE_DIR}/data" "${CMAKE_BINARY_DIR}/data"
-    COMMENT "Copying data folder to build directory..."
+
+    # 拷贝 models 文件夹
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_SOURCE_DIR}/models" "${CMAKE_BINARY_DIR}/models"
+
+    COMMENT "Copying data and models folders to build directory..."
 )
 
 # ==============================================================================

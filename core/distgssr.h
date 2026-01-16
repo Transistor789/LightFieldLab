@@ -11,7 +11,7 @@ public:
 	explicit DistgSSR() {
 		scale_ = 2;
 		ang_res_ = 5;
-		patch_size_ = 196;
+		patch_size_ = 128;
 		padding_ = 8;
 		center_only_ = true;
 	}

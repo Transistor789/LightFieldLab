@@ -23,19 +23,25 @@
 #include <string>
 #include <thread>
 
+const std::string CONFIG_FILE = "data/config.json";
+
 LFControl::LFControl(QObject *parent) : QObject(parent) {
 	cal = std::make_unique<LFCalibrate>();
 	ref = std::make_unique<LFRefocus>();
-	sr = std::make_unique<LFSuperRes>();
-	dep = std::make_unique<LFDisp>();
+	sr = std::make_unique<LFSuperResolution>();
+	dep = std::make_unique<LFDepthEstimation>();
 	cap = std::make_unique<LFCapture>();
 	isp = std::make_unique<LFIsp>();
 
 	cap_thread = std::thread(&LFControl::captureTask, this);
 	proc_thread = std::thread(&LFControl::processTask, this);
+
+	loadSettings();
+	emit paramsChanged();
 }
 
 LFControl::~LFControl() {
+	saveSettings();
 	stopAll();
 
 	if (cap_thread.joinable()) {
@@ -98,6 +104,7 @@ void LFControl::captureTask() {
 	if (!cap)
 		return;
 
+	LOG_INFO("Start capturing ...");
 	while (!params.dynamic.exit.load()) {
 		if (!params.dynamic.isCapturing.load()) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -106,7 +113,6 @@ void LFControl::captureTask() {
 
 		cv::Mat img = cap->getFrame();
 		// cv::Mat img;
-		LOG_INFO("Capturing ...");
 
 		params.dynamic.capFrameCount++;
 		if (img.empty()) {
@@ -115,6 +121,7 @@ void LFControl::captureTask() {
 			continue;
 		}
 		if (params.dynamic.showLFP) {
+			cv::imwrite("data/raw.png", img);
 			emit imageReady(ImageType::LFP,
 							cvMatToQImage(img, params.dynamic.bitDepth));
 		}
@@ -128,6 +135,7 @@ void LFControl::captureTask() {
 
 		m_queueCv.notify_one();
 	}
+	LOG_INFO("Stop capturing ...");
 }
 
 void LFControl::processTask() {
@@ -142,8 +150,7 @@ void LFControl::processTask() {
 						   && params.dynamic.isProcessing.load());
 			});
 
-			LOG_INFO("Processing");
-			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			// std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
 			if (params.dynamic.exit) {
 				return;
@@ -156,13 +163,14 @@ void LFControl::processTask() {
 			data_queue.pop();
 
 			isp->set_lf_img(img);
-			isp->preview(params.isp).resample(true);
-			lf = std::make_shared<LFData>(isp->getSAIs());
+			LOG_INFO("Processing");
+			// isp->preview(params.isp).resample(true);
+			// lf = std::make_shared<LFData>(isp->getSAIs());
 			params.dynamic.procFrameCount++;
-			if (params.dynamic.showLFP) {
-				emit imageReady(ImageType::Center,
-								cvMatToQImage(lf->getCenter(), 8));
-			}
+			// if (params.dynamic.showLFP) {
+			// 	emit imageReady(ImageType::Center,
+			// 					cvMatToQImage(lf->getCenter(), 8));
+			// }
 		}
 	}
 }
@@ -170,7 +178,6 @@ void LFControl::processTask() {
 void LFControl::readSAI(const QString &path) {
 	runAsync(
 		[this, path] {
-			params.path.sai = path.toStdString();
 			// 1. 耗时操作
 			std::shared_ptr<LFData> tempLF = LFIO::ReadSAI(path.toStdString());
 
@@ -195,7 +202,6 @@ void LFControl::readSAI(const QString &path) {
 void LFControl::readLFP(const QString &path) {
 	runAsync(
 		[this, path] {
-			params.path.lfp = path.toStdString();
 			if (params.imageType == ImageFileType::Lytro) {
 				json LfpMeta;
 				// 读取 LFP 并获取元数据 j
@@ -238,18 +244,19 @@ void LFControl::readLFP(const QString &path) {
 void LFControl::readWhite(const QString &path) {
 	runAsync(
 		[this, path] {
-			params.path.white = path.toStdString();
 			json WhiteMeta;
 			if (params.imageType == ImageFileType::Lytro) {
 				white =
 					LFIO::ReadWhiteImageManual(path.toStdString(), WhiteMeta);
 				params.image.bitDepth = 10;
 				params.image.bayer = BayerPattern::GRBG;
+				isp->initConfig(white, params.isp);
 			} else if (params.imageType == ImageFileType::Raw) {
 			} else {
 				white = LFIO::ReadStandardImage(path.toStdString());
 			}
-			isp->initConfig(white, params.isp);
+
+			// print_mat_info("white", white);
 			params.image.height = white.size().height;
 			params.image.width = white.size().width;
 			emit imageReady(ImageType::White,
@@ -286,9 +293,13 @@ void LFControl::readDehexLUT(const QString &path) {
 void LFControl::calibrate() {
 	runAsync(
 		[this] {
-			cal->setImage(white);
-			cal->run(params.calibrate);
+			// cal->setImage(white);
+			cal->run(white, params.calibrate);
 			params.calibrate.diameter = cal->getDiameter();
+			if (params.calibrate.genLUT) {
+				isp->maps.extract = cal->getExtractMaps();
+				isp->maps.dehex = cal->getDehexMaps();
+			}
 			if (params.calibrate.saveLUT && !cal->isExtractLutEmpty()
 				&& !cal->isDehexLutEmpty()) {
 				LFIO::SaveLookUpTables(
@@ -298,8 +309,7 @@ void LFControl::calibrate() {
 				LFIO::SaveLookUpTables("data/calibration/lut_dehex.bin",
 									   cal->getDehexMaps(), 1);
 			}
-			params.sai.cols = params.sai.rows = params.calibrate.views;
-			cv::Mat draw = draw_points(white, cal->getPoints(), "", 1,
+			cv::Mat draw = draw_points(white, cal->getPoints(), "", 0,
 									   cv::Scalar(0), false);
 			emit imageReady(ImageType::White,
 							cvMatToQImage(draw, params.image.bitDepth));
@@ -332,13 +342,6 @@ void LFControl::process() {
 				emit imageReady(ImageType::LFP,
 								cvMatToQImage(isp->getResultGpu(), 8));
 			}
-
-			// if (!params.isp.enableExtract) {
-			// 	emit imageReady(
-			// 		ImageType::LFP,
-			// 		cvMatToQImage(isp->getResult(), params.image.bitDepth));
-			// 	return; // ---> 提前结束
-			// }
 
 			params.sai.cols = lf->cols;
 			params.sai.rows = lf->rows;
@@ -571,22 +574,17 @@ void LFControl::upsample() {
 					+ std::to_string(lf->data[0].depth()));
 				return;
 			}
-
+			sr->setScale(params.sr.scale);
 			if (params.sr.method < SRMethod::ESPCN) {
 				auto img = sr->upsample(lf->getCenter(), params.sr.method);
-
-				// 结果必定是 8-bit，直接显示
 				emit imageReady(ImageType::SR, cvMatToQImage(img, 8));
 			} else if (params.sr.method < SRMethod::DISTGSSR) {
 				auto img = sr->upsample(lf->getCenter(), params.sr.method);
-
 				emit imageReady(ImageType::SR, cvMatToQImage(img, 8));
 			} else {
-				// 直接传入 lf->data，无需再创建 views_8u 临时副本
 				auto views = sr->upsample(lf->data, params.sr.method);
 
 				if (!views.empty()) {
-					// 显示中间视点
 					emit imageReady(ImageType::SR,
 									cvMatToQImage(views[views.size() / 2], 8));
 				}
@@ -619,17 +617,9 @@ void LFControl::depth() {
 					"[Depth Estimation] Failed: Algorithm returned error.");
 				return;
 			}
-
-			if (params.de.color == LFParamsDE::Color::Gray) {
-				emit imageReady(ImageType::Depth,
-								cvMatToQImage(dep->getGrayVisual()));
-			} else if (params.de.color == LFParamsDE::Color::Jet) {
-				emit imageReady(ImageType::Depth,
-								cvMatToQImage(dep->getJetVisual()));
-			} else {
-				emit imageReady(ImageType::Depth,
-								cvMatToQImage(dep->getPlasmaVisual()));
-			}
+			emit imageReady(
+				ImageType::Depth,
+				cvMatToQImage(dep->getVisualizedResult(params.de.color), 8));
 		},
 		"Depth estimation");
 }
@@ -637,16 +627,9 @@ void LFControl::depth() {
 void LFControl::colorChanged(int index) {
 	runAsync(
 		[this, index] {
-			if (params.de.color == LFParamsDE::Color::Gray) {
-				emit imageReady(ImageType::Depth,
-								cvMatToQImage(dep->getGrayVisual()));
-			} else if (params.de.color == LFParamsDE::Color::Jet) {
-				emit imageReady(ImageType::Depth,
-								cvMatToQImage(dep->getJetVisual()));
-			} else {
-				emit imageReady(ImageType::Depth,
-								cvMatToQImage(dep->getPlasmaVisual()));
-			}
+			emit imageReady(
+				ImageType::Depth,
+				cvMatToQImage(dep->getVisualizedResult(params.de.color), 8));
 		},
 		"Depth estimation");
 }
@@ -715,5 +698,38 @@ QImage LFControl::cvMatToQImage(const cv::Mat &inMat, int bitDepth) {
 		// 递归调用自己
 		// 此时 temp 已经是 CV_8U，bitDepth 参数不再重要，传入 8 即可
 		return cvMatToQImage(temp, 8);
+	}
+}
+
+void LFControl::loadSettings() {
+	if (!std::filesystem::exists(CONFIG_FILE)
+		|| !std::filesystem::is_regular_file(CONFIG_FILE)) {
+		LOG_INFO(
+			std::format("Config file {} not found or invalid. Skipping load.",
+						CONFIG_FILE));
+		return;
+	}
+
+	std::ifstream i(CONFIG_FILE);
+	if (i.is_open()) {
+		try {
+			nlohmann::json j;
+			i >> j;
+			j.get_to(params);
+			LOG_INFO("Settings loaded successfully.");
+		} catch (const std::exception &e) {
+			LOG_ERROR(std::format("Failed to parse settings: {}", e.what()));
+		}
+	} else {
+		LOG_INFO("No settings file found, using defaults.");
+	}
+}
+
+void LFControl::saveSettings() {
+	std::ofstream o(CONFIG_FILE);
+	if (o.is_open()) {
+		nlohmann::json j = params;
+		o << j.dump(4); // 格式化输出，缩进4空格
+		LOG_INFO("Settings saved to " + CONFIG_FILE);
 	}
 }

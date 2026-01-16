@@ -2,14 +2,15 @@
 
 #include <format> // C++20
 #include <iostream>
+#include <opencv2/highgui.hpp>
 
-LFSuperRes::LFSuperRes() {
-	m_modelPath = "data/opencv_srmodel/";
-	m_trtEnginePath = "data/";
+LFSuperResolution::LFSuperResolution() {
+	m_modelPath = "models/";
+	m_trtEnginePath = "models/";
 }
 
-void LFSuperRes::setModelPaths(const std::string &opencvPath,
-							   const std::string &trtPath) {
+void LFSuperResolution::setModelPaths(const std::string &opencvPath,
+									  const std::string &trtPath) {
 	m_modelPath = opencvPath;
 	m_trtEnginePath = trtPath;
 	// 路径改变强制重置缓存状态，确保下次重新加载
@@ -17,16 +18,17 @@ void LFSuperRes::setModelPaths(const std::string &opencvPath,
 }
 
 // --- 核心多图接口 ---
-std::vector<cv::Mat> LFSuperRes::upsample(const std::vector<cv::Mat> &views,
-										  SRMethod method) {
+std::vector<cv::Mat> LFSuperResolution::upsample(
+	const std::vector<cv::Mat> &views, SRMethod method) {
 	if (views.empty()) {
-		std::cerr << "[LFSuperRes] Error: No views loaded!" << std::endl;
+		std::cerr << "[LFSuperResolution] Error: No views loaded!" << std::endl;
 		return {};
 	}
 
 	// [新增] 强制检查 8-bit
 	if (views[0].depth() != CV_8U) {
-		std::cerr << "[LFSuperRes] Error: Input must be 8-bit (CV_8U). Current "
+		std::cerr << "[LFSuperResolution] Error: Input must be 8-bit (CV_8U). "
+					 "Current "
 					 "depth: "
 				  << views[0].depth() << std::endl;
 		return {};
@@ -34,8 +36,9 @@ std::vector<cv::Mat> LFSuperRes::upsample(const std::vector<cv::Mat> &views,
 
 	// 1. 智能加载/切换模型
 	if (!checkAndLoadModel(method)) {
-		std::cerr << "[LFSuperRes] Model load failed. Falling back to LINEAR."
-				  << std::endl;
+		std::cerr
+			<< "[LFSuperResolution] Model load failed. Falling back to LINEAR."
+			<< std::endl;
 		if (method != SRMethod::LINEAR) {
 			return upsample(views, SRMethod::LINEAR);
 		}
@@ -69,13 +72,13 @@ std::vector<cv::Mat> LFSuperRes::upsample(const std::vector<cv::Mat> &views,
 }
 
 // --- 单图接口重载 ---
-cv::Mat LFSuperRes::upsample(const cv::Mat &src, SRMethod method) {
+cv::Mat LFSuperResolution::upsample(const cv::Mat &src, SRMethod method) {
 	if (src.empty())
 		return cv::Mat();
 
 	// [新增] 强制检查 8-bit
 	if (src.depth() != CV_8U) {
-		std::cerr << "[LFSuperRes] Error: Input image must be 8-bit."
+		std::cerr << "[LFSuperResolution] Error: Input image must be 8-bit."
 				  << std::endl;
 		return cv::Mat();
 	}
@@ -83,9 +86,9 @@ cv::Mat LFSuperRes::upsample(const cv::Mat &src, SRMethod method) {
 	std::vector<cv::Mat> inputs = {src};
 
 	if (method == SRMethod::DISTGSSR) {
-		std::cerr
-			<< "[LFSuperRes] Warning: DistgSSR requires Light Field (vector)."
-			<< std::endl;
+		std::cerr << "[LFSuperResolution] Warning: DistgSSR requires Light "
+					 "Field (vector)."
+				  << std::endl;
 	}
 
 	std::vector<cv::Mat> results = upsample(inputs, method);
@@ -96,7 +99,7 @@ cv::Mat LFSuperRes::upsample(const cv::Mat &src, SRMethod method) {
 }
 
 // --- 智能加载逻辑 ---
-bool LFSuperRes::checkAndLoadModel(SRMethod targetMethod) {
+bool LFSuperResolution::checkAndLoadModel(SRMethod targetMethod) {
 	// 1. 检查是否是传统插值方法 (无需加载文件)
 	if (!isDeepLearningMethod(targetMethod)) {
 		// 仅更新状态记录，直接返回成功
@@ -123,8 +126,9 @@ bool LFSuperRes::checkAndLoadModel(SRMethod targetMethod) {
 		return true;
 	}
 
-	std::cout << "[LFSuperRes] State change detected. Preparing to load..."
-			  << std::endl;
+	std::cout
+		<< "[LFSuperResolution] State change detected. Preparing to load..."
+		<< std::endl;
 
 	// 3. 执行加载
 	bool success = false;
@@ -148,13 +152,14 @@ bool LFSuperRes::checkAndLoadModel(SRMethod targetMethod) {
 	return success;
 }
 
-bool LFSuperRes::loadDistgSSR() {
+bool LFSuperResolution::loadDistgSSR() {
 	int totalRes = m_targetAngRes * m_targetPatchSize;
 
 	// 检查 Scale 支持 (DistgSSR 通常只支持 x2, x4)
 	if (m_targetScale != 2 && m_targetScale != 4) {
-		std::cerr << "[LFSuperRes] Error: DistgSSR only supports scale 2 or 4."
-				  << std::endl;
+		std::cerr
+			<< "[LFSuperResolution] Error: DistgSSR only supports scale 2 or 4."
+			<< std::endl;
 		return false;
 	}
 
@@ -172,11 +177,11 @@ bool LFSuperRes::loadDistgSSR() {
 					totalRes, totalRes, osSuffix);
 	auto fullPath = m_trtEnginePath / engineName;
 
-	std::cout << "[LFSuperRes] Loading DistgSSR Engine: " << fullPath.string()
-			  << std::endl;
+	std::cout << "[LFSuperResolution] Loading DistgSSR Engine: "
+			  << fullPath.string() << std::endl;
 
 	if (!std::filesystem::exists(fullPath)) {
-		std::cerr << "[LFSuperRes] File not found: " << fullPath.string()
+		std::cerr << "[LFSuperResolution] File not found: " << fullPath.string()
 				  << std::endl;
 		return false;
 	}
@@ -190,13 +195,13 @@ bool LFSuperRes::loadDistgSSR() {
 		distg.readEngine(fullPath.string());
 		return true;
 	} catch (const std::exception &e) {
-		std::cerr << "[LFSuperRes] DistgSSR load exception: " << e.what()
+		std::cerr << "[LFSuperResolution] DistgSSR load exception: " << e.what()
 				  << std::endl;
 		return false;
 	}
 }
 
-bool LFSuperRes::loadOpenCVDNN(SRMethod method) {
+bool LFSuperResolution::loadOpenCVDNN(SRMethod method) {
 	std::string modelName = getModelNameFromMethod(method);
 	if (modelName.empty())
 		return false;
@@ -207,11 +212,11 @@ bool LFSuperRes::loadOpenCVDNN(SRMethod method) {
 	std::string fileName = std::format("{}_x{}.pb", modelName, m_targetScale);
 	auto fullPath = m_modelPath / fileName;
 
-	std::cout << "[LFSuperRes] Loading OpenCV Model: " << fullPath.string()
-			  << std::endl;
+	std::cout << "[LFSuperResolution] Loading OpenCV Model: "
+			  << fullPath.string() << std::endl;
 
 	if (!std::filesystem::exists(fullPath)) {
-		std::cerr << "[LFSuperRes] File not found: " << fullPath.string()
+		std::cerr << "[LFSuperResolution] File not found: " << fullPath.string()
 				  << std::endl;
 		return false;
 	}
@@ -221,15 +226,15 @@ bool LFSuperRes::loadOpenCVDNN(SRMethod method) {
 		opencv_dnn_sr.setModel(modelName, m_targetScale);
 		return true;
 	} catch (const cv::Exception &e) {
-		std::cerr << "[LFSuperRes] OpenCV DNN load exception: " << e.what()
-				  << std::endl;
+		std::cerr << "[LFSuperResolution] OpenCV DNN load exception: "
+				  << e.what() << std::endl;
 		return false;
 	}
 }
 
 // --- 辅助函数 ---
 
-std::string LFSuperRes::getModelNameFromMethod(SRMethod method) const {
+std::string LFSuperResolution::getModelNameFromMethod(SRMethod method) const {
 	switch (method) {
 		case SRMethod::ESPCN:
 			return "espcn";
@@ -241,7 +246,7 @@ std::string LFSuperRes::getModelNameFromMethod(SRMethod method) const {
 	}
 }
 
-int LFSuperRes::MethodToInterFlag(SRMethod method) const {
+int LFSuperResolution::MethodToInterFlag(SRMethod method) const {
 	switch (method) {
 		case SRMethod::NEAREST:
 			return cv::INTER_NEAREST;
@@ -254,7 +259,7 @@ int LFSuperRes::MethodToInterFlag(SRMethod method) const {
 	}
 }
 
-bool LFSuperRes::isDeepLearningMethod(SRMethod method) const {
+bool LFSuperResolution::isDeepLearningMethod(SRMethod method) const {
 	return (method == SRMethod::ESPCN || method == SRMethod::FSRCNN
 			|| method == SRMethod::DISTGSSR);
 }

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
+#include <opencv2/imgcodecs.hpp>
 
 cv::Mat LFIO::ReadStandardImage(const std::string &path) {
 	cv::Mat img = cv::imread(path, cv::IMREAD_UNCHANGED);
@@ -115,28 +116,7 @@ std::shared_ptr<LFData> LFIO::ReadSAI(const std::string &path) {
 // 因为文件大小可能不同，读取解码时间不一，动态调度防止线程空等
 #pragma omp parallel for schedule(dynamic)
 	for (int i = 0; i < total_files; ++i) {
-		// 构建全路径
-		std::string full_path = path + "/" + filenames[i];
-
-		// A. 读取 (IO + 解码)
-		temp[i] = cv::imread(full_path, cv::IMREAD_COLOR);
-		// cv::Mat raw_img = cv::imread(full_path, cv::IMREAD_COLOR);
-
-		// 鲁棒性检查
-		// 		if (raw_img.empty()) {
-		// // 在多线程里打印要注意，最好用原子操作或忽略，这里简单打印
-		// #pragma omp critical
-		// 			std::cerr << "[Warning] Failed to read: " << filenames[i]
-		// 					  << std::endl;
-		// 			continue;
-		// 		}
-
-		// B. 转换 (计算)
-		// 【关键优化】：读完立刻转！
-		// 此时 raw_img 的像素数据还在 CPU 缓存里，convertTo 速度极快
-		// raw_img.convertTo(temp[i], CV_32FC(raw_img.channels()), 1.0 / 255.0);
-
-		// raw_img 在这里析构，释放 8-bit 内存，降低峰值内存占用
+		temp[i] = cv::imread(path + "/" + filenames[i], cv::IMREAD_COLOR);
 	}
 
 	return std::make_shared<LFData>(std::move(temp));
