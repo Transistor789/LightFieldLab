@@ -33,10 +33,6 @@ struct LFParamsSAI {
 	bool isPlaying = false;
 };
 
-struct LFParamsCalibrate {
-	CalibrateConfig config;
-};
-
 struct LFParamsDynamic {
 	std::vector<int> cameraID;
 	std::atomic<bool> exit = false;
@@ -97,44 +93,35 @@ NLOHMANN_JSON_SERIALIZE_ENUM(BayerPattern, {{BayerPattern::NONE, "NONE"},
 											{BayerPattern::GBRG, "GBRG"},
 											{BayerPattern::BGGR, "BGGR"}})
 
-NLOHMANN_JSON_SERIALIZE_ENUM(ExtractMethod,
-							 {{ExtractMethod::Contour, "Contour"},
-							  {ExtractMethod::GrayGravity, "GrayGravity"},
-							  {ExtractMethod::CCA, "CCA"},
-							  {ExtractMethod::LOG_NMS, "LOG_NMS"}})
+NLOHMANN_JSON_SERIALIZE_ENUM(ExtractMethod, {{ExtractMethod::Contour, "Contour"},
+											 {ExtractMethod::GrayGravity, "GrayGravity"},
+											 {ExtractMethod::CCA, "CCA"},
+											 {ExtractMethod::LOG_NMS, "LOG_NMS"}})
 
-NLOHMANN_JSON_SERIALIZE_ENUM(Orientation, {{Orientation::HORZ, "HORZ"},
-										   {Orientation::VERT, "VERT"}})
+NLOHMANN_JSON_SERIALIZE_ENUM(Orientation, {{Orientation::HORZ, "HORZ"}, {Orientation::VERT, "VERT"}})
 
 NLOHMANN_JSON_SERIALIZE_ENUM(DpcMethod, {{DpcMethod::Diretional, "Diretional"}})
 
-NLOHMANN_JSON_SERIALIZE_ENUM(DemosaicMethod,
-							 {{DemosaicMethod::Bilinear, "Bilinear"},
-							  {DemosaicMethod::Gray, "EdgeAware"},
-							  {DemosaicMethod::VGN, "VGN"},
-							  {DemosaicMethod::EA, "EA"}})
+NLOHMANN_JSON_SERIALIZE_ENUM(DemosaicMethod, {{DemosaicMethod::Bilinear, "Bilinear"},
+											  {DemosaicMethod::Gray, "EdgeAware"},
+											  {DemosaicMethod::VGN, "VGN"},
+											  {DemosaicMethod::EA, "EA"}})
 
-NLOHMANN_JSON_SERIALIZE_ENUM(Device,
-							 {{Device::CPU, "CPU"}, {Device::GPU, "GPU"}})
+NLOHMANN_JSON_SERIALIZE_ENUM(Device, {{Device::CPU, "CPU"}, {Device::GPU, "GPU"}})
 
-NLOHMANN_JSON_SERIALIZE_ENUM(ColorEqualizeMethod,
-							 {{ColorEqualizeMethod::Reinhard, "Reinhard"},
-							  {ColorEqualizeMethod::HistMatch, "HistMatch"},
-							  {ColorEqualizeMethod::MKL, "MKL"},
-							  {ColorEqualizeMethod::MVGD, "MVGD"},
-							  {ColorEqualizeMethod::HM_MKL_HM, "HM_MKL_HM"},
-							  {ColorEqualizeMethod::HM_MVGD_HM, "HM_MVGD_HM"}})
+NLOHMANN_JSON_SERIALIZE_ENUM(ColorEqualizeMethod, {{ColorEqualizeMethod::Reinhard, "Reinhard"},
+												   {ColorEqualizeMethod::HistMatch, "HistMatch"},
+												   {ColorEqualizeMethod::MKL, "MKL"},
+												   {ColorEqualizeMethod::MVGD, "MVGD"},
+												   {ColorEqualizeMethod::HM_MKL_HM, "HM_MKL_HM"},
+												   {ColorEqualizeMethod::HM_MVGD_HM, "HM_MVGD_HM"}})
 
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(LFParamsPath, lfp, sai, white, extractLUT,
-								   dehexLUT, srModel, deModel)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(CalibrateConfig, genLUT, saveLUT,
-								   autoEstimate, diameter, bitDepth, views,
-								   bayer, ceMethod, orientation)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(IspConfig, dpcThreshold, lscExp, enableBLC,
-								   enableDPC, enableLSC, enableAWB,
-								   enableDemosaic, enableCCM, enableGamma,
-								   enableExtract, enableDehex, benchmark,
-								   dpcMethod, demosaicMethod, device)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(LFParams, imageType, path, calibrate, isp,
-								   colorEqMethod)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(LFParamsPath, lfp, sai, white, extractLUT, dehexLUT, srModel, deModel)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(CalibrateConfig, hexgridfit, genLUT, autoEstimate, diameter, bitDepth, views, bayer,
+								   ceMethod, orientation)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(IspConfig, dpcThreshold, nr_sigma_r, nr_sigma_s, lscExp, enableBLC, enableDPC,
+								   enableNR, enableLSC, enableAWB, enableDemosaic, enableCCM, enableGamma,
+								   enableExtract, enableDehex, benchmark, dpcMethod, demosaicMethod, device)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(LFParams, imageType, path, calibrate, isp, colorEqMethod)
+
 #endif

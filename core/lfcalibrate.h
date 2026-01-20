@@ -2,10 +2,13 @@
 #define LFCALIBRATE_H
 
 #include "centers_extract.h"
+#include "hexgrid_fit.h"
 #include "json.hpp"
 #include "utils.h"
 
+#include <memory>
 #include <opencv2/opencv.hpp>
+#include <utility>
 #include <vector>
 
 namespace nlohmann {
@@ -22,12 +25,13 @@ struct adl_serializer<cv::Point2f> {
 enum class Orientation { HORZ, VERT };
 
 struct CalibrateConfig {
+	bool hexgridfit = false;
 	bool genLUT = false;
-	bool saveLUT = false;
 	bool autoEstimate = false;
 	int diameter = 0;
 	int bitDepth = 8;
 	int views = 9;
+	float space = 1.0;
 	BayerPattern bayer = BayerPattern::NONE;
 	ExtractMethod ceMethod = ExtractMethod::Contour;
 	Orientation orientation = Orientation::HORZ;
@@ -43,7 +47,6 @@ public:
 	void setImage(const cv::Mat &img);
 
 	// 核心运行流程：检测、排序、拟合
-	void run(const CalibrateConfig &cfg);
 	void run(const cv::Mat &img, const CalibrateConfig &cfg);
 
 	// 工具函数
@@ -53,24 +56,20 @@ public:
 	int getDiameter() const { return _diameter; }
 	std::vector<cv::Mat> getExtractMaps() const;
 	std::vector<cv::Mat> getDehexMaps() const;
+	std::shared_ptr<HexGridFitter> getFitter() const { return _fitter; }
 	bool isExtractLutEmpty() const { return _extract_maps.empty(); }
 	bool isDehexLutEmpty() const { return _dehex_maps.empty(); }
 
-	std::vector<std::vector<cv::Point2f>> getPoints() const { return _points; }
+	std::pair<cv::Mat, cv::Mat> getPoints() const { return _maps; }
 
-	const std::vector<cv::Mat> &computeExtractMaps(int winSize);
+	const std::vector<cv::Mat> &computeExtractMaps(int winSize, float space = 1.0f);
 	const std::vector<cv::Mat> &computeDehexMaps();
 
 	// 获取 Dehex Maps
 
 private:
-	// 内部 Worker 函数
-	void _computeExtractMaps(int winSize);
-	void _computeDehexMaps();
-
-private:
 	cv::Mat _white_img;
-	std::vector<std::vector<cv::Point2f>> _points;
+	std::pair<cv::Mat, cv::Mat> _maps;
 
 	// 标定状态
 	bool _hex_odd = false; // [新增] 存储从排序步骤获取的奇偶行相位
@@ -79,6 +78,7 @@ private:
 	// 缓存
 	std::vector<cv::Mat> _extract_maps;
 	std::vector<cv::Mat> _dehex_maps;
+	std::shared_ptr<HexGridFitter> _fitter = nullptr;
 };
 
 #endif // LFCALIBRATE_H

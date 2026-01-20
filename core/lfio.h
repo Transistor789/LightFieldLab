@@ -55,6 +55,9 @@ public:
 
 	// === SAI 读取 ===
 	static std::shared_ptr<LFData> ReadSAI(const std::string &path);
+	static void SaveSAI(const std::string &path, std::shared_ptr<LFData> lf);
+	static void SaveSAI(const std::string &path,
+						const std::vector<cv::Mat> &lf);
 
 	// === LUT IO ===
 	static bool SaveLookUpTables(const std::string &path,

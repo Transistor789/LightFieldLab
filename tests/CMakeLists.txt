@@ -25,6 +25,7 @@ set(SRCS_ALGO
     ${SOURCE_DIR}/centers_sort.cpp
     ${SOURCE_DIR}/hexgrid_fit.cpp
     ${SOURCE_DIR}/dpc.cu
+    ${SOURCE_DIR}/nr.cu
     ${SOURCE_DIR}/lsc.cu
     ${SOURCE_DIR}/awb.cu
     ${SOURCE_DIR}/lsc_awb.cu
@@ -168,6 +169,7 @@ add_executable(test_lfsuperres
     ${SRCS_COMMON}
     ${SRCS_INFER}
 )
+target_include_directories(test_lfsuperres PRIVATE "${Eigen_DIR}")
 target_link_libraries(test_lfsuperres PRIVATE ${LIBS_BASIC} opencv_dnn_superres ${NVINFER_LIB} CUDA::cudart)
 
 # ==============================================================================
@@ -200,3 +202,7 @@ add_executable(test_log
 )
 target_include_directories(test_log PRIVATE "${Eigen_DIR}")
 target_link_libraries(test_log PRIVATE ${OpenCV_LIBS})
+
+
+add_executable(test_brisque test_brisque_comp.cpp)
+target_link_libraries(test_brisque ${OpenCV_LIBS})

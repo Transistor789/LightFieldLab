@@ -31,34 +31,7 @@ LFCapture::LFCapture() {
 			  << std::endl;
 #endif
 
-	// ================= 修改点 2: 区分 VideoCapture 后端 =================
-#if defined(_WIN32) || defined(_WIN64)
-	// Windows: 使用 DirectShow 接口
-	cap.open(0, cv::CAP_DSHOW);
-#else
-	// Linux: 使用默认接口 (通常是 V4L2)
-	// 如果不需要打开相机，甚至可以在这里注释掉 cap.open
-	// cap.open(0);
-#endif
-
-	if (cap.isOpened()) {
-		cap.set(cv::CAP_PROP_FRAME_WIDTH, 1920);
-		cap.set(cv::CAP_PROP_FRAME_HEIGHT, 1080);
-
-		int cam_width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
-
-		// 你的原始逻辑
-		width = 1024;
-		height = 768;
-		start_x = (cam_width - width) / 2;
-		start_y = 0;
-
-		// 防止除零或负数 (防御性编程)
-		if (start_x < 0)
-			start_x = 0;
-	} else {
-		std::cerr << "[Error] Could not open camera." << std::endl;
-	}
+	open(0);
 }
 
 cv::Mat LFCapture::getFrame() {
@@ -101,4 +74,43 @@ std::vector<int> LFCapture::getAvailableCameras(int maxSearch) {
 		}
 	}
 	return availableIndices;
+}
+
+bool LFCapture::open(int index) {
+	if (cap.isOpened()) {
+		cap.release();
+	}
+
+#if defined(_WIN32) || defined(_WIN64)
+	// Windows: 使用 DirectShow 接口
+	cap.open(index, cv::CAP_DSHOW);
+#else
+	// Linux: 使用默认接口 (通常是 V4L2)
+	// 如果不需要打开相机，甚至可以在这里注释掉 cap.open
+	// cap.open(0);
+#endif
+
+	if (cap.isOpened()) {
+		cap.set(cv::CAP_PROP_FRAME_WIDTH, 1920);
+		cap.set(cv::CAP_PROP_FRAME_HEIGHT, 1080);
+
+		int cam_width = static_cast<int>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
+
+		// 你的原始逻辑
+		width = 1024;
+		height = 768;
+		start_x = (cam_width - width) / 2;
+		start_y = 0;
+
+		// 防止除零或负数 (防御性编程)
+		if (start_x < 0)
+			start_x = 0;
+
+		std::cout << "[LFCapture] Device " << index << " opened successfully."
+				  << std::endl;
+		return true;
+	} else {
+		std::cerr << "[LFCapture] Failed to open device " << index << std::endl;
+		return false;
+	}
 }

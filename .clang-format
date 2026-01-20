@@ -1,28 +1,28 @@
-BasedOnStyle: Google           # 基于 Google 风格进行格式化
-IndentWidth: 4                 # 缩进宽度为 4 个空格
-TabWidth: 4                    # 制表符宽度为 4 个空格
-UseTab: Always                 # 强制使用制表符缩进（Tab）
-AllowShortIfStatementsOnASingleLine: false  # 不允许短的 if 语句在一行中
-BreakBeforeBinaryOperators: NonAssignment  # 运算符两侧加空格
+BasedOnStyle: Google # 基于 Google 风格进行格式化
+IndentWidth: 4 # 缩进宽度为 4 个空格
+TabWidth: 4 # 制表符宽度为 4 个空格
+UseTab: Always # 强制使用制表符缩进（Tab）
+AllowShortIfStatementsOnASingleLine: false # 不允许短的 if 语句在一行中
+BreakBeforeBinaryOperators: NonAssignment # 运算符两侧加空格
 SpacesBeforeTrailingComments: 1 # 注释前有一个空格
-ColumnLimit: 80                # 最大行宽 80
-PointerAlignment: Right        # 指针符号位于变量前
-SpaceBeforeParens: ControlStatements  # 控制语句前添加空格
+ColumnLimit: 120 # 最大行宽 120
+PointerAlignment: Right # 指针符号位于变量前
+SpaceBeforeParens: ControlStatements # 控制语句前添加空格
 AlignConsecutiveAssignments: false # 对齐连续的赋值语句
 AlignConsecutiveDeclarations: false # 对齐连续的声明语句
 BraceWrapping:
-  AfterFunction: true          # 在函数后加上大括号，且大括号不换行
-  AfterControlStatement: true  # 在控制语句后加上大括号，且大括号不换行
-  AfterStruct: true            # 在结构体后加上大括号，且大括号不换行
-  AfterEnum: true              # 在枚举后加上大括号，且大括号不换行
-  BeforeElse: true             # `else` 语句前加大括号，且不换行
-AccessModifierOffset: -4 
+  AfterFunction: true # 在函数后加上大括号，且大括号不换行
+  AfterControlStatement: true # 在控制语句后加上大括号，且大括号不换行
+  AfterStruct: true # 在结构体后加上大括号，且大括号不换行
+  AfterEnum: true # 在枚举后加上大括号，且大括号不换行
+  BeforeElse: true # `else` 语句前加大括号，且不换行
+AccessModifierOffset: -4
 SortIncludes: true
 IncludeBlocks: Regroup
 IncludeCategories:
-  - Regex:           '^"pch\.h"'
-    Priority:        1000  # 最高优先级
-  - Regex:           '^<.*>'
-    Priority:        2
-  - Regex:           '^".*"'
-    Priority:        1
+  - Regex: '^"pch\.h"'
+    Priority: 1000 # 最高优先级
+  - Regex: "^<.*>"
+    Priority: 2
+  - Regex: '^".*"'
+    Priority: 1

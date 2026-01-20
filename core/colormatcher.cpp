@@ -84,158 +84,138 @@ void ColorMatcher::apply(cv::Mat &src, const cv::Mat &ref,
 // 辅助：计算均值和协方差矩阵 (Result: mean 1x3, cov 3x3, CV_64F)
 void ColorMatcher::computeMeanCov(const cv::Mat &img, cv::Mat &mean,
 								  cv::Mat &cov) {
-	// 展平为 Nx3 矩阵
+	int chans = img.channels();
 	cv::Mat reshaped = img.reshape(1, img.total());
-
-	// 转为 CV_64F 保证精度
 	cv::Mat float_img;
 	reshaped.convertTo(float_img, CV_64F);
 
-	// 计算协方差 (SCALE 标志会自动除以 N)
+	// 计算协方差矩阵，维度自动适配通道数 (1x1 或 3x3)
 	cv::calcCovarMatrix(float_img, cov, mean,
 						cv::COVAR_NORMAL | cv::COVAR_ROWS | cv::COVAR_SCALE);
 }
 
 // 辅助：计算矩阵平方根 A^(1/2)
 cv::Mat ColorMatcher::sqrtMatrix(const cv::Mat &cov) {
+	int n = cov.rows; // 动态获取通道数
 	cv::Mat eigenvalues, eigenvectors;
 	cv::eigen(cov, eigenvalues, eigenvectors);
 
-	// 构造对角矩阵 sqrt(Lambda)
-	cv::Mat sqrt_lambda = cv::Mat::zeros(3, 3, CV_64F);
-	for (int i = 0; i < 3; ++i) {
+	cv::Mat sqrt_lambda = cv::Mat::zeros(n, n, CV_64F);
+	for (int i = 0; i < n; ++i) {
 		double val = eigenvalues.at<double>(i);
 		sqrt_lambda.at<double>(i, i) = (val > 0) ? std::sqrt(val) : 0.0;
 	}
-
-	// A^(1/2) = V * sqrt(D) * V^T
 	return eigenvectors.t() * sqrt_lambda * eigenvectors;
 }
 
 // 辅助：计算矩阵逆平方根 A^(-1/2)
 cv::Mat ColorMatcher::invSqrtMatrix(const cv::Mat &cov) {
+	int n = cov.rows; // 动态获取通道数
 	cv::Mat eigenvalues, eigenvectors;
 	cv::eigen(cov, eigenvalues, eigenvectors);
 
-	cv::Mat inv_sqrt_lambda = cv::Mat::zeros(3, 3, CV_64F);
-	for (int i = 0; i < 3; ++i) {
+	cv::Mat inv_sqrt_lambda = cv::Mat::zeros(n, n, CV_64F);
+	for (int i = 0; i < n; ++i) {
 		double val = eigenvalues.at<double>(i);
 		inv_sqrt_lambda.at<double>(i, i) =
 			(val > 1e-9) ? (1.0 / std::sqrt(val)) : 0.0;
 	}
-
 	return eigenvectors.t() * inv_sqrt_lambda * eigenvectors;
 }
 
 void ColorMatcher::mkl(cv::Mat &src, const cv::Mat &ref) {
-	// 1. 准备数据
-	int original_depth = src.depth();
-	cv::Mat src_64, ref_64;
-
-	// 转为 CV_64F 进行计算
-	if (src.channels() != 3 || ref.channels() != 3)
+	if (src.empty() || ref.empty())
 		return;
+	int original_depth = src.depth();
+	int chans = src.channels();
 
-	// Reshape to Nx3
-	cv::Mat r = src.reshape(1, src.total());
-	r.convertTo(src_64, CV_64F);
+	// Reshape 为 NxChans
+	cv::Mat src_flat = src.reshape(1, src.total());
+	cv::Mat src_64;
+	src_flat.convertTo(src_64, CV_64F);
 
 	// 2. 计算统计量
 	cv::Mat mu_r, cov_r, mu_z, cov_z;
 	computeMeanCov(src, mu_r, cov_r);
 	computeMeanCov(ref, mu_z, cov_z);
 
-	// 3. 计算 MKL 变换矩阵 T
-	// T = Cov_r^(-1/2) * (Cov_r^(1/2) * Cov_z * Cov_r^(1/2))^(1/2) *
-	// Cov_r^(-1/2)
-
+	// 3. 计算 MKL 变换矩阵 T (即使是 1x1 矩阵，线性代数逻辑依然成立)
 	cv::Mat cov_r_sqrt = sqrtMatrix(cov_r);
 	cv::Mat cov_r_inv_sqrt = invSqrtMatrix(cov_r);
-
 	cv::Mat C = cov_r_sqrt * cov_z * cov_r_sqrt;
 	cv::Mat C_sqrt = sqrtMatrix(C);
-
 	cv::Mat T = cov_r_inv_sqrt * C_sqrt * cov_r_inv_sqrt;
 
-	// 4. 应用变换: Res = (Src - mu_r) * T + mu_z
-	// 注意 OpenCV 行向量乘法: Mat * T
+	// 4. 应用变换
 	cv::Mat centered = src_64 - cv::repeat(mu_r, src_64.rows, 1);
 	cv::Mat result = centered * T + cv::repeat(mu_z, src_64.rows, 1);
 
-	// 5. 恢复形状和类型
-	cv::Mat result_reshaped = result.reshape(3, src.rows);
+	// 数值截断：防止低光增强后出现大片白色死区
+	double max_val = (original_depth == CV_16U) ? 65535.0 : 255.0;
+	cv::max(0.0, cv::min(max_val, result), result);
+
+	// 5. 恢复形状
+	cv::Mat result_reshaped = result.reshape(chans, src.rows);
 	result_reshaped.convertTo(src, original_depth);
 }
 
 void ColorMatcher::mvgd(cv::Mat &src, const cv::Mat &ref) {
-	// 1. 准备数据
-	int original_depth = src.depth();
-	cv::Mat src_64, ref_64;
-
-	if (src.channels() != 3 || ref.channels() != 3)
+	if (src.empty() || ref.empty())
 		return;
 
-	// 如果尺寸不一致，MVGD 解析解所需的对应关系不存在，降级或返回
-	if (src.size() != ref.size()) {
-		// Fallback to MKL if sizes mismatch (MVGD requires spatial
-		// correspondence logic)
-		mkl(src, ref);
+	int original_depth = src.depth();
+	int chans = src.channels();
+	cv::Size src_size = src.size();
+
+	// 1. 降级处理：如果尺寸不一致，MVGD 的空间对应逻辑无法执行，降级为 MKL
+	if (src_size != ref.size()) {
+		mkl(src, ref); // MKL 不需要尺寸一致
 		return;
 	}
 
-	// Reshape Nx3
-	cv::Mat r = src.reshape(1, src.total());
-	cv::Mat z = ref.reshape(1, ref.total());
-	r.convertTo(src_64, CV_64F);
-	z.convertTo(ref_64, CV_64F);
+	// 2. 数据准备：转为 64F 保证计算精度
+	cv::Mat src_64, ref_64;
+	src.reshape(1, src.total()).convertTo(src_64, CV_64F);
+	ref.reshape(1, ref.total()).convertTo(ref_64, CV_64F);
 
-	// 2. 计算统计量
+	// 3. 计算统计量
 	cv::Mat mu_r, cov_r, mu_z, cov_z;
 	computeMeanCov(src, mu_r, cov_r);
 	computeMeanCov(ref, mu_z, cov_z);
 
 	cv::Mat cov_r_inv, cov_z_inv;
-	cv::invert(cov_r, cov_r_inv);
-	cv::invert(cov_z, cov_z_inv);
+	// 使用 DECOMP_SVD 提高求逆的鲁棒性
+	cv::invert(cov_r, cov_r_inv, cv::DECOMP_SVD);
+	cv::invert(cov_z, cov_z_inv, cv::DECOMP_SVD);
 
-	// 3. 计算 MVGD 变换矩阵 (Analytical Solver)
-	// Python Logic: pinv( (Z-mu_z) * cov_z_inv ) * (R-mu_r) * cov_r_inv
-	// Let A = (Z-mu_z) * cov_z_inv
-	// Let B = (R-mu_r)
-	// We need: (A^+ * B) * cov_r_inv
-	// Calculation: A^+ B = (A^T A)^(-1) A^T B
-
-	cv::Mat z_centered = ref_64 - cv::repeat(mu_z, ref_64.rows, 1);
+	// 4. 计算 MVGD 变换矩阵 (针对 NxC 矩阵的解析解)
 	cv::Mat r_centered = src_64 - cv::repeat(mu_r, src_64.rows, 1);
+	cv::Mat z_centered = ref_64 - cv::repeat(mu_z, ref_64.rows, 1);
 
 	// A = Z_c * Cov_z^(-1)
 	cv::Mat A = z_centered * cov_z_inv;
 
-	// 为了节省内存，不直接存储大矩阵 A，而是通过累加计算 A^T*A 和 A^T*B
-	// A^T * A (3x3)
-	// A^T * B (3x3)
+	// 计算 X = (A^T * A)^(-1) * (A^T * r_centered)
 	cv::Mat AtA, AtB;
-	cv::mulTransposed(A, AtA, true); // AtA = A^T * A
-	AtB = A.t() * r_centered;		 // AtB = A^T * B (Mat Mul)
+	cv::mulTransposed(A, AtA, true);
+	AtB = A.t() * r_centered;
 
-	// X = (A^T A)^(-1) * (A^T B)
 	cv::Mat AtA_inv;
-	cv::invert(AtA, AtA_inv);
+	cv::invert(AtA, AtA_inv, cv::DECOMP_SVD);
 	cv::Mat X = AtA_inv * AtB;
 
-	// T = (X * cov_r_inv)^T = cov_r_inv^T * X^T = cov_r_inv * X^T (Symmetric)
-	// Python code returns matrix applied on RIGHT side of row vectors.
-	// Transpose required at end of python derivation?
-	// Python: return dot(..., cov_r_inv).T
-	// C++ Matrix * T:
-	// M = (X * cov_r_inv).t();
+	// 最终变换矩阵 M = (X * cov_r_inv)^T
 	cv::Mat M = (X * cov_r_inv).t();
 
-	// 4. 应用变换
+	// 5. 应用变换并执行数值截断
 	cv::Mat result = r_centered * M + cv::repeat(mu_z, src_64.rows, 1);
 
-	// 5. 恢复
-	cv::Mat result_reshaped = result.reshape(3, src.rows);
+	// 根据位深确定截断阈值
+	double max_val = (original_depth == CV_16U) ? 65535.0 : 255.0;
+	cv::max(0.0, cv::min(max_val, result), result); // 防止低光增强溢出
+
+	// 6. 恢复原始形状与类型
+	cv::Mat result_reshaped = result.reshape(chans, src_size.height);
 	result_reshaped.convertTo(src, original_depth);
 }
 
@@ -254,58 +234,69 @@ void ColorMatcher::reinhardInternal(cv::Mat &src, const cv::Scalar &ref_mean,
 	if (src.empty())
 		return;
 
-	// 1. 转 Lab
 	int original_depth = src.depth();
-	cv::Mat lab;
-	if (original_depth == CV_8U)
-		src.convertTo(lab, CV_32F, 1.0 / 255.0);
-	else if (original_depth == CV_16U)
-		src.convertTo(lab, CV_32F, 1.0 / 65535.0);
-	else
-		src.convertTo(lab, CV_32F);
+	int chans = src.channels();
+	cv::Mat processed;
 
-	cv::cvtColor(lab, lab, cv::COLOR_BGR2Lab);
+	float scale_factor =
+		(original_depth == CV_16U) ? 1.0f / 65535.0f : 1.0f / 255.0f;
+	src.convertTo(processed, CV_32F, scale_factor);
 
-	// 2. 统计当前图
+	// 【关键修复】只有 3 通道才转 Lab
+	if (chans == 3) {
+		cv::cvtColor(processed, processed, cv::COLOR_BGR2Lab);
+	}
+
 	cv::Scalar src_mean, src_std;
-	cv::meanStdDev(lab, src_mean, src_std);
+	cv::meanStdDev(processed, src_mean, src_std);
 
-	// 3. 应用变换 (逐通道)
 	std::vector<cv::Mat> channels;
-	cv::split(lab, channels);
+	cv::split(processed, channels);
 
-	for (int i = 0; i < 3; ++i) {
+	for (int i = 0; i < chans; ++i) {
 		double s_std = (src_std[i] < 1e-6) ? 1e-6 : src_std[i];
 		double alpha = ref_std[i] / s_std;
 		double beta = ref_mean[i] - alpha * src_mean[i];
+
 		channels[i].convertTo(channels[i], -1, alpha, beta);
+
+		// --- 修正后的截断逻辑 ---
+		if (chans == 3) {
+			if (i == 0) {
+				// L 通道：0 ~ 100
+				cv::max(0.0f, cv::min(100.0f, channels[i]), channels[i]);
+			} else {
+				// a, b 通道：-128 ~ 127 (不建议截断到 0~1)
+				cv::max(-128.0f, cv::min(127.0f, channels[i]), channels[i]);
+			}
+		} else {
+			// 单通道灰度：0 ~ 1
+			cv::max(0.0f, cv::min(1.0f, channels[i]), channels[i]);
+		}
 	}
 
-	cv::merge(channels, lab);
-	cv::cvtColor(lab, lab, cv::COLOR_Lab2BGR);
+	cv::merge(channels, processed);
 
-	// 4. 恢复位深
-	if (original_depth == CV_8U)
-		lab.convertTo(src, CV_8U, 255.0);
-	else if (original_depth == CV_16U)
-		lab.convertTo(src, CV_16U, 65535.0);
-	else
-		lab.copyTo(src);
+	if (chans == 3) {
+		cv::cvtColor(processed, processed, cv::COLOR_Lab2BGR);
+	}
+
+	float restore_scale = (original_depth == CV_16U) ? 65535.0f : 255.0f;
+	processed.convertTo(src, original_depth, restore_scale);
 }
 
 void ColorMatcher::computeLabStats(const cv::Mat &src, cv::Scalar &mean,
 								   cv::Scalar &stddev) {
-	cv::Mat lab;
-	int d = src.depth();
-	if (d == CV_8U)
-		src.convertTo(lab, CV_32F, 1.0 / 255.0);
-	else if (d == CV_16U)
-		src.convertTo(lab, CV_32F, 1.0 / 65535.0);
-	else
-		src.convertTo(lab, CV_32F);
+	cv::Mat temp;
+	int chans = src.channels();
+	float scale = (src.depth() == CV_16U) ? 1.0f / 65535.0f : 1.0f / 255.0f;
+	src.convertTo(temp, CV_32F, scale);
 
-	cv::cvtColor(lab, lab, cv::COLOR_BGR2Lab);
-	cv::meanStdDev(lab, mean, stddev);
+	// 【关键修复】单通道不执行 cvtColor
+	if (chans == 3) {
+		cv::cvtColor(temp, temp, cv::COLOR_BGR2Lab);
+	}
+	cv::meanStdDev(temp, mean, stddev);
 }
 
 // =========================================================
@@ -316,40 +307,52 @@ void ColorMatcher::histMatch(cv::Mat &src, const cv::Mat &ref) {
 	if (src.empty() || ref.empty())
 		return;
 
-	cv::Mat src_lab, ref_lab;
+	int chans = src.channels();
 	int original_depth = src.depth();
 
-	// 转 Lab (32F)
-	auto toLab = [](const cv::Mat &in, cv::Mat &out) {
-		int d = in.depth();
-		if (d == CV_8U)
-			in.convertTo(out, CV_32F, 1.0 / 255.0);
-		else if (d == CV_16U)
-			in.convertTo(out, CV_32F, 1.0 / 65535.0);
+	if (chans == 1) {
+		// 单通道直接匹配
+		cv::Mat s_float, r_float;
+		src.convertTo(s_float, CV_32F, 1.0 / 255.0);
+		ref.convertTo(r_float, CV_32F, 1.0 / 255.0);
+		histMatchChannel(s_float, r_float);
+		s_float.convertTo(src, original_depth, 255.0);
+	} else {
+		cv::Mat src_lab, ref_lab;
+		int original_depth = src.depth();
+
+		// 转 Lab (32F)
+		auto toLab = [](const cv::Mat &in, cv::Mat &out) {
+			int d = in.depth();
+			if (d == CV_8U)
+				in.convertTo(out, CV_32F, 1.0 / 255.0);
+			else if (d == CV_16U)
+				in.convertTo(out, CV_32F, 1.0 / 65535.0);
+			else
+				in.convertTo(out, CV_32F);
+			cv::cvtColor(out, out, cv::COLOR_BGR2Lab);
+		};
+
+		toLab(src, src_lab);
+		toLab(ref, ref_lab);
+
+		std::vector<cv::Mat> src_channels, ref_channels;
+		cv::split(src_lab, src_channels);
+		cv::split(ref_lab, ref_channels);
+
+		// 仅匹配 L 通道 (Index 0)
+		histMatchChannel(src_channels[0], ref_channels[0]);
+
+		cv::merge(src_channels, src_lab);
+		cv::cvtColor(src_lab, src_lab, cv::COLOR_Lab2BGR);
+
+		if (original_depth == CV_8U)
+			src_lab.convertTo(src, CV_8U, 255.0);
+		else if (original_depth == CV_16U)
+			src_lab.convertTo(src, CV_16U, 65535.0);
 		else
-			in.convertTo(out, CV_32F);
-		cv::cvtColor(out, out, cv::COLOR_BGR2Lab);
-	};
-
-	toLab(src, src_lab);
-	toLab(ref, ref_lab);
-
-	std::vector<cv::Mat> src_channels, ref_channels;
-	cv::split(src_lab, src_channels);
-	cv::split(ref_lab, ref_channels);
-
-	// 仅匹配 L 通道 (Index 0)
-	histMatchChannel(src_channels[0], ref_channels[0]);
-
-	cv::merge(src_channels, src_lab);
-	cv::cvtColor(src_lab, src_lab, cv::COLOR_Lab2BGR);
-
-	if (original_depth == CV_8U)
-		src_lab.convertTo(src, CV_8U, 255.0);
-	else if (original_depth == CV_16U)
-		src_lab.convertTo(src, CV_16U, 65535.0);
-	else
-		src_lab.copyTo(src);
+			src_lab.copyTo(src);
+	}
 }
 
 void ColorMatcher::histMatchChannel(cv::Mat &src, const cv::Mat &ref) {

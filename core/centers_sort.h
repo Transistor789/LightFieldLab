@@ -20,9 +20,7 @@ struct IntIndex {
 		y = static_cast<int>(std::floor(y_));
 	}
 	// 必须为 std::unordered_map 定义相等运算符
-	bool operator==(const IntIndex &other) const {
-		return x == other.x && y == other.y;
-	}
+	bool operator==(const IntIndex &other) const { return x == other.x && y == other.y; }
 };
 
 // 为 std::unordered_map 定义哈希函数
@@ -43,8 +41,7 @@ public:
 	 * @param points 检测到的中心点列表 (x, y)
 	 * @param pitch 网格间距 (pitch_x, pitch_y)
 	 */
-	CentroidsSort(const std::vector<cv::Point2f> &points,
-				  const std::vector<float> &pitch);
+	CentroidsSort(const std::vector<cv::Point2f> &points, const std::vector<float> &pitch);
 
 	/**
 	 * @brief 主运行入口 (原有算法 - 边缘行走)
@@ -59,17 +56,13 @@ public:
 	void run2();
 
 	// === 核心查找方法 (原有) ===
-	std::vector<cv::Point2f> neighbors_by_idx(const IntIndex &idx,
-											  int radius = 3) const;
+	std::vector<cv::Point2f> neighbors_by_idx(const IntIndex &idx, int radius = 3) const;
 	// cv::Point2f nearest_point(const cv::Point2f &pt, int radius = 3) const;
 	cv::Point2f next_horz(const cv::Point2f &pt, bool inv) const;
 	cv::Point2f next_vert(const cv::Point2f &pt, bool inv, bool hex_odd) const;
-	std::tuple<cv::Point2f, int> count_points_horz(const cv::Point2f &start,
-												   const cv::Point2f &end,
-												   bool inv);
-	std::tuple<cv::Point2f, int> count_points_vert(const cv::Point2f &start,
-												   const cv::Point2f &end,
-												   bool inv, bool hex_odd);
+	std::tuple<cv::Point2f, int> count_points_horz(const cv::Point2f &start, const cv::Point2f &end, bool inv);
+	std::tuple<cv::Point2f, int> count_points_vert(const cv::Point2f &start, const cv::Point2f &end, bool inv,
+												   bool hex_odd);
 
 	cv::Point2f _top_left;
 	cv::Point2f _bottom_right;
@@ -77,12 +70,12 @@ public:
 	std::vector<int> getPointsSize() const { return _size; }
 	bool getHexOdd() const { return _hex_odd; }
 	std::vector<cv::Point2f> const getPoints() { return _centroids_list; }
+	std::pair<cv::Mat, cv::Mat> getPointsAsMats() const;
 
 private:
 	// === 新增辅助函数 (用于 run2) ===
 	void flood_fill_from_center();
-	cv::Point2f find_nearest_existing(const cv::Point2f &target,
-									  float radius) const;
+	cv::Point2f find_nearest_existing(const cv::Point2f &target, float radius) const;
 
 private:
 	// === 成员变量 ===
@@ -100,12 +93,10 @@ private:
 	// === 搜索逻辑 (原有) ===
 	// 返回 {size, corners}
 	std::vector<int> _search_clockwise(std::vector<cv::Point2f> &corners);
-	std::vector<int> _search_counter_clockwise(
-		std::vector<cv::Point2f> &corners);
+	std::vector<int> _search_counter_clockwise(std::vector<cv::Point2f> &corners);
 
 	// 返回 {size, corners}
-	std::vector<int> _search_diag(std::vector<cv::Point2f> &corners,
-								  bool hex_odd);
+	std::vector<int> _search_diag(std::vector<cv::Point2f> &corners, bool hex_odd);
 
 	void search_clock_diag();
 	void assign_index();

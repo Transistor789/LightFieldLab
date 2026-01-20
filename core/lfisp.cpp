@@ -1,10 +1,12 @@
 ﻿#include "lfisp.h"
 
+#include "hexgrid_fit.h"
 #include "utils.h"
 
 #include <cmath>
 #include <immintrin.h>
 #include <iostream>
+#include <memory>
 #include <opencv2/core/cuda.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/cudaarithm.hpp>
@@ -13,30 +15,22 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 
-extern void launch_dpc_8u_inplace(cv::cuda::GpuMat &img, int threshold,
-								  cv::cuda::Stream &stream);
-extern void launch_lsc_8u_apply_32f(cv::cuda::GpuMat &img,
-									const cv::cuda::GpuMat &lsc_map,
-									float exposure, cv::cuda::Stream &stream);
-extern void launch_awb_8u(cv::cuda::GpuMat &img, float g00, float g01,
-						  float g10, float g11, cv::cuda::Stream &stream);
-extern void launch_fused_lsc_awb(cv::cuda::GpuMat &img,
-								 const cv::cuda::GpuMat &lsc_map,
-								 float exposure, float g00, float g01,
-								 float g10, float g11,
-								 cv::cuda::Stream &stream);
-extern void launch_ccm_8uc3(cv::cuda::GpuMat &img, const float *m,
-							cv::cuda::Stream &stream);
-extern void launch_gc_8u(cv::cuda::GpuMat &img, float gamma,
+extern void launch_dpc_8u_inplace(cv::cuda::GpuMat &img, int threshold, cv::cuda::Stream &stream);
+extern void launch_nr_8u(cv::cuda::GpuMat &src, cv::cuda::GpuMat &dst, float sigma_s, float sigma_r,
 						 cv::cuda::Stream &stream);
-extern void launch_ccm_gamma_fused(cv::cuda::GpuMat &img, const float *m,
-								   float gamma, cv::cuda::Stream &stream);
+extern void launch_lsc_8u_apply_32f(cv::cuda::GpuMat &img, const cv::cuda::GpuMat &lsc_map, float exposure,
+									cv::cuda::Stream &stream);
+extern void launch_awb_8u(cv::cuda::GpuMat &img, float g00, float g01, float g10, float g11, cv::cuda::Stream &stream);
+extern void launch_fused_lsc_awb(cv::cuda::GpuMat &img, const cv::cuda::GpuMat &lsc_map, float exposure, float g00,
+								 float g01, float g10, float g11, cv::cuda::Stream &stream);
+extern void launch_ccm_8uc3(cv::cuda::GpuMat &img, const float *m, cv::cuda::Stream &stream);
+extern void launch_gc_8u(cv::cuda::GpuMat &img, float gamma, cv::cuda::Stream &stream);
+extern void launch_ccm_gamma_fused(cv::cuda::GpuMat &img, const float *m, float gamma, cv::cuda::Stream &stream);
 
 namespace {
 
 template <typename T>
-inline void dpc_scalar_kernel(int r, int c, T *ptr_curr, const T *ptr_up,
-							  const T *ptr_down, int threshold) {
+inline void dpc_scalar_kernel(int r, int c, T *ptr_curr, const T *ptr_up, const T *ptr_down, int threshold) {
 	T center = ptr_curr[c];
 	T val_L = ptr_curr[c - 2];
 	T val_R = ptr_curr[c + 2];
@@ -46,10 +40,8 @@ inline void dpc_scalar_kernel(int r, int c, T *ptr_curr, const T *ptr_up,
 	T min_val = std::min({val_L, val_R, val_U, val_D});
 	T max_val = std::max({val_L, val_R, val_U, val_D});
 
-	bool is_hot =
-		(center > max_val) && ((int)center - (int)max_val > threshold);
-	bool is_dead =
-		(center < min_val) && ((int)min_val - (int)center > threshold);
+	bool is_hot = (center > max_val) && ((int)center - (int)max_val > threshold);
+	bool is_dead = (center < min_val) && ((int)min_val - (int)center > threshold);
 
 	if (is_hot || is_dead) {
 		int grad_h = std::abs((int)val_L - (int)val_R);
@@ -150,12 +142,9 @@ void dpc_simd_u16(cv::Mat &img, int threshold) {
 
 		int c = border;
 		for (; c <= cols - border - 16; c += 16) {
-			__m256i v_curr =
-				_mm256_loadu_si256((const __m256i *)(ptr_curr + c));
-			__m256i v_L =
-				_mm256_loadu_si256((const __m256i *)(ptr_curr + c - 2));
-			__m256i v_R =
-				_mm256_loadu_si256((const __m256i *)(ptr_curr + c + 2));
+			__m256i v_curr = _mm256_loadu_si256((const __m256i *)(ptr_curr + c));
+			__m256i v_L = _mm256_loadu_si256((const __m256i *)(ptr_curr + c - 2));
+			__m256i v_R = _mm256_loadu_si256((const __m256i *)(ptr_curr + c + 2));
 			__m256i v_U = _mm256_loadu_si256((const __m256i *)(ptr_up + c));
 			__m256i v_D = _mm256_loadu_si256((const __m256i *)(ptr_down + c));
 
@@ -170,26 +159,21 @@ void dpc_simd_u16(cv::Mat &img, int threshold) {
 			__m256i v_curr_minus_th = _mm256_subs_epu16(v_curr, v_thresh);
 			__m256i v_curr_plus_th = _mm256_adds_epu16(v_curr, v_thresh);
 
-			__m256i v_cmp_hot_lhs =
-				_mm256_xor_si256(v_curr_minus_th, v_sign_bit);
+			__m256i v_cmp_hot_lhs = _mm256_xor_si256(v_curr_minus_th, v_sign_bit);
 			__m256i v_cmp_hot_rhs = _mm256_xor_si256(v_max, v_sign_bit);
 			__m256i mask_hot = _mm256_cmpgt_epi16(v_cmp_hot_lhs, v_cmp_hot_rhs);
 
 			__m256i v_cmp_dead_lhs = _mm256_xor_si256(v_min, v_sign_bit);
-			__m256i v_cmp_dead_rhs =
-				_mm256_xor_si256(v_curr_plus_th, v_sign_bit);
-			__m256i mask_dead =
-				_mm256_cmpgt_epi16(v_cmp_dead_lhs, v_cmp_dead_rhs);
+			__m256i v_cmp_dead_rhs = _mm256_xor_si256(v_curr_plus_th, v_sign_bit);
+			__m256i mask_dead = _mm256_cmpgt_epi16(v_cmp_dead_lhs, v_cmp_dead_rhs);
 
 			__m256i mask_bad = _mm256_or_si256(mask_hot, mask_dead);
 
 			if (_mm256_testz_si256(mask_bad, mask_bad))
 				continue;
 
-			__m256i grad_h = _mm256_subs_epu16(_mm256_max_epu16(v_L, v_R),
-											   _mm256_min_epu16(v_L, v_R));
-			__m256i grad_v = _mm256_subs_epu16(_mm256_max_epu16(v_U, v_D),
-											   _mm256_min_epu16(v_U, v_D));
+			__m256i grad_h = _mm256_subs_epu16(_mm256_max_epu16(v_L, v_R), _mm256_min_epu16(v_L, v_R));
+			__m256i grad_v = _mm256_subs_epu16(_mm256_max_epu16(v_U, v_D), _mm256_min_epu16(v_U, v_D));
 
 			__m256i fix_h = _mm256_avg_epu16(v_L, v_R);
 			__m256i fix_v = _mm256_avg_epu16(v_U, v_D);
@@ -231,10 +215,8 @@ void dpc_simd_u8(cv::Mat &img, int threshold) {
 		int c = border;
 		for (; c <= cols - border - 16; c += 16) {
 			__m128i v_curr_8 = _mm_loadu_si128((const __m128i *)(ptr_curr + c));
-			__m128i v_L_8 =
-				_mm_loadu_si128((const __m128i *)(ptr_curr + c - 2));
-			__m128i v_R_8 =
-				_mm_loadu_si128((const __m128i *)(ptr_curr + c + 2));
+			__m128i v_L_8 = _mm_loadu_si128((const __m128i *)(ptr_curr + c - 2));
+			__m128i v_R_8 = _mm_loadu_si128((const __m128i *)(ptr_curr + c + 2));
 			__m128i v_U_8 = _mm_loadu_si128((const __m128i *)(ptr_up + c));
 			__m128i v_D_8 = _mm_loadu_si128((const __m128i *)(ptr_down + c));
 
@@ -244,39 +226,27 @@ void dpc_simd_u8(cv::Mat &img, int threshold) {
 			__m256i v_U = _mm256_cvtepu8_epi16(v_U_8);
 			__m256i v_D = _mm256_cvtepu8_epi16(v_D_8);
 
-			__m256i v_min = _mm256_min_epu16(_mm256_min_epu16(v_L, v_R),
-											 _mm256_min_epu16(v_U, v_D));
-			__m256i v_max = _mm256_max_epu16(_mm256_max_epu16(v_L, v_R),
-											 _mm256_max_epu16(v_U, v_D));
+			__m256i v_min = _mm256_min_epu16(_mm256_min_epu16(v_L, v_R), _mm256_min_epu16(v_U, v_D));
+			__m256i v_max = _mm256_max_epu16(_mm256_max_epu16(v_L, v_R), _mm256_max_epu16(v_U, v_D));
 
-			__m256i v_hot = _mm256_cmpgt_epi16(
-				_mm256_xor_si256(_mm256_subs_epu16(v_curr, v_thresh),
-								 v_sign_bit),
-				_mm256_xor_si256(v_max, v_sign_bit));
-			__m256i v_dead = _mm256_cmpgt_epi16(
-				_mm256_xor_si256(v_min, v_sign_bit),
-				_mm256_xor_si256(_mm256_adds_epu16(v_curr, v_thresh),
-								 v_sign_bit));
+			__m256i v_hot = _mm256_cmpgt_epi16(_mm256_xor_si256(_mm256_subs_epu16(v_curr, v_thresh), v_sign_bit),
+											   _mm256_xor_si256(v_max, v_sign_bit));
+			__m256i v_dead = _mm256_cmpgt_epi16(_mm256_xor_si256(v_min, v_sign_bit),
+												_mm256_xor_si256(_mm256_adds_epu16(v_curr, v_thresh), v_sign_bit));
 			__m256i mask_bad = _mm256_or_si256(v_hot, v_dead);
 
 			if (_mm256_testz_si256(mask_bad, mask_bad))
 				continue;
 
-			__m256i g_h = _mm256_subs_epu16(_mm256_max_epu16(v_L, v_R),
-											_mm256_min_epu16(v_L, v_R));
-			__m256i g_v = _mm256_subs_epu16(_mm256_max_epu16(v_U, v_D),
-											_mm256_min_epu16(v_U, v_D));
+			__m256i g_h = _mm256_subs_epu16(_mm256_max_epu16(v_L, v_R), _mm256_min_epu16(v_L, v_R));
+			__m256i g_v = _mm256_subs_epu16(_mm256_max_epu16(v_U, v_D), _mm256_min_epu16(v_U, v_D));
 
 			__m256i fix_h = _mm256_avg_epu16(v_L, v_R);
 			__m256i fix_v = _mm256_avg_epu16(v_U, v_D);
 			__m256i fix_all = _mm256_avg_epu16(fix_h, fix_v);
 
-			__m256i use_h =
-				_mm256_cmpgt_epi16(_mm256_xor_si256(g_v, v_sign_bit),
-								   _mm256_xor_si256(g_h, v_sign_bit));
-			__m256i use_v =
-				_mm256_cmpgt_epi16(_mm256_xor_si256(g_h, v_sign_bit),
-								   _mm256_xor_si256(g_v, v_sign_bit));
+			__m256i use_h = _mm256_cmpgt_epi16(_mm256_xor_si256(g_v, v_sign_bit), _mm256_xor_si256(g_h, v_sign_bit));
+			__m256i use_v = _mm256_cmpgt_epi16(_mm256_xor_si256(g_h, v_sign_bit), _mm256_xor_si256(g_v, v_sign_bit));
 
 			__m256i v_fixed = fix_all;
 			v_fixed = _mm256_blendv_epi8(v_fixed, fix_h, use_h);
@@ -285,8 +255,7 @@ void dpc_simd_u8(cv::Mat &img, int threshold) {
 			__m256i v_res_16 = _mm256_blendv_epi8(v_curr, v_fixed, mask_bad);
 
 			__m256i v_packed = _mm256_packus_epi16(v_res_16, v_res_16);
-			v_packed =
-				_mm256_permute4x64_epi64(v_packed, _MM_SHUFFLE(3, 1, 2, 0));
+			v_packed = _mm256_permute4x64_epi64(v_packed, _MM_SHUFFLE(3, 1, 2, 0));
 			__m128i v_final = _mm256_castsi256_si128(v_packed);
 
 			_mm_storeu_si128((__m128i *)(ptr_curr + c), v_final);
@@ -298,8 +267,7 @@ void dpc_simd_u8(cv::Mat &img, int threshold) {
 	}
 }
 
-void lsc_simd_u16(cv::Mat &img, const cv::Mat &lsc_gain_map_int,
-				  float exposure) {
+void lsc_simd_u16(cv::Mat &img, const cv::Mat &lsc_gain_map_int, float exposure) {
 	int rows = img.rows;
 	int cols = img.cols;
 
@@ -313,32 +281,23 @@ void lsc_simd_u16(cv::Mat &img, const cv::Mat &lsc_gain_map_int,
 		int c = 0;
 		for (; c <= cols - 16; c += 16) {
 			__m256i v_src = _mm256_loadu_si256((const __m256i *)(ptr_src + c));
-			__m256i v_gain =
-				_mm256_loadu_si256((const __m256i *)(ptr_gain + c));
+			__m256i v_gain = _mm256_loadu_si256((const __m256i *)(ptr_gain + c));
 
-			__m256i v_src_lo =
-				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src));
-			__m256i v_gain_lo =
-				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_gain));
+			__m256i v_src_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src));
+			__m256i v_gain_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_gain));
 
 			// [修改] 叠加曝光增益: Gain_New = (Gain_Map * Exp) >> FIXED_BITS
-			v_gain_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_gain_lo, v_exp),
-										  FIXED_BITS);
+			v_gain_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_gain_lo, v_exp), FIXED_BITS);
 
-			__m256i v_res_lo = _mm256_srli_epi32(
-				_mm256_mullo_epi32(v_src_lo, v_gain_lo), FIXED_BITS);
+			__m256i v_res_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_lo, v_gain_lo), FIXED_BITS);
 
-			__m256i v_src_hi =
-				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src, 1));
-			__m256i v_gain_hi =
-				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_gain, 1));
+			__m256i v_src_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src, 1));
+			__m256i v_gain_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_gain, 1));
 
 			// [修改] 叠加曝光增益
-			v_gain_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_gain_hi, v_exp),
-										  FIXED_BITS);
+			v_gain_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_gain_hi, v_exp), FIXED_BITS);
 
-			__m256i v_res_hi = _mm256_srli_epi32(
-				_mm256_mullo_epi32(v_src_hi, v_gain_hi), FIXED_BITS);
+			__m256i v_res_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_hi, v_gain_hi), FIXED_BITS);
 
 			__m256i v_res = _mm256_packus_epi32(v_res_lo, v_res_hi);
 			v_res = _mm256_permute4x64_epi64(v_res, _MM_SHUFFLE(3, 1, 2, 0));
@@ -357,8 +316,7 @@ void lsc_simd_u16(cv::Mat &img, const cv::Mat &lsc_gain_map_int,
 	}
 }
 
-void lsc_simd_u8(cv::Mat &img, const cv::Mat &lsc_gain_map_int,
-				 float exposure) {
+void lsc_simd_u8(cv::Mat &img, const cv::Mat &lsc_gain_map_int, float exposure) {
 	int rows = img.rows;
 	int cols = img.cols;
 
@@ -372,42 +330,31 @@ void lsc_simd_u8(cv::Mat &img, const cv::Mat &lsc_gain_map_int,
 		const uint16_t *ptr_gain = lsc_gain_map_int.ptr<uint16_t>(r);
 		int c = 0;
 		for (; c <= cols - 16; c += 16) {
-			__m128i v_src_small =
-				_mm_loadu_si128((const __m128i *)(ptr_src + c));
-			__m256i v_gain =
-				_mm256_loadu_si256((const __m256i *)(ptr_gain + c));
+			__m128i v_src_small = _mm_loadu_si128((const __m128i *)(ptr_src + c));
+			__m256i v_gain = _mm256_loadu_si256((const __m256i *)(ptr_gain + c));
 
 			__m256i v_src_lo = _mm256_cvtepu8_epi32(v_src_small);
-			__m256i v_gain_lo =
-				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_gain));
+			__m256i v_gain_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_gain));
 
 			// [修改] 叠加曝光
-			v_gain_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_gain_lo, v_exp),
-										  FIXED_BITS);
+			v_gain_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_gain_lo, v_exp), FIXED_BITS);
 
-			__m256i v_res_lo = _mm256_srli_epi32(
-				_mm256_mullo_epi32(v_src_lo, v_gain_lo), FIXED_BITS);
+			__m256i v_res_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_lo, v_gain_lo), FIXED_BITS);
 
-			__m128i v_src_hi_small =
-				_mm_unpackhi_epi64(v_src_small, v_src_small);
+			__m128i v_src_hi_small = _mm_unpackhi_epi64(v_src_small, v_src_small);
 			__m256i v_src_hi = _mm256_cvtepu8_epi32(v_src_hi_small);
-			__m256i v_gain_hi =
-				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_gain, 1));
+			__m256i v_gain_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_gain, 1));
 
 			// [修改] 叠加曝光
-			v_gain_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_gain_hi, v_exp),
-										  FIXED_BITS);
+			v_gain_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_gain_hi, v_exp), FIXED_BITS);
 
-			__m256i v_res_hi = _mm256_srli_epi32(
-				_mm256_mullo_epi32(v_src_hi, v_gain_hi), FIXED_BITS);
+			__m256i v_res_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_hi, v_gain_hi), FIXED_BITS);
 
 			__m256i v_packed_16 = _mm256_packus_epi32(v_res_lo, v_res_hi);
-			v_packed_16 =
-				_mm256_permute4x64_epi64(v_packed_16, _MM_SHUFFLE(3, 1, 2, 0));
+			v_packed_16 = _mm256_permute4x64_epi64(v_packed_16, _MM_SHUFFLE(3, 1, 2, 0));
 
 			__m128i v_packed_u8 =
-				_mm_packus_epi16(_mm256_castsi256_si128(v_packed_16),
-								 _mm256_extracti128_si256(v_packed_16, 1));
+				_mm_packus_epi16(_mm256_castsi256_si128(v_packed_16), _mm256_extracti128_si256(v_packed_16, 1));
 			_mm_storeu_si128((__m128i *)(ptr_src + c), v_packed_u8);
 		}
 		for (; c < cols; ++c) {
@@ -446,32 +393,22 @@ void awb_simd_u16(cv::Mat &img, const std::vector<float> &wbgains) {
 		for (; c <= cols - 16; c += 16) {
 			__m256i v0 = _mm256_loadu_si256((const __m256i *)(ptr0 + c));
 			__m256i v0_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v0));
-			__m256i v0_hi =
-				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v0, 1));
-			__m256i vg0_lo =
-				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_gain_row0));
-			__m256i vg0_hi =
-				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_gain_row0, 1));
-			v0_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v0_lo, vg0_lo),
-									  FIXED_BITS);
-			v0_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v0_hi, vg0_hi),
-									  FIXED_BITS);
+			__m256i v0_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v0, 1));
+			__m256i vg0_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_gain_row0));
+			__m256i vg0_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_gain_row0, 1));
+			v0_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v0_lo, vg0_lo), FIXED_BITS);
+			v0_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v0_hi, vg0_hi), FIXED_BITS);
 			v0 = _mm256_packus_epi32(v0_lo, v0_hi);
 			v0 = _mm256_permute4x64_epi64(v0, _MM_SHUFFLE(3, 1, 2, 0));
 			_mm256_storeu_si256((__m256i *)(ptr0 + c), v0);
 
 			__m256i v1 = _mm256_loadu_si256((const __m256i *)(ptr1 + c));
 			__m256i v1_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v1));
-			__m256i v1_hi =
-				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v1, 1));
-			__m256i vg1_lo =
-				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_gain_row1));
-			__m256i vg1_hi =
-				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_gain_row1, 1));
-			v1_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v1_lo, vg1_lo),
-									  FIXED_BITS);
-			v1_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v1_hi, vg1_hi),
-									  FIXED_BITS);
+			__m256i v1_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v1, 1));
+			__m256i vg1_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_gain_row1));
+			__m256i vg1_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_gain_row1, 1));
+			v1_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v1_lo, vg1_lo), FIXED_BITS);
+			v1_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v1_hi, vg1_hi), FIXED_BITS);
 			v1 = _mm256_packus_epi32(v1_lo, v1_hi);
 			v1 = _mm256_permute4x64_epi64(v1, _MM_SHUFFLE(3, 1, 2, 0));
 			_mm256_storeu_si256((__m256i *)(ptr1 + c), v1);
@@ -512,26 +449,18 @@ void awb_simd_u8(cv::Mat &img, const std::vector<float> &wbgains) {
 			__m128i v_small = _mm_loadu_si128((const __m128i *)(ptr_src + c));
 			__m256i v_src_16 = _mm256_cvtepu8_epi16(v_small);
 
-			__m256i v_src_lo =
-				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src_16));
-			__m256i v_gain_lo =
-				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_gain));
-			__m256i v_src_hi =
-				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src_16, 1));
-			__m256i v_gain_hi =
-				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_gain, 1));
+			__m256i v_src_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src_16));
+			__m256i v_gain_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_gain));
+			__m256i v_src_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src_16, 1));
+			__m256i v_gain_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_gain, 1));
 
-			__m256i v_res_lo = _mm256_srli_epi32(
-				_mm256_mullo_epi32(v_src_lo, v_gain_lo), FIXED_BITS);
-			__m256i v_res_hi = _mm256_srli_epi32(
-				_mm256_mullo_epi32(v_src_hi, v_gain_hi), FIXED_BITS);
+			__m256i v_res_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_lo, v_gain_lo), FIXED_BITS);
+			__m256i v_res_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_hi, v_gain_hi), FIXED_BITS);
 
 			__m256i v_packed_16 = _mm256_packus_epi32(v_res_lo, v_res_hi);
-			v_packed_16 =
-				_mm256_permute4x64_epi64(v_packed_16, _MM_SHUFFLE(3, 1, 2, 0));
+			v_packed_16 = _mm256_permute4x64_epi64(v_packed_16, _MM_SHUFFLE(3, 1, 2, 0));
 			__m128i v_final =
-				_mm_packus_epi16(_mm256_castsi256_si128(v_packed_16),
-								 _mm256_extracti128_si256(v_packed_16, 1));
+				_mm_packus_epi16(_mm256_castsi256_si128(v_packed_16), _mm256_extracti128_si256(v_packed_16, 1));
 			_mm_storeu_si128((__m128i *)(ptr_src + c), v_final);
 		}
 
@@ -547,8 +476,7 @@ void awb_simd_u8(cv::Mat &img, const std::vector<float> &wbgains) {
 	}
 }
 
-void lsc_awb_simd_u16(cv::Mat &img, float exposure,
-					  const cv::Mat &lsc_gain_map_int,
+void lsc_awb_simd_u16(cv::Mat &img, float exposure, const cv::Mat &lsc_gain_map_int,
 					  const std::vector<float> &wbgains) {
 	int rows = img.rows;
 	int cols = img.cols;
@@ -577,31 +505,21 @@ void lsc_awb_simd_u16(cv::Mat &img, float exposure,
 		for (; c <= cols - 16; c += 16) {
 			__m256i v_lsc = _mm256_loadu_si256((const __m256i *)(ptr_lsc + c));
 
-			__m256i v_lsc_lo =
-				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_lsc));
-			__m256i v_lsc_hi =
-				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_lsc, 1));
-			__m256i v_awb_lo =
-				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_awb));
-			__m256i v_awb_hi =
-				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb, 1));
+			__m256i v_lsc_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_lsc));
+			__m256i v_lsc_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_lsc, 1));
+			__m256i v_awb_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_awb));
+			__m256i v_awb_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb, 1));
 
 			// 这里不需要改，因为 awb 变量已经包含了 lscExp
-			__m256i v_gain_lo = _mm256_srli_epi32(
-				_mm256_mullo_epi32(v_lsc_lo, v_awb_lo), FIXED_BITS);
-			__m256i v_gain_hi = _mm256_srli_epi32(
-				_mm256_mullo_epi32(v_lsc_hi, v_awb_hi), FIXED_BITS);
+			__m256i v_gain_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_lsc_lo, v_awb_lo), FIXED_BITS);
+			__m256i v_gain_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_lsc_hi, v_awb_hi), FIXED_BITS);
 
 			__m256i v_src = _mm256_loadu_si256((const __m256i *)(ptr_src + c));
-			__m256i v_src_lo =
-				_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src));
-			__m256i v_src_hi =
-				_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src, 1));
+			__m256i v_src_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src));
+			__m256i v_src_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src, 1));
 
-			v_src_lo = _mm256_srli_epi32(
-				_mm256_mullo_epi32(v_src_lo, v_gain_lo), FIXED_BITS);
-			v_src_hi = _mm256_srli_epi32(
-				_mm256_mullo_epi32(v_src_hi, v_gain_hi), FIXED_BITS);
+			v_src_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_lo, v_gain_lo), FIXED_BITS);
+			v_src_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_hi, v_gain_hi), FIXED_BITS);
 
 			__m256i v_res = _mm256_packus_epi32(v_src_lo, v_src_hi);
 			v_res = _mm256_permute4x64_epi64(v_res, _MM_SHUFFLE(3, 1, 2, 0));
@@ -622,9 +540,7 @@ void lsc_awb_simd_u16(cv::Mat &img, float exposure,
 	}
 }
 
-void lsc_awb_simd_u8(cv::Mat &img, float exposure,
-					 const cv::Mat &lsc_gain_map_int,
-					 const std::vector<float> &wbgains) {
+void lsc_awb_simd_u8(cv::Mat &img, float exposure, const cv::Mat &lsc_gain_map_int, const std::vector<float> &wbgains) {
 	int rows = img.rows;
 	int cols = img.cols;
 	const float scale = FIXED_SCALE;
@@ -650,52 +566,35 @@ void lsc_awb_simd_u8(cv::Mat &img, float exposure,
 
 		int c = 0;
 		for (; c <= cols - 32; c += 32) {
-			__m256i v_src_32 =
-				_mm256_loadu_si256((const __m256i *)(ptr_src + c));
-			__m256i v_lsc_0 =
-				_mm256_loadu_si256((const __m256i *)(ptr_lsc + c));
-			__m256i v_lsc_1 =
-				_mm256_loadu_si256((const __m256i *)(ptr_lsc + c + 16));
+			__m256i v_src_32 = _mm256_loadu_si256((const __m256i *)(ptr_src + c));
+			__m256i v_lsc_0 = _mm256_loadu_si256((const __m256i *)(ptr_lsc + c));
+			__m256i v_lsc_1 = _mm256_loadu_si256((const __m256i *)(ptr_lsc + c + 16));
 
-			auto process_half = [&](__m128i v_p_8,
-									__m256i v_lsc_16) -> __m256i {
+			auto process_half = [&](__m128i v_p_8, __m256i v_lsc_16) -> __m256i {
 				__m256i v_p_lo = _mm256_cvtepu8_epi32(v_p_8);
-				__m256i v_p_hi =
-					_mm256_cvtepu8_epi32(_mm_unpackhi_epi64(v_p_8, v_p_8));
+				__m256i v_p_hi = _mm256_cvtepu8_epi32(_mm_unpackhi_epi64(v_p_8, v_p_8));
 
-				__m256i v_lsc_lo =
-					_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_lsc_16));
-				__m256i v_lsc_hi = _mm256_cvtepu16_epi32(
-					_mm256_extracti128_si256(v_lsc_16, 1));
+				__m256i v_lsc_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_lsc_16));
+				__m256i v_lsc_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_lsc_16, 1));
 
-				__m256i v_awb_lo =
-					_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_awb));
-				__m256i v_awb_hi =
-					_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb, 1));
+				__m256i v_awb_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_awb));
+				__m256i v_awb_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb, 1));
 
-				__m256i v_gain_lo = _mm256_srli_epi32(
-					_mm256_mullo_epi32(v_lsc_lo, v_awb_lo), FIXED_BITS);
-				__m256i v_gain_hi = _mm256_srli_epi32(
-					_mm256_mullo_epi32(v_lsc_hi, v_awb_hi), FIXED_BITS);
+				__m256i v_gain_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_lsc_lo, v_awb_lo), FIXED_BITS);
+				__m256i v_gain_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_lsc_hi, v_awb_hi), FIXED_BITS);
 
-				v_p_lo = _mm256_srli_epi32(
-					_mm256_mullo_epi32(v_p_lo, v_gain_lo), FIXED_BITS);
-				v_p_hi = _mm256_srli_epi32(
-					_mm256_mullo_epi32(v_p_hi, v_gain_hi), FIXED_BITS);
+				v_p_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_p_lo, v_gain_lo), FIXED_BITS);
+				v_p_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_p_hi, v_gain_hi), FIXED_BITS);
 
 				__m256i v_res_16 = _mm256_packus_epi32(v_p_lo, v_p_hi);
-				return _mm256_permute4x64_epi64(v_res_16,
-												_MM_SHUFFLE(3, 1, 2, 0));
+				return _mm256_permute4x64_epi64(v_res_16, _MM_SHUFFLE(3, 1, 2, 0));
 			};
 
-			__m256i v_res_0 =
-				process_half(_mm256_castsi256_si128(v_src_32), v_lsc_0);
-			__m256i v_res_1 =
-				process_half(_mm256_extracti128_si256(v_src_32, 1), v_lsc_1);
+			__m256i v_res_0 = process_half(_mm256_castsi256_si128(v_src_32), v_lsc_0);
+			__m256i v_res_1 = process_half(_mm256_extracti128_si256(v_src_32, 1), v_lsc_1);
 
 			__m256i v_res_u8 = _mm256_packus_epi16(v_res_0, v_res_1);
-			v_res_u8 =
-				_mm256_permute4x64_epi64(v_res_u8, _MM_SHUFFLE(3, 1, 2, 0));
+			v_res_u8 = _mm256_permute4x64_epi64(v_res_u8, _MM_SHUFFLE(3, 1, 2, 0));
 			_mm256_storeu_si256((__m256i *)(ptr_src + c), v_res_u8);
 		}
 
@@ -713,23 +612,19 @@ void lsc_awb_simd_u8(cv::Mat &img, float exposure,
 	}
 }
 
-void raw_to_8bit_with_gains_simd_u16(cv::Mat &src, cv::Mat &dst,
-									 const IspConfig &config,
-									 const cv::Mat &lsc_map) {
+void raw_to_8bit_with_gains_simd_u16(cv::Mat &src, cv::Mat &dst, const IspConfig &config, const cv::Mat &lsc_map) {
 	int rows = src.rows;
 	int cols = src.cols;
 
 	uint16_t bl_val = static_cast<uint16_t>(config.black_level);
 	__m256i v_bl = _mm256_set1_epi16(bl_val);
 
-	float effective_range =
-		static_cast<float>(config.white_level - config.black_level);
+	float effective_range = static_cast<float>(config.white_level - config.black_level);
 	if (effective_range < 1.0f)
 		effective_range = 1.0f;
 
 	// 计算总缩放因子 (使用 FIXED_SCALE)
-	float total_scale_factor =
-		(255.0f / effective_range) * config.lscExp * FIXED_SCALE;
+	float total_scale_factor = (255.0f / effective_range) * config.lscExp * FIXED_SCALE;
 
 	auto calc_gain = [&](float awb_g) -> uint16_t {
 		float val = awb_g * total_scale_factor;
@@ -754,34 +649,26 @@ void raw_to_8bit_with_gains_simd_u16(cv::Mat &src, cv::Mat &dst,
 	// 核心计算 Kernel (定义在循环外，强制内联)
 	// =========================================================
 	// 处理 16个像素 (一个 __m256i)
-	auto compute_block = [](const __m256i &v_src, const __m256i &v_lsc,
-							const __m256i &v_awb) -> __m256i {
+	auto compute_block = [](const __m256i &v_src, const __m256i &v_lsc, const __m256i &v_awb) -> __m256i {
 		// 1. Unpack source to 32-bit (Pixel - BL)
 		__m256i v_src_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src));
-		__m256i v_src_hi =
-			_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src, 1));
+		__m256i v_src_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src, 1));
 
 		// 2. Unpack LSC & AWB to 32-bit
 		__m256i v_lsc_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_lsc));
-		__m256i v_lsc_hi =
-			_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_lsc, 1));
+		__m256i v_lsc_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_lsc, 1));
 
 		__m256i v_awb_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_awb));
-		__m256i v_awb_hi =
-			_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb, 1));
+		__m256i v_awb_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb, 1));
 
 		// 3. Combine Gains: (LSC * AWB) >> Shift
 		// 提前合并增益，减少一次对 v_src 的乘法
-		__m256i v_gain_lo = _mm256_srli_epi32(
-			_mm256_mullo_epi32(v_lsc_lo, v_awb_lo), FIXED_BITS);
-		__m256i v_gain_hi = _mm256_srli_epi32(
-			_mm256_mullo_epi32(v_lsc_hi, v_awb_hi), FIXED_BITS);
+		__m256i v_gain_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_lsc_lo, v_awb_lo), FIXED_BITS);
+		__m256i v_gain_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_lsc_hi, v_awb_hi), FIXED_BITS);
 
 		// 4. Apply Gain: (Pixel * Gain) >> Shift
-		v_src_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_lo, v_gain_lo),
-									 FIXED_BITS);
-		v_src_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_hi, v_gain_hi),
-									 FIXED_BITS);
+		v_src_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_lo, v_gain_lo), FIXED_BITS);
+		v_src_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_hi, v_gain_hi), FIXED_BITS);
 
 		// 5. Pack 32-bit back to 16-bit (Satruated)
 		return _mm256_packus_epi32(v_src_lo, v_src_hi);
@@ -791,21 +678,16 @@ void raw_to_8bit_with_gains_simd_u16(cv::Mat &src, cv::Mat &dst,
 	};
 
 	// 无 LSC 版本的 Kernel
-	auto compute_block_no_lsc = [](const __m256i &v_src,
-								   const __m256i &v_awb) -> __m256i {
+	auto compute_block_no_lsc = [](const __m256i &v_src, const __m256i &v_awb) -> __m256i {
 		__m256i v_src_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src));
-		__m256i v_src_hi =
-			_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src, 1));
+		__m256i v_src_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src, 1));
 
 		__m256i v_awb_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_awb));
-		__m256i v_awb_hi =
-			_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb, 1));
+		__m256i v_awb_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb, 1));
 
 		// Apply AWB Gain Only
-		v_src_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_lo, v_awb_lo),
-									 FIXED_BITS);
-		v_src_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_hi, v_awb_hi),
-									 FIXED_BITS);
+		v_src_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_lo, v_awb_lo), FIXED_BITS);
+		v_src_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_src_hi, v_awb_hi), FIXED_BITS);
 
 		return _mm256_packus_epi32(v_src_lo, v_src_hi);
 	};
@@ -821,8 +703,7 @@ void raw_to_8bit_with_gains_simd_u16(cv::Mat &src, cv::Mat &dst,
 			uint8_t *pSrc = src.ptr<uint8_t>(r);
 			uint8_t *pDst = dst.ptr<uint8_t>(r);
 
-			const uint16_t *lsc_ptr =
-				HAS_LSC ? lsc_map.ptr<uint16_t>(r) : nullptr;
+			const uint16_t *lsc_ptr = HAS_LSC ? lsc_map.ptr<uint16_t>(r) : nullptr;
 			__m256i v_awb = (r % 2 == 0) ? v_awb_row0 : v_awb_row1;
 
 			int c = 0;
@@ -834,8 +715,7 @@ void raw_to_8bit_with_gains_simd_u16(cv::Mat &src, cv::Mat &dst,
 				__m256i v_res_16;
 
 				if constexpr (HAS_LSC) {
-					__m256i v_lsc =
-						_mm256_loadu_si256((const __m256i *)(lsc_ptr + c));
+					__m256i v_lsc = _mm256_loadu_si256((const __m256i *)(lsc_ptr + c));
 					v_res_16 = compute_block(v_src, v_lsc, v_awb);
 				} else {
 					v_res_16 = compute_block_no_lsc(v_src, v_awb);
@@ -844,8 +724,7 @@ void raw_to_8bit_with_gains_simd_u16(cv::Mat &src, cv::Mat &dst,
 				// 此时 v_res_16 是 256bit (16个 u16)，顺序是乱的 (因为
 				// packus_epi32) [A0..A3 B0..B3 A4..A7 B4..B7] (32-bit blocks)
 				// 我们需要 permute 恢复顺序
-				v_res_16 =
-					_mm256_permute4x64_epi64(v_res_16, _MM_SHUFFLE(3, 1, 2, 0));
+				v_res_16 = _mm256_permute4x64_epi64(v_res_16, _MM_SHUFFLE(3, 1, 2, 0));
 
 				// 压缩 16-bit -> 8-bit
 				// 由于 packus_epi16 需要两个 128-bit 输入，我们将 256-bit 拆开
@@ -886,9 +765,7 @@ void raw_to_8bit_with_gains_simd_u16(cv::Mat &src, cv::Mat &dst,
 	}
 }
 
-void raw_to_8bit_with_gains_simd_u8(cv::Mat &src, cv::Mat &dst,
-									const IspConfig &config,
-									const cv::Mat &lsc_map) {
+void raw_to_8bit_with_gains_simd_u8(cv::Mat &src, cv::Mat &dst, const IspConfig &config, const cv::Mat &lsc_map) {
 	int rows = src.rows;
 	int cols = src.cols;
 
@@ -901,8 +778,7 @@ void raw_to_8bit_with_gains_simd_u8(cv::Mat &src, cv::Mat &dst,
 		effective_range = 1.0f;
 
 	// 计算缩放因子
-	float total_scale_factor =
-		(255.0f / effective_range) * config.lscExp * FIXED_SCALE;
+	float total_scale_factor = (255.0f / effective_range) * config.lscExp * FIXED_SCALE;
 
 	auto calc_gain = [&](float awb_g) -> uint16_t {
 		float val = awb_g * total_scale_factor;
@@ -925,61 +801,43 @@ void raw_to_8bit_with_gains_simd_u8(cv::Mat &src, cv::Mat &dst,
 
 	// 定义核心处理逻辑的宏或内联 lambda (避免捕获开销，纯计算)
 	// 这里使用 Lambda static 技巧，强制内联
-	auto compute_block = [](const __m256i &v_src_part,
-							const __m256i &v_lsc_part,
+	auto compute_block = [](const __m256i &v_src_part, const __m256i &v_lsc_part,
 							const __m256i &v_awb_part) -> __m256i {
 		// Unpack 8-bit -> 32-bit (Part 1)
-		__m256i v_p_lo =
-			_mm256_cvtepu8_epi32(_mm256_castsi256_si128(v_src_part));
+		__m256i v_p_lo = _mm256_cvtepu8_epi32(_mm256_castsi256_si128(v_src_part));
 		// Unpack 8-bit -> 32-bit (Part 2)
-		__m256i v_p_hi =
-			_mm256_cvtepu8_epi32(_mm256_extracti128_si256(v_src_part, 1));
+		__m256i v_p_hi = _mm256_cvtepu8_epi32(_mm256_extracti128_si256(v_src_part, 1));
 
 		// Unpack LSC & AWB to 32-bit
-		__m256i v_lsc_lo =
-			_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_lsc_part));
-		__m256i v_lsc_hi =
-			_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_lsc_part, 1));
+		__m256i v_lsc_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_lsc_part));
+		__m256i v_lsc_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_lsc_part, 1));
 
-		__m256i v_awb_lo =
-			_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_awb_part));
-		__m256i v_awb_hi =
-			_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb_part, 1));
+		__m256i v_awb_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_awb_part));
+		__m256i v_awb_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb_part, 1));
 
 		// Combine Gains: (LSC * AWB) >> Shift
-		__m256i v_gain_lo = _mm256_srli_epi32(
-			_mm256_mullo_epi32(v_lsc_lo, v_awb_lo), FIXED_BITS);
-		__m256i v_gain_hi = _mm256_srli_epi32(
-			_mm256_mullo_epi32(v_lsc_hi, v_awb_hi), FIXED_BITS);
+		__m256i v_gain_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_lsc_lo, v_awb_lo), FIXED_BITS);
+		__m256i v_gain_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_lsc_hi, v_awb_hi), FIXED_BITS);
 
 		// Apply Gain: (Pixel * Gain) >> Shift
-		v_p_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_p_lo, v_gain_lo),
-								   FIXED_BITS);
-		v_p_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_p_hi, v_gain_hi),
-								   FIXED_BITS);
+		v_p_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_p_lo, v_gain_lo), FIXED_BITS);
+		v_p_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_p_hi, v_gain_hi), FIXED_BITS);
 
 		// Pack back to 16-bit
 		return _mm256_packus_epi32(v_p_lo, v_p_hi);
 	};
 
 	// 无 LSC 版本的 Compute (减少运算)
-	auto compute_block_no_lsc = [](const __m256i &v_src_part,
-								   const __m256i &v_awb_part) -> __m256i {
-		__m256i v_p_lo =
-			_mm256_cvtepu8_epi32(_mm256_castsi256_si128(v_src_part));
-		__m256i v_p_hi =
-			_mm256_cvtepu8_epi32(_mm256_extracti128_si256(v_src_part, 1));
+	auto compute_block_no_lsc = [](const __m256i &v_src_part, const __m256i &v_awb_part) -> __m256i {
+		__m256i v_p_lo = _mm256_cvtepu8_epi32(_mm256_castsi256_si128(v_src_part));
+		__m256i v_p_hi = _mm256_cvtepu8_epi32(_mm256_extracti128_si256(v_src_part, 1));
 
-		__m256i v_awb_lo =
-			_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_awb_part));
-		__m256i v_awb_hi =
-			_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb_part, 1));
+		__m256i v_awb_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_awb_part));
+		__m256i v_awb_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_awb_part, 1));
 
 		// Apply AWB Gain Only
-		v_p_lo =
-			_mm256_srli_epi32(_mm256_mullo_epi32(v_p_lo, v_awb_lo), FIXED_BITS);
-		v_p_hi =
-			_mm256_srli_epi32(_mm256_mullo_epi32(v_p_hi, v_awb_hi), FIXED_BITS);
+		v_p_lo = _mm256_srli_epi32(_mm256_mullo_epi32(v_p_lo, v_awb_lo), FIXED_BITS);
+		v_p_hi = _mm256_srli_epi32(_mm256_mullo_epi32(v_p_hi, v_awb_hi), FIXED_BITS);
 
 		return _mm256_packus_epi32(v_p_lo, v_p_hi);
 	};
@@ -996,33 +854,27 @@ void raw_to_8bit_with_gains_simd_u8(cv::Mat &src, cv::Mat &dst,
 			uint8_t *pDst = dst.ptr<uint8_t>(r);
 
 			// 优化：指针定义
-			const uint16_t *lsc_ptr =
-				HAS_LSC ? lsc_map.ptr<uint16_t>(r) : nullptr;
+			const uint16_t *lsc_ptr = HAS_LSC ? lsc_map.ptr<uint16_t>(r) : nullptr;
 			__m256i v_awb = (r % 2 == 0) ? v_awb_row0 : v_awb_row1;
 
 			int c = 0;
 			for (; c <= cols - 32; c += 32) {
 				// Load 32 pixels
-				__m256i v_src_32 =
-					_mm256_loadu_si256((const __m256i *)(pSrc + c));
+				__m256i v_src_32 = _mm256_loadu_si256((const __m256i *)(pSrc + c));
 				v_src_32 = _mm256_subs_epu8(v_src_32, v_bl); // Subtract BL
 
 				// Split into two 128-bit lanes (16 pixels each) expanded to
 				// 256-bit Lane 0 (Pixels 0-15)
-				__m256i v_src_0 =
-					_mm256_cvtepu8_epi16(_mm256_castsi256_si128(v_src_32));
+				__m256i v_src_0 = _mm256_cvtepu8_epi16(_mm256_castsi256_si128(v_src_32));
 				// Lane 1 (Pixels 16-31)
-				__m256i v_src_1 =
-					_mm256_cvtepu8_epi16(_mm256_extracti128_si256(v_src_32, 1));
+				__m256i v_src_1 = _mm256_cvtepu8_epi16(_mm256_extracti128_si256(v_src_32, 1));
 
 				// Result holders
 				__m256i v_res_0_16, v_res_1_16;
 
 				if constexpr (HAS_LSC) {
-					__m256i v_lsc_0 =
-						_mm256_loadu_si256((const __m256i *)(lsc_ptr + c));
-					__m256i v_lsc_1 =
-						_mm256_loadu_si256((const __m256i *)(lsc_ptr + c + 16));
+					__m256i v_lsc_0 = _mm256_loadu_si256((const __m256i *)(lsc_ptr + c));
+					__m256i v_lsc_1 = _mm256_loadu_si256((const __m256i *)(lsc_ptr + c + 16));
 
 					v_res_0_16 = compute_block(v_src_0, v_lsc_0, v_awb);
 					v_res_1_16 = compute_block(v_src_1, v_lsc_1, v_awb);
@@ -1034,8 +886,7 @@ void raw_to_8bit_with_gains_simd_u8(cv::Mat &src, cv::Mat &dst,
 				// Pack 16-bit results back to 8-bit
 				__m256i v_res_u8 = _mm256_packus_epi16(v_res_0_16, v_res_1_16);
 				// Permute to fix order after AVX2 pack
-				v_res_u8 =
-					_mm256_permute4x64_epi64(v_res_u8, _MM_SHUFFLE(3, 1, 2, 0));
+				v_res_u8 = _mm256_permute4x64_epi64(v_res_u8, _MM_SHUFFLE(3, 1, 2, 0));
 
 				_mm256_storeu_si256((__m256i *)(pDst + c), v_res_u8);
 			}
@@ -1073,12 +924,9 @@ void ccm_fixed_u16(cv::Mat &img, const std::vector<int32_t> &ccm_matrix_int) {
 	int cols = img.cols;
 
 	// [修正 1] 显式定义标量系数，供 SIMD 初始化和底部的标量循环使用
-	const int32_t c00 = ccm_matrix_int[0], c01 = ccm_matrix_int[1],
-				  c02 = ccm_matrix_int[2];
-	const int32_t c10 = ccm_matrix_int[3], c11 = ccm_matrix_int[4],
-				  c12 = ccm_matrix_int[5];
-	const int32_t c20 = ccm_matrix_int[6], c21 = ccm_matrix_int[7],
-				  c22 = ccm_matrix_int[8];
+	const int32_t c00 = ccm_matrix_int[0], c01 = ccm_matrix_int[1], c02 = ccm_matrix_int[2];
+	const int32_t c10 = ccm_matrix_int[3], c11 = ccm_matrix_int[4], c12 = ccm_matrix_int[5];
+	const int32_t c20 = ccm_matrix_int[6], c21 = ccm_matrix_int[7], c22 = ccm_matrix_int[8];
 
 	// 1. 准备矩阵系数 (广播到 SIMD 寄存器)
 	const __m256i v_c00 = _mm256_set1_epi32(c00);
@@ -1099,20 +947,14 @@ void ccm_fixed_u16(cv::Mat &img, const std::vector<int32_t> &ccm_matrix_int) {
 		// SIMD 循环：每次处理 8 个像素
 		for (; c <= cols - 8; c += 8) {
 			// 手动 Load (模拟 Gather)
-			__m256i v_b = _mm256_setr_epi32(ptr[c * 3 + 0], ptr[c * 3 + 3],
-											ptr[c * 3 + 6], ptr[c * 3 + 9],
-											ptr[c * 3 + 12], ptr[c * 3 + 15],
-											ptr[c * 3 + 18], ptr[c * 3 + 21]);
+			__m256i v_b = _mm256_setr_epi32(ptr[c * 3 + 0], ptr[c * 3 + 3], ptr[c * 3 + 6], ptr[c * 3 + 9],
+											ptr[c * 3 + 12], ptr[c * 3 + 15], ptr[c * 3 + 18], ptr[c * 3 + 21]);
 
-			__m256i v_g = _mm256_setr_epi32(ptr[c * 3 + 1], ptr[c * 3 + 4],
-											ptr[c * 3 + 7], ptr[c * 3 + 10],
-											ptr[c * 3 + 13], ptr[c * 3 + 16],
-											ptr[c * 3 + 19], ptr[c * 3 + 22]);
+			__m256i v_g = _mm256_setr_epi32(ptr[c * 3 + 1], ptr[c * 3 + 4], ptr[c * 3 + 7], ptr[c * 3 + 10],
+											ptr[c * 3 + 13], ptr[c * 3 + 16], ptr[c * 3 + 19], ptr[c * 3 + 22]);
 
-			__m256i v_r = _mm256_setr_epi32(ptr[c * 3 + 2], ptr[c * 3 + 5],
-											ptr[c * 3 + 8], ptr[c * 3 + 11],
-											ptr[c * 3 + 14], ptr[c * 3 + 17],
-											ptr[c * 3 + 20], ptr[c * 3 + 23]);
+			__m256i v_r = _mm256_setr_epi32(ptr[c * 3 + 2], ptr[c * 3 + 5], ptr[c * 3 + 8], ptr[c * 3 + 11],
+											ptr[c * 3 + 14], ptr[c * 3 + 17], ptr[c * 3 + 20], ptr[c * 3 + 23]);
 
 			// --- 矩阵乘法 ---
 			// R_new
@@ -1174,12 +1016,9 @@ void ccm_fixed_u16(cv::Mat &img, const std::vector<int32_t> &ccm_matrix_int) {
 			int32_t g_val = ptr[idx + 1];
 			int32_t r_val = ptr[idx + 2];
 
-			int32_t r_new =
-				(r_val * c00 + g_val * c01 + b_val * c02) >> FIXED_BITS;
-			int32_t g_new =
-				(r_val * c10 + g_val * c11 + b_val * c12) >> FIXED_BITS;
-			int32_t b_new =
-				(r_val * c20 + g_val * c21 + b_val * c22) >> FIXED_BITS;
+			int32_t r_new = (r_val * c00 + g_val * c01 + b_val * c02) >> FIXED_BITS;
+			int32_t g_new = (r_val * c10 + g_val * c11 + b_val * c12) >> FIXED_BITS;
+			int32_t b_new = (r_val * c20 + g_val * c21 + b_val * c22) >> FIXED_BITS;
 
 			ptr[idx + 0] = cv::saturate_cast<uint16_t>(std::max(0, b_new));
 			ptr[idx + 1] = cv::saturate_cast<uint16_t>(std::max(0, g_new));
@@ -1193,12 +1032,9 @@ void ccm_fixed_u8(cv::Mat &img, const std::vector<int32_t> &ccm_matrix_int) {
 	int cols = img.cols;
 
 	// [修正 1] 同样显式定义标量系数
-	const int32_t c00 = ccm_matrix_int[0], c01 = ccm_matrix_int[1],
-				  c02 = ccm_matrix_int[2];
-	const int32_t c10 = ccm_matrix_int[3], c11 = ccm_matrix_int[4],
-				  c12 = ccm_matrix_int[5];
-	const int32_t c20 = ccm_matrix_int[6], c21 = ccm_matrix_int[7],
-				  c22 = ccm_matrix_int[8];
+	const int32_t c00 = ccm_matrix_int[0], c01 = ccm_matrix_int[1], c02 = ccm_matrix_int[2];
+	const int32_t c10 = ccm_matrix_int[3], c11 = ccm_matrix_int[4], c12 = ccm_matrix_int[5];
+	const int32_t c20 = ccm_matrix_int[6], c21 = ccm_matrix_int[7], c22 = ccm_matrix_int[8];
 
 	const __m256i v_c00 = _mm256_set1_epi32(c00);
 	const __m256i v_c01 = _mm256_set1_epi32(c01);
@@ -1224,12 +1060,9 @@ void ccm_fixed_u8(cv::Mat &img, const std::vector<int32_t> &ccm_matrix_int) {
 		// SIMD 循环：8 像素
 		for (; c <= cols - 8; c += 8) {
 			// Gather
-			__m256i v_b = _mm256_i32gather_epi32((const int *)(ptr + c * 3),
-												 v_idx_base, 1);
-			__m256i v_g =
-				_mm256_i32gather_epi32((const int *)(ptr + c * 3), v_idx_g, 1);
-			__m256i v_r =
-				_mm256_i32gather_epi32((const int *)(ptr + c * 3), v_idx_r, 1);
+			__m256i v_b = _mm256_i32gather_epi32((const int *)(ptr + c * 3), v_idx_base, 1);
+			__m256i v_g = _mm256_i32gather_epi32((const int *)(ptr + c * 3), v_idx_g, 1);
+			__m256i v_r = _mm256_i32gather_epi32((const int *)(ptr + c * 3), v_idx_r, 1);
 
 			v_b = _mm256_and_si256(v_b, v_mask);
 			v_g = _mm256_and_si256(v_g, v_mask);
@@ -1275,12 +1108,9 @@ void ccm_fixed_u8(cv::Mat &img, const std::vector<int32_t> &ccm_matrix_int) {
 			int32_t g_val = ptr[idx + 1];
 			int32_t r_val = ptr[idx + 2];
 
-			int32_t r_new =
-				(r_val * c00 + g_val * c01 + b_val * c02) >> FIXED_BITS;
-			int32_t g_new =
-				(r_val * c10 + g_val * c11 + b_val * c12) >> FIXED_BITS;
-			int32_t b_new =
-				(r_val * c20 + g_val * c21 + b_val * c22) >> FIXED_BITS;
+			int32_t r_new = (r_val * c00 + g_val * c01 + b_val * c02) >> FIXED_BITS;
+			int32_t g_new = (r_val * c10 + g_val * c11 + b_val * c12) >> FIXED_BITS;
+			int32_t b_new = (r_val * c20 + g_val * c21 + b_val * c22) >> FIXED_BITS;
 
 			ptr[idx + 0] = cv::saturate_cast<uint8_t>(std::max(0, b_new));
 			ptr[idx + 1] = cv::saturate_cast<uint8_t>(std::max(0, g_new));
@@ -1289,8 +1119,7 @@ void ccm_fixed_u8(cv::Mat &img, const std::vector<int32_t> &ccm_matrix_int) {
 	}
 }
 
-inline void row_simd_u16_to_u8(const uint16_t *src, uint8_t *dst, int width,
-							   float alpha, float beta) {
+inline void row_simd_u16_to_u8(const uint16_t *src, uint8_t *dst, int width, float alpha, float beta) {
 	int x = 0;
 
 	__m256 v_alpha = _mm256_set1_ps(alpha);
@@ -1299,10 +1128,8 @@ inline void row_simd_u16_to_u8(const uint16_t *src, uint8_t *dst, int width,
 	for (; x <= width - 16; x += 16) {
 		__m256i v_src_u16 = _mm256_loadu_si256((const __m256i *)(src + x));
 
-		__m256i v_src_i32_lo =
-			_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src_u16));
-		__m256i v_src_i32_hi =
-			_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src_u16, 1));
+		__m256i v_src_i32_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src_u16));
+		__m256i v_src_i32_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src_u16, 1));
 
 		__m256 v_f32_lo = _mm256_cvtepi32_ps(v_src_i32_lo);
 		__m256 v_f32_hi = _mm256_cvtepi32_ps(v_src_i32_hi);
@@ -1315,19 +1142,16 @@ inline void row_simd_u16_to_u8(const uint16_t *src, uint8_t *dst, int width,
 
 		__m256i v_res_i16 = _mm256_packus_epi32(v_res_i32_lo, v_res_i32_hi);
 
-		__m256i v_res_u8_scrambled =
-			_mm256_packus_epi16(v_res_i16, _mm256_setzero_si256());
+		__m256i v_res_u8_scrambled = _mm256_packus_epi16(v_res_i16, _mm256_setzero_si256());
 
-		v_res_i16 =
-			_mm256_permute4x64_epi64(v_res_i16, _MM_SHUFFLE(3, 1, 2, 0));
+		v_res_i16 = _mm256_permute4x64_epi64(v_res_i16, _MM_SHUFFLE(3, 1, 2, 0));
 
 		__m256i v_zero = _mm256_setzero_si256();
 		__m256i v_res_u8 = _mm256_packus_epi16(v_res_i16, v_zero);
 
 		v_res_u8 = _mm256_permute4x64_epi64(v_res_u8, _MM_SHUFFLE(3, 1, 2, 0));
 
-		_mm_storeu_si128((__m128i *)(dst + x),
-						 _mm256_castsi256_si128(v_res_u8));
+		_mm_storeu_si128((__m128i *)(dst + x), _mm256_castsi256_si128(v_res_u8));
 	}
 
 	for (; x < width; ++x) {
@@ -1338,8 +1162,7 @@ inline void row_simd_u16_to_u8(const uint16_t *src, uint8_t *dst, int width,
 	}
 }
 
-inline void row_simd_u8_to_u8(const uint8_t *src, uint8_t *dst, int width,
-							  float alpha, float beta) {
+inline void row_simd_u8_to_u8(const uint8_t *src, uint8_t *dst, int width, float alpha, float beta) {
 	int x = 0;
 	__m256 v_alpha = _mm256_set1_ps(alpha);
 	__m256 v_beta = _mm256_set1_ps(beta);
@@ -1348,10 +1171,8 @@ inline void row_simd_u8_to_u8(const uint8_t *src, uint8_t *dst, int width,
 		__m128i v_src_u8 = _mm_loadu_si128((const __m128i *)(src + x));
 		__m256i v_src_u16 = _mm256_cvtepu8_epi16(v_src_u8);
 
-		__m256i v_src_i32_lo =
-			_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src_u16));
-		__m256i v_src_i32_hi =
-			_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src_u16, 1));
+		__m256i v_src_i32_lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_src_u16));
+		__m256i v_src_i32_hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_src_u16, 1));
 
 		__m256 v_f32_lo = _mm256_cvtepi32_ps(v_src_i32_lo);
 		__m256 v_f32_hi = _mm256_cvtepi32_ps(v_src_i32_hi);
@@ -1363,15 +1184,12 @@ inline void row_simd_u8_to_u8(const uint8_t *src, uint8_t *dst, int width,
 		__m256i v_res_i32_hi = _mm256_cvtps_epi32(v_f32_hi);
 
 		__m256i v_res_i16 = _mm256_packus_epi32(v_res_i32_lo, v_res_i32_hi);
-		v_res_i16 =
-			_mm256_permute4x64_epi64(v_res_i16, _MM_SHUFFLE(3, 1, 2, 0));
+		v_res_i16 = _mm256_permute4x64_epi64(v_res_i16, _MM_SHUFFLE(3, 1, 2, 0));
 
-		__m256i v_res_u8 =
-			_mm256_packus_epi16(v_res_i16, _mm256_setzero_si256());
+		__m256i v_res_u8 = _mm256_packus_epi16(v_res_i16, _mm256_setzero_si256());
 		v_res_u8 = _mm256_permute4x64_epi64(v_res_u8, _MM_SHUFFLE(3, 1, 2, 0));
 
-		_mm_storeu_si128((__m128i *)(dst + x),
-						 _mm256_castsi256_si128(v_res_u8));
+		_mm_storeu_si128((__m128i *)(dst + x), _mm256_castsi256_si128(v_res_u8));
 	}
 
 	for (; x < width; ++x) {
@@ -1395,16 +1213,14 @@ LFIsp::LFIsp(const cv::Mat &lfp_img) {
 	set_lf_img(lfp_img);
 }
 
-LFIsp::LFIsp(const cv::Mat &lfp_img, const cv::Mat &wht_img,
-			 const IspConfig &config) {
+LFIsp::LFIsp(const cv::Mat &lfp_img, const cv::Mat &wht_img, const IspConfig &config) {
 	cv::setNumThreads(cv::getNumberOfCPUs());
 	set_lf_img(lfp_img);
 	initConfig(wht_img, config);
 }
 
 LFIsp &LFIsp::print_config(const IspConfig &config) {
-	std::cout << "\n================ [LFIsp Config] ================"
-			  << std::endl;
+	std::cout << "\n================ [LFIsp Config] ================" << std::endl;
 	std::cout << "Bayer Pattern : " << bayerToString(config.bayer) << std::endl;
 	std::cout << "Bit Depth     : " << config.bitDepth << "-bit" << std::endl;
 	std::cout << "Black Level   : " << config.black_level << std::endl;
@@ -1435,11 +1251,9 @@ LFIsp &LFIsp::print_config(const IspConfig &config) {
 			std::cout << std::noshowpos << "]" << std::endl;
 		}
 	} else {
-		std::cout << "                (Invalid size: "
-				  << config.ccm_matrix.size() << ")" << std::endl;
+		std::cout << "                (Invalid size: " << config.ccm_matrix.size() << ")" << std::endl;
 	}
-	std::cout << "================================================"
-			  << std::endl;
+	std::cout << "================================================" << std::endl;
 	std::cout << std::defaultfloat;
 	return *this;
 }
@@ -1463,12 +1277,10 @@ void LFIsp::parseJsonToConfig(const json &j, IspConfig &config) {
 
 	if (j.contains("blc")) {
 		const auto &blc = j["blc"];
-		if (blc.contains("black") && blc["black"].is_array()
-			&& !blc["black"].empty()) {
+		if (blc.contains("black") && blc["black"].is_array() && !blc["black"].empty()) {
 			config.black_level = blc["black"][0].get<int>();
 		}
-		if (blc.contains("white") && blc["white"].is_array()
-			&& !blc["white"].empty()) {
+		if (blc.contains("white") && blc["white"].is_array() && !blc["white"].empty()) {
 			config.white_level = blc["white"][0].get<int>();
 		}
 	}
@@ -1665,15 +1477,13 @@ LFIsp &LFIsp::process(const IspConfig &config) {
 		if (config.enableBLC) {
 			blc(config.black_level, config.white_level);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'BLC' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'BLC' is disabled in settings." << std::endl;
 		}
 	}
 	{
 		ScopedTimer t("Convert", profiler_cpu, config.benchmark);
 		if (lfp_img_gpu.depth() != CV_8U) {
-			lfp_img_gpu.convertTo(lfp_img_gpu, CV_8U,
-								  255.0 / ((1 << config.bitDepth) - 1));
+			lfp_img_gpu.convertTo(lfp_img_gpu, CV_8U, 255.0 / ((1 << config.bitDepth) - 1));
 		}
 	}
 	{
@@ -1681,8 +1491,7 @@ LFIsp &LFIsp::process(const IspConfig &config) {
 		if (config.enableDPC) {
 			dpc(config.dpcThreshold);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'DPC' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'DPC' is disabled in settings." << std::endl;
 		}
 	}
 	{
@@ -1690,8 +1499,7 @@ LFIsp &LFIsp::process(const IspConfig &config) {
 		if (config.enableLSC) {
 			lsc(config.lscExp);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'LSC' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'LSC' is disabled in settings." << std::endl;
 		}
 	}
 	{
@@ -1699,8 +1507,7 @@ LFIsp &LFIsp::process(const IspConfig &config) {
 		if (config.enableAWB) {
 			awb(config.awb_gains);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'AWB' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'AWB' is disabled in settings." << std::endl;
 		}
 	}
 	{
@@ -1708,8 +1515,7 @@ LFIsp &LFIsp::process(const IspConfig &config) {
 		if (config.enableDemosaic) {
 			demosaic(config.bayer, config.demosaicMethod);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'Demosaic' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'Demosaic' is disabled in settings." << std::endl;
 		}
 	}
 	{
@@ -1717,8 +1523,7 @@ LFIsp &LFIsp::process(const IspConfig &config) {
 		if (config.enableCCM) {
 			ccm(config.ccm_matrix);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'CCM' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'CCM' is disabled in settings." << std::endl;
 		}
 	}
 	{
@@ -1753,17 +1558,6 @@ LFIsp &LFIsp::process(const IspConfig &config) {
 // ============================================================================
 // 快速处理流程 (SIMD Implementation Dispatcher)
 // ============================================================================
-
-LFIsp &LFIsp::blc_fast(int black_level) {
-	if (lfp_img_.empty())
-		return *this;
-	if (lfp_img_.depth() == CV_16U) {
-		blc_simd_u16(lfp_img_, black_level);
-	} else if (lfp_img_.depth() == CV_8U) {
-		blc_simd_u8(lfp_img_, black_level);
-	}
-	return *this;
-} // blc_fast
 
 LFIsp &LFIsp::blc_fast(int black_level, int white_level) {
 	if (lfp_img_.empty())
@@ -1855,8 +1649,7 @@ LFIsp &LFIsp::awb_fast(const std::vector<float> &wbgains) {
 	return *this;
 } // awb_fast
 
-LFIsp &LFIsp::lsc_awb_fused_fast(float exposure,
-								 const std::vector<float> &wbgains) {
+LFIsp &LFIsp::lsc_awb_fused_fast(float exposure, const std::vector<float> &wbgains) {
 	if (lfp_img_.empty())
 		return *this;
 
@@ -1952,11 +1745,9 @@ LFIsp &LFIsp::preview(const IspConfig &config) {
 
 	// 根据位深分发
 	if (lfp_img_.depth() == CV_16U) {
-		raw_to_8bit_with_gains_simd_u16(lfp_img_, raw_8u, config,
-										lsc_gain_map_int_);
+		raw_to_8bit_with_gains_simd_u16(lfp_img_, raw_8u, config, lsc_gain_map_int_);
 	} else if (lfp_img_.depth() == CV_8U) {
-		raw_to_8bit_with_gains_simd_u8(lfp_img_, raw_8u, config,
-									   lsc_gain_map_int_);
+		raw_to_8bit_with_gains_simd_u8(lfp_img_, raw_8u, config, lsc_gain_map_int_);
 	}
 
 	int code = get_demosaic_code(config.bayer, false);
@@ -1979,15 +1770,13 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 			// blc_fast(config.black_level);
 			blc_fast(config.black_level, config.white_level);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'BLC' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'BLC' is disabled in settings." << std::endl;
 		}
 	}
 	{
 		ScopedTimer t("Convert", profiler_fast, config.benchmark);
 		if (lfp_img_.depth() != CV_8U) {
-			lfp_img_.convertTo(lfp_img_, CV_8U,
-							   255.0 / ((1 << config.bitDepth) - 1));
+			lfp_img_.convertTo(lfp_img_, CV_8U, 255.0 / ((1 << config.bitDepth) - 1));
 		}
 	}
 
@@ -1996,8 +1785,7 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 		if (config.enableDPC) {
 			dpc_fast(config.dpcMethod, config.dpcThreshold);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'DPC' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'DPC' is disabled in settings." << std::endl;
 		}
 	}
 	if (config.enableLSC && config.enableAWB) {
@@ -2009,8 +1797,7 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 			if (config.enableLSC) {
 				lsc_fast(config.lscExp);
 			} else {
-				std::cout << "[LFISP] Pipeline: 'LSC' is disabled in settings."
-						  << std::endl;
+				std::cout << "[LFISP] Pipeline: 'LSC' is disabled in settings." << std::endl;
 			}
 		}
 		{
@@ -2018,8 +1805,7 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 			if (config.enableAWB) {
 				awb_fast(config.awb_gains);
 			} else {
-				std::cout << "[LFISP] Pipeline: 'AWB' is disabled in settings."
-						  << std::endl;
+				std::cout << "[LFISP] Pipeline: 'AWB' is disabled in settings." << std::endl;
 			}
 		}
 	}
@@ -2028,8 +1814,7 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 		if (config.enableDemosaic) {
 			demosaic(config.bayer, config.demosaicMethod);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'Demosaic' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'Demosaic' is disabled in settings." << std::endl;
 		}
 	}
 
@@ -2038,8 +1823,7 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 		if (config.enableCCM) {
 			ccm_fast(config.ccm_matrix);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'CCM' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'CCM' is disabled in settings." << std::endl;
 		}
 	}
 	{
@@ -2170,11 +1954,10 @@ LFIsp &LFIsp::resample(bool dehex) {
 #pragma omp parallel for schedule(dynamic)
 	for (int i = 0; i < num_views; ++i) {
 		cv::Mat temp;
-		cv::remap(lfp_img_, temp, maps.extract[i * 2], maps.extract[i * 2 + 1],
-				  cv::INTER_LINEAR, cv::BORDER_REPLICATE);
+		cv::remap(lfp_img_, temp, maps.extract[i * 2], maps.extract[i * 2 + 1], cv::INTER_LANCZOS4,
+				  cv::BORDER_REPLICATE);
 		if (dehex) {
-			cv::remap(temp, temp, maps.dehex[0], maps.dehex[1],
-					  cv::INTER_LINEAR, cv::BORDER_REPLICATE);
+			cv::remap(temp, temp, maps.dehex[0], maps.dehex[1], cv::INTER_LANCZOS4, cv::BORDER_REPLICATE);
 		}
 		sais[i] = temp;
 	}
@@ -2388,6 +2171,15 @@ LFIsp &LFIsp::dpc_gpu(int threshold) {
 	return *this;
 } // dpc_gpu
 
+LFIsp &LFIsp::nr_gpu(float sigma_spatial, float sigma_color) {
+	if (lfp_img_gpu.empty())
+		return *this;
+
+	launch_nr_8u(lfp_img_gpu, lfp_img_gpu, sigma_spatial, sigma_color, stream);
+
+	return *this;
+}
+
 LFIsp &LFIsp::lsc_gpu(float exposure) {
 	// 检查非空
 	if (lfp_img_gpu.empty() || lsc_map_gpu.empty())
@@ -2405,14 +2197,12 @@ LFIsp &LFIsp::awb_gpu(const std::vector<float> &wbgains) {
 	if (wbgains.size() < 4)
 		return *this;
 
-	launch_awb_8u(lfp_img_gpu, wbgains[0], wbgains[1], wbgains[2], wbgains[3],
-				  stream);
+	launch_awb_8u(lfp_img_gpu, wbgains[0], wbgains[1], wbgains[2], wbgains[3], stream);
 
 	return *this;
 } // awb_gpu
 
-LFIsp &LFIsp::lsc_awb_fused_gpu(float exposure,
-								const std::vector<float> &wbgains) {
+LFIsp &LFIsp::lsc_awb_fused_gpu(float exposure, const std::vector<float> &wbgains) {
 	// 1. 基础检查
 	if (lfp_img_gpu.empty() || lsc_map_gpu.empty())
 		return *this;
@@ -2424,8 +2214,7 @@ LFIsp &LFIsp::lsc_awb_fused_gpu(float exposure,
 		return *this;
 
 	// 3. 调用融合 Kernel
-	launch_fused_lsc_awb(lfp_img_gpu, lsc_map_gpu, exposure, wbgains[0],
-						 wbgains[1], wbgains[2], wbgains[3], stream);
+	launch_fused_lsc_awb(lfp_img_gpu, lsc_map_gpu, exposure, wbgains[0], wbgains[1], wbgains[2], wbgains[3], stream);
 
 	return *this;
 } // lsc_awb_fused_gpu
@@ -2492,13 +2281,11 @@ LFIsp &LFIsp::resample_gpu(bool dehex) {
 
 	for (int i = 0; i < num_views; ++i) {
 		cv::cuda::GpuMat extracted;
-		cv::cuda::remap(lfp_img_gpu, extracted, extract_maps_gpu[2 * i],
-						extract_maps_gpu[2 * i + 1], cv::INTER_LINEAR,
+		cv::cuda::remap(lfp_img_gpu, extracted, extract_maps_gpu[2 * i], extract_maps_gpu[2 * i + 1], cv::INTER_LINEAR,
 						cv::BORDER_REPLICATE);
 
 		if (dehex && !dehex_maps_gpu.empty()) {
-			cv::cuda::remap(extracted, sais_gpu[i], dehex_maps_gpu[0],
-							dehex_maps_gpu[1], cv::INTER_LINEAR,
+			cv::cuda::remap(extracted, sais_gpu[i], dehex_maps_gpu[0], dehex_maps_gpu[1], cv::INTER_LINEAR,
 							cv::BORDER_REPLICATE);
 		} else {
 			sais_gpu[i] = extracted;
@@ -2551,8 +2338,7 @@ LFIsp &LFIsp::gc_gpu(float gamma) {
 
 // 外部声明
 
-LFIsp &LFIsp::ccm_gamma_fused_gpu(const std::vector<float> &ccm_matrix,
-								  float gamma) {
+LFIsp &LFIsp::ccm_gamma_fused_gpu(const std::vector<float> &ccm_matrix, float gamma) {
 	// 1. 检查输入：必须是 8UC3 (Demosaic 之后的图)
 	if (lfp_img_gpu.empty() || lfp_img_gpu.type() != CV_8UC3) {
 		return *this;
@@ -2590,15 +2376,13 @@ LFIsp &LFIsp::process_gpu(const IspConfig &config) {
 		if (config.enableBLC) {
 			blc_gpu(config.black_level, config.white_level);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'BLC' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'BLC' is disabled in settings." << std::endl;
 		}
 	}
 	{
 		ScopedTimer t("Convert", profiler_gpu, config.benchmark);
 		if (lfp_img_gpu.depth() != CV_8U) {
-			lfp_img_gpu.convertTo(lfp_img_gpu, CV_8U,
-								  255.0 / ((1 << config.bitDepth) - 1));
+			lfp_img_gpu.convertTo(lfp_img_gpu, CV_8U, 255.0 / ((1 << config.bitDepth) - 1));
 		}
 	}
 
@@ -2607,8 +2391,15 @@ LFIsp &LFIsp::process_gpu(const IspConfig &config) {
 		if (config.enableDPC) {
 			dpc_gpu(config.dpcThreshold);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'DPC' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'DPC' is disabled in settings." << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("Noise Reduction", profiler_gpu, config.benchmark);
+		if (config.enableNR) {
+			nr_gpu(config.nr_sigma_s, config.nr_sigma_r);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Noise Reduction' is disabled in settings." << std::endl;
 		}
 	}
 	{
@@ -2616,8 +2407,7 @@ LFIsp &LFIsp::process_gpu(const IspConfig &config) {
 		if (config.enableLSC) {
 			lsc_gpu(config.lscExp);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'LSC' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'LSC' is disabled in settings." << std::endl;
 		}
 	}
 	{
@@ -2625,8 +2415,7 @@ LFIsp &LFIsp::process_gpu(const IspConfig &config) {
 		if (config.enableAWB) {
 			awb_gpu(config.awb_gains);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'AWB' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'AWB' is disabled in settings." << std::endl;
 		}
 	}
 	{
@@ -2634,8 +2423,7 @@ LFIsp &LFIsp::process_gpu(const IspConfig &config) {
 		if (config.enableDemosaic) {
 			demosaic_gpu(config.bayer);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'Demosaic' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'Demosaic' is disabled in settings." << std::endl;
 		}
 	}
 	{
@@ -2643,8 +2431,7 @@ LFIsp &LFIsp::process_gpu(const IspConfig &config) {
 		if (config.enableCCM) {
 			ccm_gpu(config.ccm_matrix);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'CCM' is disabled in settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'CCM' is disabled in settings." << std::endl;
 		}
 	}
 
@@ -2677,3 +2464,54 @@ LFIsp &LFIsp::process_gpu(const IspConfig &config) {
 
 	return *this;
 } // process_gpu
+
+// --- lfisp.cpp ---
+
+LFIsp &LFIsp::global_resample_gpu(std::shared_ptr<HexGridFitter> fitter, bool hex_stretch) {
+	if (lfp_img_gpu.empty())
+		return *this;
+
+	HexGridFitter::GridInfo info = fitter->get_grid_info();
+	// 1. 确定缩放比例 (Source -> Target)
+	// 注意：H 是 Target -> Source 的映射，所以系数是 Pitch_Source / Pitch_Target
+	float target_pitch_v = std::ceil(info.pitch_row / 2.0f) * 2.0f;
+	float target_pitch_h = std::ceil(info.pitch_col / 2.0f) * 2.0f;
+
+	float s_y = info.pitch_row / target_pitch_v;
+	float s_x = info.pitch_col / target_pitch_h;
+	if (hex_stretch)
+		s_x *= (std::sqrt(3.0f) / 2.0f); // 补偿水平拉伸
+
+	// 2. 计算输出画布尺寸：直接基于原图尺寸进行缩放
+	cv::Size out_size(std::round(lfp_img_gpu.cols / s_x), std::round(lfp_img_gpu.rows / s_y));
+
+	// 3. 构建旋转与缩放矩阵 (Target -> Source)
+	// 提取拟合出的旋转分量 (通过参数归一化得到 cos/sin)
+	float cos_theta = fitter->get_params_at(1, 0) / info.pitch_col; // a1 / pitch_h
+	float sin_theta = fitter->get_params_at(1, 1) / info.pitch_col; // b1 / pitch_h
+
+	cv::Mat H = cv::Mat::eye(3, 3, CV_32F);
+	H.at<float>(0, 0) = s_x * cos_theta;
+	H.at<float>(0, 1) = -s_y * sin_theta;
+	H.at<float>(1, 0) = s_x * sin_theta;
+	H.at<float>(1, 1) = s_y * cos_theta;
+
+	// 4. 关键步骤：平移对齐（将源图像中心映射到目标画布中心）
+	// ox = H00*tx + H01*ty + Bx
+	// 我们希望当 tx = out_width/2, ty = out_height/2 时，ox = src_width/2
+	float src_cx = lfp_img_gpu.cols / 2.0f;
+	float src_cy = lfp_img_gpu.rows / 2.0f;
+	float dst_cx = out_size.width / 2.0f;
+	float dst_cy = out_size.height / 2.0f;
+
+	H.at<float>(0, 2) = src_cx - (H.at<float>(0, 0) * dst_cx + H.at<float>(0, 1) * dst_cy);
+	H.at<float>(1, 2) = src_cy - (H.at<float>(1, 0) * dst_cx + H.at<float>(1, 1) * dst_cy);
+
+	// 5. 执行变换
+	cv::cuda::GpuMat aligned_gpu;
+	cv::cuda::warpPerspective(lfp_img_gpu, aligned_gpu, H, out_size, cv::INTER_LINEAR, cv::BORDER_CONSTANT,
+							  cv::Scalar(0), stream);
+
+	lfp_img_gpu = aligned_gpu;
+	return *this;
+}

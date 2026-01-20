@@ -122,6 +122,55 @@ std::shared_ptr<LFData> LFIO::ReadSAI(const std::string &path) {
 	return std::make_shared<LFData>(std::move(temp));
 }
 
+void LFIO::SaveSAI(const std::string &path, std::shared_ptr<LFData> lf) {
+	if (!lf || lf->data.empty()) {
+		std::cerr << "[LFIO] Error: LFData is null or empty." << std::endl;
+		return;
+	}
+	// 调用重载函数处理内部的 std::vector<cv::Mat>
+	SaveSAI(path, lf->data);
+}
+
+void LFIO::SaveSAI(const std::string &path, const std::vector<cv::Mat> &lf) {
+	namespace fs = std::filesystem;
+
+	// 1. 确保目录存在
+	if (!fs::exists(path)) {
+		if (!fs::create_directories(path)) {
+			std::cerr << "[LFIO] Error: Failed to create directory " << path
+					  << std::endl;
+			return;
+		}
+	}
+
+	// 2. 遍历并保存图像
+	for (size_t i = 0; i < lf.size(); ++i) {
+		// 使用 C++20 std::format 匹配命名规则 input_Cam%03d
+		std::string fileName = std::format("input_Cam{:03d}.bmp", i + 1);
+		fs::path fullPath = fs::path(path) / fileName;
+
+		try {
+			// 保存图像，注意：如果你的图像是 CV_32F 需先转为 CV_8U
+			cv::Mat saveImg = lf[i];
+			if (saveImg.depth() == CV_32F || saveImg.depth() == CV_64F) {
+				// 自动映射到 0-255 范围以保存为 bmp
+				saveImg.convertTo(saveImg, CV_8U, 255.0);
+			}
+
+			if (!cv::imwrite(fullPath.string(), saveImg)) {
+				std::cerr << "[LFIO] Failed to write: " << fullPath
+						  << std::endl;
+			}
+		} catch (const cv::Exception &e) {
+			std::cerr << "[LFIO] OpenCV Exception: " << e.what() << std::endl;
+		}
+	}
+
+	std::cout << std::format("[LFIO] Successfully saved {} SAIs to {}",
+							 lf.size(), path)
+			  << std::endl;
+}
+
 bool LFIO::SaveLookUpTables(const std::string &path,
 							const std::vector<cv::Mat> &maps, int winSize) {
 	if (maps.empty())

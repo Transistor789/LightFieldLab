@@ -122,8 +122,7 @@ void LFControl::captureTask() {
 		}
 		if (params.dynamic.showLFP) {
 			cv::imwrite("data/raw.png", img);
-			emit imageReady(ImageType::LFP,
-							cvMatToQImage(img, params.dynamic.bitDepth));
+			emit imageReady(ImageType::LFP, cvMatToQImage(img, params.dynamic.bitDepth));
 		}
 		{
 			std::lock_guard<std::mutex> lock(m_queueMtx);
@@ -145,9 +144,7 @@ void LFControl::processTask() {
 			std::unique_lock<std::mutex> lock(m_queueMtx);
 
 			m_queueCv.wait(lock, [this] {
-				return params.dynamic.exit.load()
-					   || (!data_queue.empty()
-						   && params.dynamic.isProcessing.load());
+				return params.dynamic.exit.load() || (!data_queue.empty() && params.dynamic.isProcessing.load());
 			});
 
 			// std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -208,23 +205,18 @@ void LFControl::readLFP(const QString &path) {
 				lfraw = LFIO::ReadLFP(path.toStdString(), LfpMeta);
 				isp->parseJsonToConfig(LfpMeta, params.isp);
 				params.image.bayer = params.calibrate.bayer = params.isp.bayer;
-				params.image.bitDepth = params.calibrate.bitDepth =
-					params.isp.bitDepth;
+				params.image.bitDepth = params.calibrate.bitDepth = params.isp.bitDepth;
 
 				// 自动加载白图逻辑 ===
-				if (!params.path.white.empty()
-					&& std::filesystem::is_directory(params.path.white)) {
+				if (!params.path.white.empty() && std::filesystem::is_directory(params.path.white)) {
 					// 传入 LFP 路径(用于提取Key) 和 标定目录
 					json WhiteMeta;
-					cv::Mat autoWhite = LFIO::ReadWhiteImageAuto(
-						path.toStdString(), params.path.white, WhiteMeta);
+					cv::Mat autoWhite = LFIO::ReadWhiteImageAuto(path.toStdString(), params.path.white, WhiteMeta);
 					if (!autoWhite.empty()) {
 						white = autoWhite; // 更新类的白图成员变量
 						isp->initConfig(white, params.isp);
 						LOG_INFO("Auto-loaded white imagesuccessfully.");
-						emit imageReady(
-							ImageType::White,
-							cvMatToQImage(white, params.image.bitDepth));
+						emit imageReady(ImageType::White, cvMatToQImage(white, params.image.bitDepth));
 					}
 				}
 			} else if (params.imageType == ImageFileType::Raw) {
@@ -234,8 +226,7 @@ void LFControl::readLFP(const QString &path) {
 			params.image.height = lfraw.size().height;
 			params.image.width = lfraw.size().width;
 
-			emit imageReady(ImageType::LFP,
-							cvMatToQImage(lfraw, params.image.bitDepth));
+			emit imageReady(ImageType::LFP, cvMatToQImage(lfraw, params.image.bitDepth));
 			emit paramsChanged();
 		},
 		"Loading light field image");
@@ -246,21 +237,20 @@ void LFControl::readWhite(const QString &path) {
 		[this, path] {
 			json WhiteMeta;
 			if (params.imageType == ImageFileType::Lytro) {
-				white =
-					LFIO::ReadWhiteImageManual(path.toStdString(), WhiteMeta);
+				white = LFIO::ReadWhiteImageManual(path.toStdString(), WhiteMeta);
 				params.image.bitDepth = 10;
 				params.image.bayer = BayerPattern::GRBG;
 				isp->initConfig(white, params.isp);
 			} else if (params.imageType == ImageFileType::Raw) {
 			} else {
 				white = LFIO::ReadStandardImage(path.toStdString());
+				// white = 255 - white;
 			}
 
 			// print_mat_info("white", white);
 			params.image.height = white.size().height;
 			params.image.width = white.size().width;
-			emit imageReady(ImageType::White,
-							cvMatToQImage(white, params.image.bitDepth));
+			emit imageReady(ImageType::White, cvMatToQImage(white, params.image.bitDepth));
 			emit paramsChanged();
 		},
 		"Loading white image");
@@ -270,8 +260,7 @@ void LFControl::readExtractLUT(const QString &path) {
 	runAsync(
 		[this, path] {
 			params.path.extractLUT = path.toStdString();
-			LFIO::LoadLookUpTables(path.toStdString(), isp->maps.extract,
-								   params.calibrate.views);
+			LFIO::LoadLookUpTables(path.toStdString(), isp->maps.extract, params.calibrate.views);
 			params.sai.cols = params.sai.rows = params.calibrate.views;
 
 			emit paramsChanged();
@@ -299,20 +288,16 @@ void LFControl::calibrate() {
 			if (params.calibrate.genLUT) {
 				isp->maps.extract = cal->getExtractMaps();
 				isp->maps.dehex = cal->getDehexMaps();
+				isp->update_resample_maps();
 			}
-			if (params.calibrate.saveLUT && !cal->isExtractLutEmpty()
-				&& !cal->isDehexLutEmpty()) {
-				LFIO::SaveLookUpTables(
-					std::format("data/calibration/lut_extract_{}.bin",
-								params.calibrate.views),
-					cal->getExtractMaps(), params.calibrate.views);
-				LFIO::SaveLookUpTables("data/calibration/lut_dehex.bin",
-									   cal->getDehexMaps(), 1);
+			if (!cal->isExtractLutEmpty() && !cal->isDehexLutEmpty()) {
+				LFIO::SaveLookUpTables(std::format("data/calibration/lut_extract_{}.bin", params.calibrate.views),
+									   cal->getExtractMaps(), params.calibrate.views);
+				LFIO::SaveLookUpTables("data/calibration/lut_dehex.bin", cal->getDehexMaps(), 1);
+				LOG_INFO("LUTs saved to data/calibration/");
 			}
-			cv::Mat draw = draw_points(white, cal->getPoints(), "", 0,
-									   cv::Scalar(0), false);
-			emit imageReady(ImageType::White,
-							cvMatToQImage(draw, params.image.bitDepth));
+			cv::Mat draw = draw_points(white, cal->getPoints(), 0, cv::Scalar(0));
+			emit imageReady(ImageType::White, cvMatToQImage(draw, params.image.bitDepth));
 			emit paramsChanged();
 		},
 		"Calibrating");
@@ -321,10 +306,31 @@ void LFControl::calibrate() {
 void LFControl::detectCamera() {
 	runAsync(
 		[this] {
-			params.dynamic.cameraID = cap->getAvailableCameras(3);
+			// 1. 获取可用摄像头列表（探测前 3 个索引）
+			std::vector<int> ids = cap->getAvailableCameras(3);
+			params.dynamic.cameraID = ids;
+
+			// 2. 如果检测到摄像头，且当前未打开或需要自动切换，则打开第一个设备
+			if (!ids.empty()) {
+				int targetID = ids[0];
+
+				// 调用 open 尝试打开设备
+				if (cap->open(targetID)) {
+					LOG_INFO(std::format("Camera detected and auto-opened ID: {}", targetID));
+
+					// 针对你的低光单通道相机，可能需要在此处设置特定的分辨率或格式
+					// cap->setProperties(...);
+				} else {
+					LOG_ERROR(std::format("Failed to auto-open detected camera ID: {}", targetID));
+				}
+			} else {
+				LOG_WARN("No camera devices found during detection.");
+			}
+
+			// 3. 通知 UI 更新状态
 			emit paramsChanged();
 		},
-		"Detecting camera");
+		"Detecting and opening camera");
 }
 
 void LFControl::process() {
@@ -333,14 +339,12 @@ void LFControl::process() {
 			if (params.isp.device == Device::CPU) {
 				isp->set_lf_img(lfraw.clone()).process_fast(params.isp);
 				lf = std::make_shared<LFData>(isp->getSAIs());
-				emit imageReady(
-					ImageType::LFP,
-					cvMatToQImage(isp->getResult(), params.image.bitDepth));
+				emit imageReady(ImageType::LFP, cvMatToQImage(isp->getResult(), params.image.bitDepth));
 			} else {
 				isp->set_lf_gpu(lfraw.clone()).process_gpu(params.isp);
+				// isp->global_resample_gpu(cal->getFitter(), false);
 				lf = std::make_shared<LFData>(isp->getSAIsGpu());
-				emit imageReady(ImageType::LFP,
-								cvMatToQImage(isp->getResultGpu(), 8));
+				emit imageReady(ImageType::LFP, cvMatToQImage(isp->getResultGpu(), 8));
 			}
 
 			params.sai.cols = lf->cols;
@@ -348,12 +352,14 @@ void LFControl::process() {
 			params.sai.col = (1 + params.sai.cols) / 2;
 			params.sai.row = (1 + params.sai.rows) / 2;
 
-			emit imageReady(
-				ImageType::Center,
-				cvMatToQImage(lf->getCenter(), params.image.bitDepth));
+			emit imageReady(ImageType::Center, cvMatToQImage(lf->getCenter(), params.image.bitDepth));
 			emit paramsChanged();
 		},
 		"ISP");
+}
+
+void LFControl::saveSAI(const QString &path) {
+	runAsync([this, path] { io->SaveSAI(path.toStdString(), lf->data); }, "Save sai");
 }
 
 void LFControl::fast_preview() {
@@ -361,8 +367,7 @@ void LFControl::fast_preview() {
 		[this] {
 			// 1. [检查] 源图像
 			if (lfraw.empty()) {
-				LOG_WARN(
-					"[FastPreview] Cancelled: Source image (lfraw) is empty.");
+				LOG_WARN("[FastPreview] Cancelled: Source image (lfraw) is empty.");
 				return;
 			}
 
@@ -416,9 +421,7 @@ void LFControl::fast_preview() {
 void LFControl::updateSAI(int row, int col) {
 	runAsync(
 		[this, row, col] {
-			emit imageReady(ImageType::Center,
-							cvMatToQImage(lf->getSAI(row - 1, col - 1),
-										  params.image.bitDepth));
+			emit imageReady(ImageType::Center, cvMatToQImage(lf->getSAI(row - 1, col - 1), params.image.bitDepth));
 			emit paramsChanged();
 		},
 		"SAI updated");
@@ -478,10 +481,8 @@ void LFControl::play() {
 
 				// 发送信号更新界面
 				// 注意：getSAI 使用 0-based 索引，所以这里减 1
-				emit imageReady(ImageType::Center,
-								cvMatToQImage(lf->getSAI(params.sai.row - 1,
-														 params.sai.col - 1),
-											  params.image.bitDepth));
+				emit imageReady(ImageType::Center, cvMatToQImage(lf->getSAI(params.sai.row - 1, params.sai.col - 1),
+																 params.image.bitDepth));
 				emit paramsChanged();
 				std::this_thread::sleep_for(std::chrono::milliseconds(50));
 			}
@@ -493,14 +494,12 @@ void LFControl::color_equalize() {
 	runAsync(
 		[this] {
 			if (!lf || lf->data.empty()) {
-				LOG_ERROR(
-					"[Color Equalize] Cancelled: Light field data is empty!");
+				LOG_ERROR("[Color Equalize] Cancelled: Light field data is empty!");
 				return;
 			}
 
 			ColorMatcher::equalize(lf->data, params.colorEqMethod);
-			emit imageReady(ImageType::Center,
-							cvMatToQImage(lf->getCenter(), 8));
+			emit imageReady(ImageType::Center, cvMatToQImage(lf->getCenter(), 8));
 			emit paramsChanged();
 		},
 		"Color equalize");
@@ -517,9 +516,8 @@ void LFControl::refocus() {
 
 			// 2. [新增] 严格检查: 必须是 8-bit 数据
 			if (lf->data[0].depth() != CV_8U) {
-				LOG_ERROR(
-					"[Refocus] Error: Input data is not 8-bit! Current depth: "
-					+ std::to_string(lf->data[0].depth()));
+				LOG_ERROR("[Refocus] Error: Input data is not 8-bit! Current depth: "
+						  + std::to_string(lf->data[0].depth()));
 				return;
 			}
 
@@ -527,8 +525,7 @@ void LFControl::refocus() {
 
 			// 3. 执行重聚焦
 			// 由于输入保证是 8-bit，且 Refocus 内部已锁定输出 8-bit
-			auto img =
-				ref->refocusByShift(params.refocus.shift, params.refocus.crop);
+			auto img = ref->refocusByShift(params.refocus.shift, params.refocus.crop);
 
 			if (img.empty()) {
 				LOG_ERROR("[Refocus] Failed: Result image is empty.");
@@ -548,10 +545,8 @@ void LFControl::processAllInFocus() {
 		[this] {
 			ref->setLF(lf);
 			// auto img = ref->generateAllInFocus(-2.0f, 0.0f, 0.05f);
-			auto img =
-				ref->refocusByShift(params.refocus.shift, params.refocus.crop);
-			emit imageReady(ImageType::Refocus,
-							cvMatToQImage(img, params.image.bitDepth));
+			auto img = ref->refocusByShift(params.refocus.shift, params.refocus.crop);
+			emit imageReady(ImageType::Refocus, cvMatToQImage(img, params.image.bitDepth));
 			emit paramsChanged();
 		},
 		"processAllInFocus");
@@ -562,8 +557,7 @@ void LFControl::upsample() {
 		[this] {
 			// 0. [安全检查] 确保光场数据存在
 			if (!lf || lf->data.empty()) {
-				LOG_WARN(
-					"[Super Resolution] Cancelled: Light field data is empty.");
+				LOG_WARN("[Super Resolution] Cancelled: Light field data is empty.");
 				return;
 			}
 
@@ -585,8 +579,7 @@ void LFControl::upsample() {
 				auto views = sr->upsample(lf->data, params.sr.method);
 
 				if (!views.empty()) {
-					emit imageReady(ImageType::SR,
-									cvMatToQImage(views[views.size() / 2], 8));
+					emit imageReady(ImageType::SR, cvMatToQImage(views[views.size() / 2], 8));
 				}
 			}
 		},
@@ -597,8 +590,7 @@ void LFControl::depth() {
 	runAsync(
 		[this] {
 			if (!lf || lf->data.empty()) {
-				LOG_WARN(
-					"[Depth Estimation] Cancelled: Light field data is empty!");
+				LOG_WARN("[Depth Estimation] Cancelled: Light field data is empty!");
 				return;
 			}
 
@@ -613,13 +605,10 @@ void LFControl::depth() {
 			bool success = dep->depth(lf->data, params.de.method);
 
 			if (!success) {
-				LOG_ERROR(
-					"[Depth Estimation] Failed: Algorithm returned error.");
+				LOG_ERROR("[Depth Estimation] Failed: Algorithm returned error.");
 				return;
 			}
-			emit imageReady(
-				ImageType::Depth,
-				cvMatToQImage(dep->getVisualizedResult(params.de.color), 8));
+			emit imageReady(ImageType::Depth, cvMatToQImage(dep->getVisualizedResult(params.de.color), 8));
 		},
 		"Depth estimation");
 }
@@ -627,9 +616,7 @@ void LFControl::depth() {
 void LFControl::colorChanged(int index) {
 	runAsync(
 		[this, index] {
-			emit imageReady(
-				ImageType::Depth,
-				cvMatToQImage(dep->getVisualizedResult(params.de.color), 8));
+			emit imageReady(ImageType::Depth, cvMatToQImage(dep->getVisualizedResult(params.de.color), 8));
 		},
 		"Depth estimation");
 }
@@ -640,15 +627,13 @@ QImage LFControl::cvMatToQImage(const cv::Mat &inMat, int bitDepth) {
 
 	// 1. 处理 3通道 8位 (彩色) - 最常见情况
 	if (inMat.type() == CV_8UC3) {
-		QImage image((const uchar *)inMat.data, inMat.cols, inMat.rows,
-					 inMat.step, QImage::Format_BGR888);
+		QImage image((const uchar *)inMat.data, inMat.cols, inMat.rows, inMat.step, QImage::Format_BGR888);
 		return image.copy();
 	}
 
 	// 2. 处理 1通道 8位 (灰度)
 	else if (inMat.type() == CV_8UC1) {
-		QImage image((const uchar *)inMat.data, inMat.cols, inMat.rows,
-					 inMat.step, QImage::Format_Grayscale8);
+		QImage image((const uchar *)inMat.data, inMat.cols, inMat.rows, inMat.step, QImage::Format_Grayscale8);
 		return image.copy();
 	}
 
@@ -702,11 +687,8 @@ QImage LFControl::cvMatToQImage(const cv::Mat &inMat, int bitDepth) {
 }
 
 void LFControl::loadSettings() {
-	if (!std::filesystem::exists(CONFIG_FILE)
-		|| !std::filesystem::is_regular_file(CONFIG_FILE)) {
-		LOG_INFO(
-			std::format("Config file {} not found or invalid. Skipping load.",
-						CONFIG_FILE));
+	if (!std::filesystem::exists(CONFIG_FILE) || !std::filesystem::is_regular_file(CONFIG_FILE)) {
+		LOG_INFO(std::format("Config file {} not found or invalid. Skipping load.", CONFIG_FILE));
 		return;
 	}
 

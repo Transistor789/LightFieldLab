@@ -7,6 +7,7 @@ class LFCapture {
 public:
 	explicit LFCapture();
 	cv::Mat getFrame();
+	bool open(int index);
 
 	static std::vector<int> getAvailableCameras(int maxSearch = 10);
 

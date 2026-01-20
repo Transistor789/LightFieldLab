@@ -138,6 +138,7 @@ set(SRCS_CORE
     core/trtwrapper.cpp
     core/califinder.cpp
     core/dpc.cu
+    core/nr.cu
     core/lsc.cu
     core/awb.cu
     core/lsc_awb.cu

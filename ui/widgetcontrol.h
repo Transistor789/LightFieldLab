@@ -51,6 +51,7 @@ signals:
 	void requestDetectCamera();
 	void requestCapture(bool active);
 	void requestProcess(bool active);
+	void requestSaveSAI(const QString &path);
 	void requestPlay();
 	void requestSAI(int row, int col);
 	void requestColorEq();
@@ -78,34 +79,29 @@ void setValSilent(TWidget *w, TVal val) {
 
 	// 1. 数值类控件 (setValue)
 	// 包含: SpinBox, Slider, ProgressBar, Dial
-	if constexpr (std::is_same_v<TWidget, QSpinBox>
-				  || std::is_same_v<TWidget, QDoubleSpinBox>
-				  || std::is_same_v<TWidget, QSlider>
-				  || std::is_same_v<TWidget, QProgressBar>) {
+	if constexpr (std::is_same_v<TWidget, QSpinBox> || std::is_same_v<TWidget, QDoubleSpinBox>
+				  || std::is_same_v<TWidget, QSlider> || std::is_same_v<TWidget, QProgressBar>) {
 		w->setValue(val);
 	}
 
 	// 2. 开关/状态类控件 (setChecked)
 	// 包含: CheckBox, RadioButton, 可勾选的 GroupBox,
 	// Action(虽不是Widget但常用)
-	else if constexpr (std::is_same_v<TWidget, QCheckBox>
-					   || std::is_same_v<TWidget, QRadioButton>
+	else if constexpr (std::is_same_v<TWidget, QCheckBox> || std::is_same_v<TWidget, QRadioButton>
 					   || std::is_same_v<TWidget, QGroupBox>) {
 		w->setChecked(val);
 	}
 
 	// 3. 索引类控件 (setCurrentIndex)
 	// 包含: ComboBox, TabWidget, StackedWidget
-	else if constexpr (std::is_same_v<TWidget, QComboBox>
-					   || std::is_same_v<TWidget, QTabWidget>
+	else if constexpr (std::is_same_v<TWidget, QComboBox> || std::is_same_v<TWidget, QTabWidget>
 					   || std::is_same_v<TWidget, QStackedWidget>) {
 		w->setCurrentIndex(static_cast<int>(val));
 	}
 
 	// 4. 单行文本类 (setText)
 	// 包含: Label, LineEdit
-	else if constexpr (std::is_same_v<TWidget, QLabel>
-					   || std::is_same_v<TWidget, QLineEdit>) {
+	else if constexpr (std::is_same_v<TWidget, QLabel> || std::is_same_v<TWidget, QLineEdit>) {
 		// 智能适配：如果是数字，自动转 QString；如果是字符串，直接设置
 		if constexpr (std::is_arithmetic_v<TVal>) {
 			w->setText(QString::number(val));

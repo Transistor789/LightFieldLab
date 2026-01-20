@@ -1,7 +1,7 @@
 ﻿#ifndef LFISP_H
 #define LFISP_H
 
-#include "colormatcher.h"
+#include "hexgrid_fit.h"
 #include "json.hpp"
 #include "utils.h"
 
@@ -28,14 +28,15 @@ struct IspConfig {
 	int bitDepth = 8;
 	int white_level = 255, black_level = 0;
 	std::vector<float> awb_gains = {1.0f, 1.0f, 1.0f, 1.0f};
-	std::vector<float> ccm_matrix = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
-									 0.0f, 0.0f, 0.0f, 1.0f};
+	std::vector<float> ccm_matrix = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 	float gamma = 1.0f;
 
 	int dpcThreshold = 25;
+	float nr_sigma_r = 1.0, nr_sigma_s = 10.0;
 	float lscExp = 1.0;
 	bool enableBLC = true;
 	bool enableDPC = true;
+	bool enableNR = true;
 	bool enableLSC = true;
 	bool enableAWB = true;
 	bool enableDemosaic = true;
@@ -58,8 +59,7 @@ public:
 
 	explicit LFIsp();
 	explicit LFIsp(const cv::Mat &lfp_img);
-	explicit LFIsp(const cv::Mat &lfp_img, const cv::Mat &wht_img,
-				   const IspConfig &config);
+	explicit LFIsp(const cv::Mat &lfp_img, const cv::Mat &wht_img, const IspConfig &config);
 
 	cv::Mat &getResult() { return lfp_img_; }
 	const cv::Mat &getResult() const { return lfp_img_; }
@@ -85,14 +85,12 @@ public:
 	LFIsp &gc(float gamma);
 	LFIsp &process(const IspConfig &config);
 
-	// openmp+simd
-	LFIsp &blc_fast(int black_level);
+	// openmp+simd accelerated
 	LFIsp &blc_fast(int black_level, int white_level);
 	LFIsp &dpc_fast(DpcMethod method, int threshold = 100);
 	LFIsp &lsc_fast(float exposure);
 	LFIsp &awb_fast(const std::vector<float> &wbgains);
-	LFIsp &lsc_awb_fused_fast(float exposure,
-							  const std::vector<float> &wbgains);
+	LFIsp &lsc_awb_fused_fast(float exposure, const std::vector<float> &wbgains);
 	LFIsp &ccm_fast(const std::vector<float> &ccm_matrix);
 	LFIsp &gc_fast(float gamma, int bitDepth);
 	LFIsp &resample(bool dehex);
@@ -127,16 +125,17 @@ public: // gpu
 
 	LFIsp &blc_gpu(int black_level, int white_level);
 	LFIsp &dpc_gpu(int threshold);
+	LFIsp &nr_gpu(float sigma_spatial, float sigma_color);
 	LFIsp &lsc_gpu(float exposure);
 	LFIsp &awb_gpu(const std::vector<float> &wbgains);
 	LFIsp &lsc_awb_fused_gpu(float exposure, const std::vector<float> &wbgains);
 	LFIsp &demosaic_gpu(BayerPattern bayer);
 	LFIsp &ccm_gpu(const std::vector<float> &ccm_matrix);
 	LFIsp &gc_gpu(float gamma);
-	LFIsp &ccm_gamma_fused_gpu(const std::vector<float> &ccm_matrix,
-							   float gamma);
+	LFIsp &ccm_gamma_fused_gpu(const std::vector<float> &ccm_matrix, float gamma);
 	LFIsp &resample_gpu(bool dehex);
 	LFIsp &process_gpu(const IspConfig &config);
+	LFIsp &global_resample_gpu(std::shared_ptr<HexGridFitter> fitter, bool hex_stretch = true);
 
 private:
 	cv::cuda::GpuMat lfp_img_gpu, lsc_map_gpu;
@@ -144,6 +143,7 @@ private:
 	std::vector<cv::cuda::GpuMat> sais_gpu;
 	std::vector<cv::cuda::GpuMat> extract_maps_gpu;
 	std::vector<cv::cuda::GpuMat> dehex_maps_gpu;
+	cv::Mat _global_tra_mat;
 
 public:
 	struct Profiler {
@@ -157,11 +157,9 @@ public:
 
 		void add(const std::string &name, double ms) {
 			// 修改 2: 手动查找是否已存在该模块
-			auto it = std::find_if(
-				stats.begin(), stats.end(),
-				[&name](const std::pair<std::string, double> &element) {
-					return element.first == name;
-				});
+			auto it = std::find_if(stats.begin(), stats.end(), [&name](const std::pair<std::string, double> &element) {
+				return element.first == name;
+			});
 
 			if (it != stats.end()) {
 				// 如果存在，累加时间
@@ -175,8 +173,7 @@ public:
 		void print_stats(const std::string &title) {
 			if (run_count == 0)
 				return;
-			std::cout << "\n=== " << title << " Benchmark (Avg of " << run_count
-					  << " runs) ===\n";
+			std::cout << "\n=== " << title << " Benchmark (Avg of " << run_count << " runs) ===\n";
 			std::cout << std::left << std::setw(20) << "Module"
 					  << "Time (ms)\n";
 			std::cout << "------------------------------\n";
@@ -197,18 +194,15 @@ public:
 				}
 
 				sum_of_modules += avg;
-				std::cout << std::left << std::setw(20) << name << std::fixed
-						  << std::setprecision(3) << avg << "\n";
+				std::cout << std::left << std::setw(20) << name << std::fixed << std::setprecision(3) << avg << "\n";
 			}
 			std::cout << "------------------------------\n";
-			std::cout << std::left << std::setw(20) << "Sum of Modules"
-					  << std::fixed << std::setprecision(3) << sum_of_modules
-					  << "\n";
+			std::cout << std::left << std::setw(20) << "Sum of Modules" << std::fixed << std::setprecision(3)
+					  << sum_of_modules << "\n";
 
 			// 最后打印总耗时
 			if (measured_total > 0) {
-				std::cout << std::left << std::setw(20) << "Measured Total"
-						  << measured_total << "\n";
+				std::cout << std::left << std::setw(20) << "Measured Total" << measured_total << "\n";
 			}
 			std::cout << "==============================\n\n";
 		}
@@ -225,8 +219,7 @@ public:
 		Timer timer; // 假设你有这个类
 		bool active;
 
-		ScopedTimer(std::string n, Profiler &p, bool enable)
-			: name(n), profiler(p), active(enable) {
+		ScopedTimer(std::string n, Profiler &p, bool enable) : name(n), profiler(p), active(enable) {
 			if (active)
 				timer.start();
 		}
@@ -234,9 +227,8 @@ public:
 		~ScopedTimer() {
 			if (active) {
 				timer.stop();
-				profiler.add(
-					name,
-					timer.elapsed_ms()); // 假设 Timer 有 get_elapsed_ms()
+				profiler.add(name,
+							 timer.elapsed_ms()); // 假设 Timer 有 get_elapsed_ms()
 			}
 		}
 	};

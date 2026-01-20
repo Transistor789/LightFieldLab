@@ -35,7 +35,7 @@ void test_module() {
 	// cv::imshow("", img);
 	// cv::waitKey();
 
-	bool use_cca = false, save = true;
+	bool use_cca = false;
 
 	Timer timer;
 
@@ -87,15 +87,17 @@ void test_module() {
 	std::cout << "hex_odd: " << hex_odd << std::endl;
 	std::cout << "耗时: " << timer.elapsed_ms() << " ms" << std::endl;
 
-	HexGridFitter hgf(pts_sorted, size, hex_odd);
+	HexGridFitter hgf(cs.getPointsAsMats(), hex_odd);
 	timer.start();
 	hgf.fit();
 	timer.stop();
+
+	// 修复点 2: predict() 现在返回 std::pair<cv::Mat, cv::Mat>
 	auto pts_fitted = hgf.predict();
+
 	std::cout << "--- HexGridFitter ---" << std::endl;
-	std::cout << "六角拟合后的点个数: " << pts_sorted.size() << std::endl;
-	std::cout << "六角拟合后的微透镜尺寸: " << pts_fitted.size() << " "
-			  << pts_fitted[0].size() << std::endl;
+	// 修复点 3: pair 不支持 size()，通过矩阵属性获取尺寸
+	std::cout << "六角拟合后的网格尺寸: " << pts_fitted.first.rows << " x " << pts_fitted.first.cols << std::endl;
 	std::cout << "耗时: " << timer.elapsed_ms() << " ms" << std::endl;
 
 	auto info = hgf.get_grid_info();
@@ -109,29 +111,13 @@ void test_module() {
 	std::cout << "pitch_row: " << pitch_row << std::endl;
 	std::cout << "pitch_col: " << pitch_col << std::endl;
 	std::cout << "rmse: " << rmse << std::endl;
-
-	if (save) {
-		if (use_cca) {
-			draw_points(img, pts, "../../data/centers_detected_cca.png", 1, 0,
-						true);
-		} else {
-			draw_points(img, pts, "../../data/centers_detected_moments.png", 1,
-						0, true);
-		}
-
-		draw_points(img, pts_sorted, "../../data/centers_sorted.png", 1, 0,
-					true);
-		draw_points(img, pts_fitted, "../../data/centers_fitted.png", 1, 0,
-					true);
-	}
 }
 
 void test_calibrate() {
 	// cv::Mat img = cv::imread("../../data/gray.png", cv::IMREAD_GRAYSCALE);
 	json meta;
 	cv::Mat img =
-		LFIO::ReadWhiteImageAuto("D:/code/LightFieldLab/data/toy.lfr",
-								 "D:/code/LightFieldCamera/B5152102610/", meta);
+		LFIO::ReadWhiteImageAuto("D:/code/LightFieldLab/data/toy.lfr", "D:/code/LightFieldCamera/B5152102610/", meta);
 	imshowRaw("raw", img);
 	cv::waitKey();
 	// cv::Mat img = LFIO::ReadLFP("../../data/MOD_0015.RAW");
@@ -183,17 +169,15 @@ void test_lut() {
 	config.ceMethod = ExtractMethod::Contour;
 	config.bayer = BayerPattern::NONE;
 	config.bitDepth = 8;
-	cali.run(config);
+	cali.run(img, config);
 	timer.stop();
 	timer.print_elapsed_ms();
 
 	for (int winSize = 1; winSize <= 13; winSize += 2) {
-		LFIO::SaveLookUpTables(
-			std::format("../../data/calibration/slice_{}.bin", winSize),
-			cali.computeExtractMaps(winSize), winSize);
+		LFIO::SaveLookUpTables(std::format("../../data/calibration/slice_{}.bin", winSize),
+							   cali.computeExtractMaps(winSize), winSize);
 
-		LFIO::SaveLookUpTables("../../data/calibration/lut_dehex.bin",
-							   cali.computeDehexMaps(), 1);
+		LFIO::SaveLookUpTables("../../data/calibration/lut_dehex.bin", cali.computeDehexMaps(), 1);
 	}
 }
 
@@ -202,8 +186,7 @@ void test_detach() {
 	// 请确保路径正确
 	json j;
 	cv::Mat img =
-		LFIO::ReadWhiteImageAuto("D:/code/LightFieldLab/data/toy.lfr",
-								 "D:/code/LightFieldCamera/B5152102610/", j);
+		LFIO::ReadWhiteImageAuto("D:/code/LightFieldLab/data/toy.lfr", "D:/code/LightFieldCamera/B5152102610/", j);
 
 	if (img.empty()) {
 		std::cerr << "Failed to load image!" << std::endl;
@@ -233,8 +216,7 @@ void test_detach() {
 	double sigma1 = std::max(1.0, diameter * 0.2);
 	double sigma2 = std::max(3.0, diameter * 0.8);
 
-	std::cout << "Running DoG with sigma1=" << sigma1 << ", sigma2=" << sigma2
-			  << std::endl;
+	std::cout << "Running DoG with sigma1=" << sigma1 << ", sigma2=" << sigma2 << std::endl;
 
 	// A. CLAHE (限制对比度自适应直方图均衡)
 	// 这一步非常重要！它能把灰蒙蒙的粘连处强行拉开反差

@@ -32,12 +32,8 @@ Timer::Duration Timer::elapsed() const {
 	return _duration;
 }
 
-double Timer::elapsed_s() const {
-	return std::chrono::duration<double>(elapsed()).count();
-}
-double Timer::elapsed_ms() const {
-	return std::chrono::duration<double, std::milli>(elapsed()).count();
-}
+double Timer::elapsed_s() const { return std::chrono::duration<double>(elapsed()).count(); }
+double Timer::elapsed_ms() const { return std::chrono::duration<double, std::milli>(elapsed()).count(); }
 void Timer::print_elapsed_ms(const std::string &message) {
 	if (message.empty()) {
 		printf("耗时 %.3f ms\n", elapsed_ms());
@@ -49,26 +45,21 @@ void Timer::print_elapsed_ms(const std::string &message) {
 int get_demosaic_code(BayerPattern pattern, bool gray) {
 	switch (pattern) {
 		case BayerPattern::GRBG:
-			return gray ? cv::COLOR_BayerGR2GRAY
-						: cv::COLOR_BayerGR2RGB; // 第0行是 G, R
+			return gray ? cv::COLOR_BayerGR2GRAY : cv::COLOR_BayerGR2RGB; // 第0行是 G, R
 		case BayerPattern::RGGB:
-			return gray ? cv::COLOR_BayerRG2GRAY
-						: cv::COLOR_BayerRG2RGB; // 第0行是 R, G
+			return gray ? cv::COLOR_BayerRG2GRAY : cv::COLOR_BayerRG2RGB; // 第0行是 R, G
 		case BayerPattern::GBRG:
-			return gray ? cv::COLOR_BayerGB2GRAY
-						: cv::COLOR_BayerGB2RGB; // 第0行是 G, B
+			return gray ? cv::COLOR_BayerGB2GRAY : cv::COLOR_BayerGB2RGB; // 第0行是 G, B
 		case BayerPattern::BGGR:
-			return gray ? cv::COLOR_BayerBG2GRAY
-						: cv::COLOR_BayerBG2RGB; // 第0行是 B, G
+			return gray ? cv::COLOR_BayerBG2GRAY : cv::COLOR_BayerBG2RGB; // 第0行是 B, G
 		default:
 			// 默认处理
 			return gray ? cv::COLOR_BayerGR2GRAY : cv::COLOR_BayerGR2RGB;
 	}
 }
 
-cv::Mat draw_points(const cv::Mat &img, const std::vector<cv::Point2f> &points,
-					const std::string &output_path, int radius,
-					const cv::Scalar &color, bool save) {
+cv::Mat draw_points(const cv::Mat &img, const std::vector<cv::Point2f> &points, const std::string &output_path,
+					int radius, const cv::Scalar &color, bool save) {
 	cv::Mat temp = img.clone();
 	for (const auto &pt : points) {
 		cv::circle(temp, pt, radius, color, -1);
@@ -78,9 +69,8 @@ cv::Mat draw_points(const cv::Mat &img, const std::vector<cv::Point2f> &points,
 	}
 	return temp;
 }
-cv::Mat draw_points(const cv::Mat &img, const std::vector<cv::Point> &points,
-					const std::string &output_path, int radius,
-					const cv::Scalar &color, bool save) {
+cv::Mat draw_points(const cv::Mat &img, const std::vector<cv::Point> &points, const std::string &output_path,
+					int radius, const cv::Scalar &color, bool save) {
 	cv::Mat temp = img.clone();
 	for (const auto &pt : points) {
 		cv::circle(temp, pt, radius, color, 1);
@@ -90,10 +80,8 @@ cv::Mat draw_points(const cv::Mat &img, const std::vector<cv::Point> &points,
 	}
 	return temp;
 }
-cv::Mat draw_points(const cv::Mat &img,
-					const std::vector<std::vector<cv::Point2f>> &points,
-					const std::string &output_path, int radius,
-					const cv::Scalar &color, bool save) {
+cv::Mat draw_points(const cv::Mat &img, const std::vector<std::vector<cv::Point2f>> &points,
+					const std::string &output_path, int radius, const cv::Scalar &color, bool save) {
 	cv::Mat temp = img.clone();
 	for (const std::vector<cv::Point2f> &row : points) {
 		for (const auto &pt : row) {
@@ -105,10 +93,8 @@ cv::Mat draw_points(const cv::Mat &img,
 	}
 	return temp;
 }
-cv::Mat draw_points(const cv::Mat &img,
-					const std::vector<std::vector<cv::Point>> &points,
-					const std::string &output_path, int radius,
-					const cv::Scalar &color, bool save) {
+cv::Mat draw_points(const cv::Mat &img, const std::vector<std::vector<cv::Point>> &points,
+					const std::string &output_path, int radius, const cv::Scalar &color, bool save) {
 	cv::Mat temp = img.clone();
 	for (const std::vector<cv::Point> &row : points) {
 		for (const auto &pt : row) {
@@ -121,6 +107,44 @@ cv::Mat draw_points(const cv::Mat &img,
 	return temp;
 }
 
+cv::Mat draw_points(const cv::Mat &img, const std::pair<cv::Mat, cv::Mat> &pts, int radius,
+					const cv::Scalar &color) { // 1. 基础检查
+	if (img.empty() || pts.first.empty() || pts.second.empty()) {
+		return img;
+	}
+
+	// 2. 准备画布：如果输入是单通道，转为彩色以便观察颜色
+	cv::Mat result;
+	if (img.channels() == 1) {
+		cv::cvtColor(img, result, cv::COLOR_GRAY2BGR);
+	} else {
+		result = img.clone();
+	}
+
+	// 3. 遍历坐标矩阵
+	int rows = pts.first.rows; // 网格行数
+	int cols = pts.first.cols; // 网格列数
+
+	for (int r = 0; r < rows; ++r) {
+		// 获取当前行的 X 和 Y 指针以提高效率
+		const float *ptr_x = pts.first.ptr<float>(r);
+		const float *ptr_y = pts.second.ptr<float>(r);
+
+		for (int c = 0; c < cols; ++c) {
+			float x = ptr_x[c];
+			float y = ptr_y[c];
+
+			// 4. 过滤无效点：仅绘制坐标大于等于 0 的有效检测点
+			if (x >= 0 && y >= 0) {
+				// 绘制实心圆点
+				cv::circle(result, cv::Point2f(x, y), radius, color, -1, cv::LINE_AA);
+			}
+		}
+	}
+
+	return result;
+}
+
 /**
  * @brief 读取 JSON 文件 (健壮版)
  * @param path 文件路径
@@ -131,8 +155,7 @@ json readJson(const std::string &path) {
 	// 1. 尝试打开文件
 	std::ifstream file(path);
 	if (!file.is_open()) {
-		throw std::runtime_error("Error: Unable to open file for reading: "
-								 + path);
+		throw std::runtime_error("Error: Unable to open file for reading: " + path);
 	}
 
 	// 2. 检查文件是否为空（可选，但推荐）
@@ -147,8 +170,7 @@ json readJson(const std::string &path) {
 		return j;
 	} catch (const json::parse_error &e) {
 		// 4. 捕获特定的 JSON 语法错误
-		std::string err =
-			"Error: JSON parsing failed in " + path + "\nMessage: " + e.what();
+		std::string err = "Error: JSON parsing failed in " + path + "\nMessage: " + e.what();
 		throw std::runtime_error(err);
 	}
 }
@@ -164,8 +186,7 @@ void writeJson(const std::string &path, const json &j, int indent) {
 	// 1. 尝试打开文件
 	std::ofstream file(path);
 	if (!file.is_open()) {
-		throw std::runtime_error("Error: Unable to open file for writing: "
-								 + path);
+		throw std::runtime_error("Error: Unable to open file for writing: " + path);
 	}
 
 	// 2. 写入数据
@@ -174,8 +195,7 @@ void writeJson(const std::string &path, const json &j, int indent) {
 
 	// 3. 检查写入状态（防止磁盘满等情况）
 	if (file.bad()) {
-		throw std::runtime_error("Error: Failed to write data to file: "
-								 + path);
+		throw std::runtime_error("Error: Failed to write data to file: " + path);
 	}
 
 	// file 析构时会自动 close，但手动检查 bad bit 是好习惯
@@ -188,12 +208,10 @@ void writeJson(const std::string &path, const json &j, int indent) {
  * @param input_max_val 输入图像的白点值 (10-bit=1023, 12-bit=4095, Float=1.0)
  * 默认为 1023.0 (适配你的场景)
  */
-void saveAs8Bit(const std::string &path, const cv::Mat &img,
-				double input_max_val) {
+void saveAs8Bit(const std::string &path, const cv::Mat &img, double input_max_val) {
 	// 1. 鲁棒性检查：空图像
 	if (img.empty()) {
-		throw std::invalid_argument("Input image is empty, cannot save to "
-									+ path);
+		throw std::invalid_argument("Input image is empty, cannot save to " + path);
 	}
 
 	// 2. 鲁棒性检查：确保目录存在 (C++17)
@@ -218,8 +236,7 @@ void saveAs8Bit(const std::string &path, const cv::Mat &img,
 	}
 }
 
-void imshowRaw(const std::string &winname, const cv::Mat &img,
-			   float resize_factor) {
+void imshowRaw(const std::string &winname, const cv::Mat &img, float resize_factor) {
 	// 1. 鲁棒性检查
 	if (img.empty()) {
 		std::cerr << "[Warning] imshowRaw: Image is empty!" << std::endl;
@@ -234,8 +251,7 @@ void imshowRaw(const std::string &winname, const cv::Mat &img,
 	if (depth == CV_8U) {
 		// 如果已经是 8-bit，直接使用
 		display_img = img;
-	} else if (depth == CV_16U || depth == CV_16S || depth == CV_32F
-			   || depth == CV_64F) {
+	} else if (depth == CV_16U || depth == CV_16S || depth == CV_32F || depth == CV_64F) {
 		// 对于 16-bit Raw 或 浮点图，执行 MinMax 归一化
 		// 这样无论你是 10-bit (1023) 还是 12-bit (4095)，
 		// 都会被自动拉伸到 0-255，显示效果最好（对比度最高）
@@ -253,10 +269,8 @@ void imshowRaw(const std::string &winname, const cv::Mat &img,
 	if (resize_factor > 0.0f && std::abs(resize_factor - 1.0f) > 1e-5) {
 		// 如果原图是 Bayer 格式 (单通道)，INTER_NEAREST
 		// 可以保留马赛克特征以便观察 如果是 RGB 图，INTER_AREA 更好
-		int interpolation =
-			(img.channels() == 1) ? cv::INTER_NEAREST : cv::INTER_AREA;
-		cv::resize(display_img, display_img, cv::Size(), resize_factor,
-				   resize_factor, interpolation);
+		int interpolation = (img.channels() == 1) ? cv::INTER_NEAREST : cv::INTER_AREA;
+		cv::resize(display_img, display_img, cv::Size(), resize_factor, resize_factor, interpolation);
 	}
 
 	// 4. 显示
@@ -443,15 +457,12 @@ void print_mat_info(const std::string &name, const cv::Mat &img) {
 	std::cout << "=== Info: " << name << " ===" << std::endl;
 
 	// 1. 基础维度与类型
-	std::cout << "  Dim:      " << img.cols << "x" << img.rows << " (WxH)"
-			  << std::endl;
-	std::cout << "  Type:     " << type2str(img.type())
-			  << " (Enum: " << img.type() << ")" << std::endl;
+	std::cout << "  Dim:      " << img.cols << "x" << img.rows << " (WxH)" << std::endl;
+	std::cout << "  Type:     " << type2str(img.type()) << " (Enum: " << img.type() << ")" << std::endl;
 	std::cout << "  Channels: " << img.channels() << std::endl;
 
 	// 2. 内存布局 (对 SIMD/CUDA 很重要)
-	std::cout << "  Cont.:    " << (img.isContinuous() ? "True" : "False")
-			  << std::endl;
+	std::cout << "  Cont.:    " << (img.isContinuous() ? "True" : "False") << std::endl;
 	std::cout << "  Step:     " << img.step << " bytes (Stride)" << std::endl;
 
 	// 3. 统计信息 (检查数据是否正常)
@@ -461,10 +472,8 @@ void print_mat_info(const std::string &name, const cv::Mat &img) {
 	cv::minMaxLoc(img.reshape(1), &minVal, &maxVal);
 	cv::Scalar meanVal = cv::mean(img);
 
-	std::cout << "  Min/Max:  [" << minVal << ", " << maxVal << "]"
-			  << std::endl;
-	std::cout << "  Mean:     " << meanVal
-			  << std::endl; // 输出格式通常是 [B, G, R, 0]
+	std::cout << "  Min/Max:  [" << minVal << ", " << maxVal << "]" << std::endl;
+	std::cout << "  Mean:     " << meanVal << std::endl; // 输出格式通常是 [B, G, R, 0]
 
 	std::cout << "========================" << std::endl;
 }

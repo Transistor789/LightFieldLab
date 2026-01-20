@@ -33,7 +33,7 @@ void test_isp() {
 	// cv::waitKey();
 
 	isp.dpc_fast(DpcMethod::Diretional, 100)
-		.blc_fast(66)
+		.blc_fast(66, 1023)
 		.lsc_awb_fused_fast(0, {})
 		.demosaic(config.bayer, DemosaicMethod::Bilinear)
 		.ccm_fast_sai({});
@@ -77,8 +77,7 @@ void test_demosaic() {
 	lf_img.convertTo(lf_img, CV_8U, 255.0 / 1023.0);
 
 	std::cout << "Image Info: " << lf_img.cols << "x" << lf_img.rows
-			  << " | Depth: " << (lf_img.depth() == CV_8U ? "8-bit" : "16-bit")
-			  << std::endl;
+			  << " | Depth: " << (lf_img.depth() == CV_8U ? "8-bit" : "16-bit") << std::endl;
 
 	// 假设 Bayer 格式为 GRBG (你可以根据实际情况修改，如 COLOR_BayerRG2RGB)
 	// 注意：Bayer 格式只影响颜色正确性，不影响算法速度
@@ -156,8 +155,7 @@ void test_demosaic() {
 		timer.print_elapsed_ms("CUDA: Download (Device->Host)");
 
 	} else {
-		std::cout << "\n[Warning] No CUDA device found. Skipping GPU tests."
-				  << std::endl;
+		std::cout << "\n[Warning] No CUDA device found. Skipping GPU tests." << std::endl;
 	}
 	if (cuda_devices > 0) {
 		std::cout << "\n>>> Starting CUDA Benchmarks..." << std::endl;
@@ -197,8 +195,7 @@ void test_demosaic() {
 		timer.print_elapsed_ms("CUDA: Download (Device->Host)");
 
 	} else {
-		std::cout << "\n[Warning] No CUDA device found. Skipping GPU tests."
-				  << std::endl;
+		std::cout << "\n[Warning] No CUDA device found. Skipping GPU tests." << std::endl;
 	}
 	if (cuda_devices > 0) {
 		std::cout << "\n>>> Starting CUDA Benchmarks..." << std::endl;
@@ -238,8 +235,7 @@ void test_demosaic() {
 		timer.print_elapsed_ms("CUDA: Download (Device->Host)");
 
 	} else {
-		std::cout << "\n[Warning] No CUDA device found. Skipping GPU tests."
-				  << std::endl;
+		std::cout << "\n[Warning] No CUDA device found. Skipping GPU tests." << std::endl;
 	}
 }
 
@@ -252,10 +248,8 @@ void test_gpu() {
 	LFIsp isp;
 	isp.initConfig(wht_img, config);
 	int _;
-	LFIO::LoadLookUpTables("../data/calibration/lut_extract_9.bin",
-						   isp.maps.extract, _);
-	LFIO::LoadLookUpTables("../data/calibration/lut_dehex.bin", isp.maps.dehex,
-						   _);
+	LFIO::LoadLookUpTables("../data/calibration/lut_extract_9.bin", isp.maps.extract, _);
+	LFIO::LoadLookUpTables("../data/calibration/lut_dehex.bin", isp.maps.dehex, _);
 	isp.update_resample_maps();
 
 	config.enableBLC = true;
@@ -330,10 +324,8 @@ void benchmark() {
 	LFIsp isp;
 	isp.initConfig(wht_img, config);
 	int _;
-	LFIO::LoadLookUpTables("../data/calibration/lut_extract_9.bin",
-						   isp.maps.extract, _);
-	LFIO::LoadLookUpTables("../data/calibration/lut_dehex.bin", isp.maps.dehex,
-						   _);
+	LFIO::LoadLookUpTables("../data/calibration/lut_extract_9.bin", isp.maps.extract, _);
+	LFIO::LoadLookUpTables("../data/calibration/lut_dehex.bin", isp.maps.dehex, _);
 	isp.update_resample_maps();
 
 	config.enableBLC = true;

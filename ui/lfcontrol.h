@@ -20,6 +20,7 @@
 #include <QtConcurrent/QtConcurrent>
 #include <format>
 #include <memory>
+#include <qcontainerfwd.h>
 #include <qimage.h>
 #include <qtmetamacros.h>
 #include <queue>
@@ -47,6 +48,7 @@ public slots:
 	void readWhite(const QString &path);
 	void readExtractLUT(const QString &path);
 	void readDehexLUT(const QString &path);
+	void saveSAI(const QString &path);
 
 	void calibrate();
 	void process();

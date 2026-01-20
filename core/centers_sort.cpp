@@ -6,8 +6,7 @@
 #include <limits>
 #include <unordered_map>
 
-CentroidsSort::CentroidsSort(const std::vector<cv::Point2f> &points,
-							 const std::vector<float> &pitch)
+CentroidsSort::CentroidsSort(const std::vector<cv::Point2f> &points, const std::vector<float> &pitch)
 	: _pitch_unit(pitch[0] / 2.0f, pitch[1] / 2.0f) {
 	if (points.empty()) {
 		// 可选：抛出异常或记录错误
@@ -69,11 +68,9 @@ void CentroidsSort::run() {
 	std::cout << "]" << std::endl;
 }
 
-std::vector<cv::Point2f> CentroidsSort::neighbors_by_idx(const IntIndex &idx,
-														 int radius) const {
+std::vector<cv::Point2f> CentroidsSort::neighbors_by_idx(const IntIndex &idx, int radius) const {
 	std::vector<cv::Point2f> neighbors;
-	neighbors.reserve((2 * radius + 1)
-					  * (2 * radius + 1)); // 预分配最大可能数量
+	neighbors.reserve((2 * radius + 1) * (2 * radius + 1)); // 预分配最大可能数量
 
 	for (int di = -radius; di <= radius; ++di) {
 		for (int dj = -radius; dj <= radius; ++dj) {
@@ -95,11 +92,11 @@ cv::Point2f CentroidsSort::next_horz(const cv::Point2f &pt, bool inv) const {
 	// 2. 获取候选点
 	auto candidates = neighbors_by_idx(idx, 3);
 	if (candidates.empty()) {
-		return cv::Point2f(NAN, NAN);
+		return cv::Point2f(-1.0f, -1.0f);
 	}
 
 	const float y_tol = _pitch_unit.y; // 行容差
-	cv::Point2f best_pt(NAN, NAN);
+	cv::Point2f best_pt(-1.0f, -1.0f);
 	bool found = false;
 
 	if (!inv) {
@@ -132,27 +129,25 @@ cv::Point2f CentroidsSort::next_horz(const cv::Point2f &pt, bool inv) const {
 		}
 	}
 
-	return found ? best_pt : cv::Point2f(NAN, NAN);
+	return found ? best_pt : cv::Point2f(-1.0f, -1.0f);
 }
 
-cv::Point2f CentroidsSort::next_vert(const cv::Point2f &pt, bool inv,
-									 bool hex_odd) const {
+cv::Point2f CentroidsSort::next_vert(const cv::Point2f &pt, bool inv, bool hex_odd) const {
 	// 1. 计算索引并获取候选点
 	IntIndex idx{pt.x / _pitch_unit.x, pt.y / _pitch_unit.y};
 	auto candidates = neighbors_by_idx(idx, 3);
 	if (candidates.empty()) {
-		return cv::Point2f(NAN, NAN);
+		return cv::Point2f(-1.0f, -1.0f);
 	}
 
 	// 2. 计算目标 y 坐标（±2 * pitch_unit = ±原始 pitch）
-	float target_y =
-		inv ? (pt.y - 2.0f * _pitch_unit.y) : (pt.y + 2.0f * _pitch_unit.y);
+	float target_y = inv ? (pt.y - 2.0f * _pitch_unit.y) : (pt.y + 2.0f * _pitch_unit.y);
 
 	// 3. 计算目标 x（用于距离比较）
 	float target_x = hex_odd ? (pt.x + _pitch_unit.x) : (pt.x - _pitch_unit.x);
 
 	// 4. 筛选并找最接近 target_x 的点
-	cv::Point2f best_pt(NAN, NAN);
+	cv::Point2f best_pt(-1.0f, -1.0f);
 	float min_dx = std::numeric_limits<float>::max();
 	bool found = false;
 
@@ -179,11 +174,11 @@ cv::Point2f CentroidsSort::next_vert(const cv::Point2f &pt, bool inv,
 		}
 	}
 
-	return found ? best_pt : cv::Point2f(NAN, NAN);
+	return found ? best_pt : cv::Point2f(-1.0f, -1.0f);
 }
 
-std::tuple<cv::Point2f, int> CentroidsSort::count_points_horz(
-	const cv::Point2f &start, const cv::Point2f &end, bool inv) {
+std::tuple<cv::Point2f, int> CentroidsSort::count_points_horz(const cv::Point2f &start, const cv::Point2f &end,
+															  bool inv) {
 	cv::Point2f current = start;
 	int count = 0;
 
@@ -197,7 +192,7 @@ std::tuple<cv::Point2f, int> CentroidsSort::count_points_horz(
 		cv::Point2f next_pt = next_horz(current, inv);
 
 		// 检查是否无效（无下一个点）
-		if (std::isnan(next_pt.x)) {
+		if (next_pt.x < 0) {
 			break;
 		}
 
@@ -215,8 +210,8 @@ std::tuple<cv::Point2f, int> CentroidsSort::count_points_horz(
 	return std::make_tuple(current, count);
 }
 
-std::tuple<cv::Point2f, int> CentroidsSort::count_points_vert(
-	const cv::Point2f &start, const cv::Point2f &end, bool inv, bool hex_odd) {
+std::tuple<cv::Point2f, int> CentroidsSort::count_points_vert(const cv::Point2f &start, const cv::Point2f &end,
+															  bool inv, bool hex_odd) {
 	cv::Point2f current = start;
 	int count = 0;
 
@@ -230,7 +225,7 @@ std::tuple<cv::Point2f, int> CentroidsSort::count_points_vert(
 		cv::Point2f next_pt = next_vert(current, inv, hex_odd);
 
 		// 检查是否无效
-		if (std::isnan(next_pt.x)) {
+		if (next_pt.x < 0) {
 			break;
 		}
 
@@ -249,8 +244,32 @@ std::tuple<cv::Point2f, int> CentroidsSort::count_points_vert(
 	return std::make_tuple(current, count);
 }
 
-std::vector<int> CentroidsSort::_search_clockwise(
-	std::vector<cv::Point2f> &corners) {
+std::pair<cv::Mat, cv::Mat> CentroidsSort::getPointsAsMats() const {
+	// 检查尺寸是否有效
+	if (_size.size() < 2 || _size[0] <= 0 || _size[1] <= 0 || _centroids_list.empty()) {
+		return {cv::Mat(), cv::Mat()};
+	}
+
+	int cols = _size[0]; // 网格宽度
+	int rows = _size[1]; // 网格高度
+
+	// 创建 CV_32F 类型的矩阵，对应 float 坐标精度
+	cv::Mat x_mat(rows, cols, CV_32F);
+	cv::Mat y_mat(rows, cols, CV_32F);
+
+	// 遍历 _centroids_list (行优先存储) 并填充数据
+	for (int r = 0; r < rows; ++r) {
+		for (int c = 0; c < cols; ++c) {
+			const cv::Point2f &pt = _centroids_list[r * cols + c];
+			x_mat.at<float>(r, c) = pt.x;
+			y_mat.at<float>(r, c) = pt.y;
+		}
+	}
+
+	return {x_mat, y_mat};
+}
+
+std::vector<int> CentroidsSort::_search_clockwise(std::vector<cv::Point2f> &corners) {
 	cv::Point2f t_l, t_r, b_r, b_l;
 
 	// 1. 初始化四角
@@ -270,9 +289,8 @@ std::vector<int> CentroidsSort::_search_clockwise(
 	t_r = new_t_r;
 
 	// 3. 右边：t_r → b_r （down）
-	cv::Point2f next_down =
-		next_vert(t_r, false, true); // direction=down, hex_odd=true
-	bool right_hex_odd = !std::isnan(next_down.x); // 存在 → true；否则 false
+	cv::Point2f next_down = next_vert(t_r, false, true); // direction=down, hex_odd=true
+	bool right_hex_odd = !std::isnan(next_down.x);		 // 存在 → true；否则 false
 	auto [new_b_r, y_r] = count_points_vert(t_r, b_r, false, right_hex_odd);
 	b_r = new_b_r;
 
@@ -281,9 +299,8 @@ std::vector<int> CentroidsSort::_search_clockwise(
 	b_l = new_b_l;
 
 	// 5. 左边：b_l → t_l （up）
-	cv::Point2f next_up =
-		next_vert(b_l, true, false);		   // direction=up, hex_odd=false
-	bool left_hex_odd = std::isnan(next_up.x); // 无下一个点 → true；否则 false
+	cv::Point2f next_up = next_vert(b_l, true, false); // direction=up, hex_odd=false
+	bool left_hex_odd = std::isnan(next_up.x);		   // 无下一个点 → true；否则 false
 	auto [new_t_l, y_l] = count_points_vert(b_l, t_l, true, left_hex_odd);
 	t_l = new_t_l;
 
@@ -294,8 +311,7 @@ std::vector<int> CentroidsSort::_search_clockwise(
 	return {std::min(x_b, x_t), std::min(y_l, y_r)};
 }
 
-std::vector<int> CentroidsSort::_search_counter_clockwise(
-	std::vector<cv::Point2f> &corners) {
+std::vector<int> CentroidsSort::_search_counter_clockwise(std::vector<cv::Point2f> &corners) {
 	cv::Point2f t_l, t_r, b_r, b_l;
 
 	// 1. 初始化四角
@@ -337,8 +353,7 @@ std::vector<int> CentroidsSort::_search_counter_clockwise(
 	return {std::min(x_b, x_t), std::min(y_l, y_r)};
 }
 
-std::vector<int> CentroidsSort::_search_diag(std::vector<cv::Point2f> &corners,
-											 bool hex_odd) {
+std::vector<int> CentroidsSort::_search_diag(std::vector<cv::Point2f> &corners, bool hex_odd) {
 	// 输入必须有4个点
 	if (corners.size() != 4) {
 		return {}; // invalid input → None
@@ -381,8 +396,7 @@ void CentroidsSort::search_clock_diag() {
 	const float tol = 1e-4f;
 
 	// Lambda: compare two corner lists (4 points)
-	auto corners_equal = [&](const std::vector<cv::Point2f> &a,
-							 const std::vector<cv::Point2f> &b) -> bool {
+	auto corners_equal = [&](const std::vector<cv::Point2f> &a, const std::vector<cv::Point2f> &b) -> bool {
 		if (a.size() != 4 || b.size() != 4)
 			return false;
 		for (int i = 0; i < 4; ++i) {
@@ -393,8 +407,7 @@ void CentroidsSort::search_clock_diag() {
 	};
 
 	// Lambda: run search (cw or ccw)
-	auto run_search = [&](bool cw)
-		-> std::tuple<std::vector<int>, std::vector<cv::Point2f>, bool> {
+	auto run_search = [&](bool cw) -> std::tuple<std::vector<int>, std::vector<cv::Point2f>, bool> {
 		std::vector<cv::Point2f> corners; // empty → use internal bounds
 		std::vector<int> prev_size;
 		std::vector<cv::Point2f> prev_corners;
@@ -409,13 +422,11 @@ void CentroidsSort::search_clock_diag() {
 			}
 
 			// Check convergence
-			if (!prev_size.empty() && prev_size == size
-				&& corners_equal(prev_corners, corners)) {
+			if (!prev_size.empty() && prev_size == size && corners_equal(prev_corners, corners)) {
 				break;
 			}
 			prev_size = size;
-			prev_corners =
-				corners; // corners updated in-place by search functions
+			prev_corners = corners; // corners updated in-place by search functions
 		}
 
 		// Try diag with hex_odd = false and true
@@ -444,13 +455,11 @@ void CentroidsSort::search_clock_diag() {
 		}
 
 		// Select candidate with max area (cols * rows)
-		auto best =
-			std::max_element(candidates.begin(), candidates.end(),
-							 [](const Candidate &a, const Candidate &b) {
-								 int area_a = a.size[0] * a.size[1];
-								 int area_b = b.size[0] * b.size[1];
-								 return area_a < area_b;
-							 });
+		auto best = std::max_element(candidates.begin(), candidates.end(), [](const Candidate &a, const Candidate &b) {
+			int area_a = a.size[0] * a.size[1];
+			int area_b = b.size[0] * b.size[1];
+			return area_a < area_b;
+		});
 
 		return {best->size, best->corners, best->hex_odd};
 	};
@@ -460,9 +469,7 @@ void CentroidsSort::search_clock_diag() {
 	auto [size_ccw, corners_ccw, hex_odd_ccw] = run_search(false);
 
 	// Compute areas (handle empty case)
-	auto area = [](const std::vector<int> &s) -> int {
-		return s.size() == 2 ? s[0] * s[1] : -1;
-	};
+	auto area = [](const std::vector<int> &s) -> int { return s.size() == 2 ? s[0] * s[1] : -1; };
 
 	int area_cw = area(size_cw);
 	int area_ccw = area(size_ccw);
@@ -516,8 +523,7 @@ void CentroidsSort::assign_index() {
 		// centroids_list.push_back(std::move(row_list));
 
 		// Move to next row
-		cv::Point2f next_row_start =
-			next_vert(curr_row_start, false, hex_odd); // 'down' -> inv=false
+		cv::Point2f next_row_start = next_vert(curr_row_start, false, hex_odd); // 'down' -> inv=false
 		if (std::isnan(next_row_start.x)) {
 			// 如果提前断了，就停止（但通常 size 已校验，不应发生）
 			break;
@@ -552,8 +558,7 @@ void CentroidsSort::run2() {
 	std::cout << "]" << std::endl;
 }
 
-cv::Point2f CentroidsSort::find_nearest_existing(const cv::Point2f &target,
-												 float radius) const {
+cv::Point2f CentroidsSort::find_nearest_existing(const cv::Point2f &target, float radius) const {
 	// 计算目标在空间哈希中的索引
 	// _pitch_unit 是构造函数中初始化的 (pitch/2)
 	IntIndex center_idx{target.x / _pitch_unit.x, target.y / _pitch_unit.y};
@@ -600,8 +605,7 @@ void CentroidsSort::flood_fill_from_center() {
 	// 完整 Pitch (x, y) = _pitch_unit * 2.0
 	cv::Point2f full_pitch = _pitch_unit * 2.0f;
 
-	cv::Point2f seed_pt = find_nearest_existing(
-		cv::Point2f(img_cx, img_cy), std::max(full_pitch.x, full_pitch.y));
+	cv::Point2f seed_pt = find_nearest_existing(cv::Point2f(img_cx, img_cy), std::max(full_pitch.x, full_pitch.y));
 
 	if (seed_pt.x < 0 && !_idx2pt.empty()) {
 		// Fallback: 如果中心没点，随便取一个
@@ -657,16 +661,14 @@ void CentroidsSort::flood_fill_from_center() {
 		// 假设 v=0 是偶数行(shift 0)，v=1 是奇数行(shift +0.5 pitch_x)
 		// 注意处理负数取模: ((v % 2) + 2) % 2
 		int row_parity = ((curr.y % 2) + 2) % 2;
-		float shift_down =
-			(row_parity == 0) ? 0.5f : -0.5f; // 偶->奇(+0.5), 奇->偶(-0.5)
-		float shift_up = (row_parity == 0) ? 0.5f : -0.5f; // 同理
+		float shift_down = (row_parity == 0) ? 0.5f : -0.5f; // 偶->奇(+0.5), 奇->偶(-0.5)
+		float shift_up = (row_parity == 0) ? 0.5f : -0.5f;	 // 同理
 
 		std::vector<Dir> directions = {
-			{1, 0, cv::Point2f(full_pitch.x, 0)},	// Right
-			{-1, 0, cv::Point2f(-full_pitch.x, 0)}, // Left
-			{0, 1,
-			 cv::Point2f(shift_down * full_pitch.x, full_pitch.y)},		 // Down
-			{0, -1, cv::Point2f(shift_up * full_pitch.x, -full_pitch.y)} // Up
+			{1, 0, cv::Point2f(full_pitch.x, 0)},						  // Right
+			{-1, 0, cv::Point2f(-full_pitch.x, 0)},						  // Left
+			{0, 1, cv::Point2f(shift_down * full_pitch.x, full_pitch.y)}, // Down
+			{0, -1, cv::Point2f(shift_up * full_pitch.x, -full_pitch.y)}  // Up
 		};
 
 		for (const auto &d : directions) {
@@ -678,8 +680,7 @@ void CentroidsSort::flood_fill_from_center() {
 				cv::Point2f pred_pt = curr_pt + d.offset;
 
 				// 在实际点集中查找是否存在该预测点附近的点
-				cv::Point2f found_pt =
-					find_nearest_existing(pred_pt, search_radius);
+				cv::Point2f found_pt = find_nearest_existing(pred_pt, search_radius);
 
 				if (found_pt.x >= 0) {
 					// 找到了有效邻居
@@ -696,8 +697,7 @@ void CentroidsSort::flood_fill_from_center() {
 	_size = {cols, rows};
 
 	_centroids_list.clear();
-	_centroids_list.resize(cols * rows,
-						   cv::Point2f(-1, -1)); // 默认填充无效值 (-1, -1)
+	_centroids_list.resize(cols * rows, cv::Point2f(-1, -1)); // 默认填充无效值 (-1, -1)
 
 	for (const auto &pair : visited) {
 		int u = pair.first.x - min_u; // 归一化到 0..cols-1

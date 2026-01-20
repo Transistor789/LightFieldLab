@@ -170,14 +170,14 @@ void test_module() {
 	// -------------------------------------------------------------------------
 	// 5. 网格拟合 (HexGrid Fit)
 	// -------------------------------------------------------------------------
-	HexGridFitter hgf(points_sorted, cs.getPointsSize(), _hex_odd);
+	HexGridFitter hgf(cs.getPointsAsMats(), _hex_odd);
 
 	// 使用快速鲁棒拟合
 	hgf.fitFastRobust(2.0f, 1500);
 
 	auto points_fitted = hgf.predict();
-	std::cout << points_fitted.size() << std::endl;
-	cv::Mat draw = draw_points(img, points_fitted, "", 0, 0, false);
+	std::cout << points_fitted.first.size() << std::endl;
+	cv::Mat draw = draw_points(img, points_fitted, 0, 0);
 	cv::imwrite("../data/cali_5x5.png", draw);
 	// cv::imshow("", draw);
 	// cv::waitKey();
@@ -192,13 +192,13 @@ void test_integration() {
 	config.autoEstimate = false;
 	config.diameter = 5;
 	config.views = 5;
-	config.saveLUT = false;
+	config.hexgridfit = true;
 	config.orientation = Orientation::VERT;
 
 	cali.run(img, config);
 	auto pts = cali.getPoints();
 
-	auto draw = draw_points(img, pts, "", 0, 0, false);
+	auto draw = draw_points(img, pts, 0, 0);
 	cv::imwrite("../data/cali_5x5.png", draw);
 }
 int main() {

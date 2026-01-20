@@ -9,22 +9,18 @@
 #include <opencv2/core/utils/logger.hpp>
 
 MainWindow::MainWindow(QWidget *parent)
-	: QMainWindow(parent),
-	  ui(new Ui::MainWindow),
-	  ctrl(std::make_unique<LFControl>()) {
+	: QMainWindow(parent), ui(new Ui::MainWindow), ctrl(std::make_unique<LFControl>()) {
 	ui->setupUi(this);
 
 	initStatusBar();
 	// 连接全量信息 (鼠标动的时候刷新一切)
-	connect(ui->widgetImage, &WidgetImage::imageMouseMoved, this,
-			&MainWindow::updateMouseInfo);
+	connect(ui->widgetImage, &WidgetImage::imageMouseMoved, this, &MainWindow::updateMouseInfo);
 
 	// 连接缩放信息 (滚轮动的时候只刷新缩放)
-	connect(ui->widgetImage, &WidgetImage::imageZoomChanged, this,
-			[this](double scale) {
-				int percent = static_cast<int>(scale * 100);
-				lblZoom->setText(QString("%1%").arg(percent));
-			});
+	connect(ui->widgetImage, &WidgetImage::imageZoomChanged, this, [this](double scale) {
+		int percent = static_cast<int>(scale * 100);
+		lblZoom->setText(QString("%1%").arg(percent));
+	});
 
 	m_fpsTimer = new QTimer(this);
 	m_fpsTimer->setInterval(1000);
@@ -66,12 +62,10 @@ MainWindow::MainWindow(QWidget *parent)
 	m_fpsTimer->start();
 
 	ui->widgetControl->setupParams(&ctrl->params);
-	connect(ctrl.get(), &LFControl::paramsChanged, ui->widgetControl,
-			&WidgetControl::updateUI);
+	connect(ctrl.get(), &LFControl::paramsChanged, ui->widgetControl, &WidgetControl::updateUI);
 
 	// 连接日志
-	connect(&QLogger::instance(), &QLogger::newLog, ui->widgetLogger,
-			&WidgetLogger::appendLog);
+	connect(&QLogger::instance(), &QLogger::newLog, ui->widgetLogger, &WidgetLogger::appendLog);
 
 	// 按键响应
 	connect(ui->widgetControl, &WidgetControl::requestLoadSAI, this,
@@ -85,37 +79,29 @@ MainWindow::MainWindow(QWidget *parent)
 	connect(ui->widgetControl, &WidgetControl::requestLoadDehexLUT, this,
 			[this](const QString &path) { ctrl->readDehexLUT(path); });
 
-	connect(ui->widgetControl, &WidgetControl::requestCalibrate, this,
-			[this] { ctrl->calibrate(); });
-	connect(ui->widgetControl, &WidgetControl::requestFastPreview, this,
-			[this] { ctrl->fast_preview(); });
-	connect(ui->widgetControl, &WidgetControl::requestISP, this,
-			[this] { ctrl->process(); });
-	connect(ui->widgetControl, &WidgetControl::requestDetectCamera, this,
-			[this] { ctrl->detectCamera(); });
+	connect(ui->widgetControl, &WidgetControl::requestCalibrate, this, [this] { ctrl->calibrate(); });
+	connect(ui->widgetControl, &WidgetControl::requestFastPreview, this, [this] { ctrl->fast_preview(); });
+	connect(ui->widgetControl, &WidgetControl::requestISP, this, [this] { ctrl->process(); });
+	connect(ui->widgetControl, &WidgetControl::requestSaveSAI, this,
+			[this](const QString &path) { ctrl->saveSAI(path); });
+	connect(ui->widgetControl, &WidgetControl::requestDetectCamera, this, [this] { ctrl->detectCamera(); });
 	connect(ui->widgetControl, &WidgetControl::requestCapture, this,
 			[this](bool active) { ctrl->setCapturing(active); });
 	connect(ui->widgetControl, &WidgetControl::requestProcess, this,
 			[this](bool active) { ctrl->setProcessing(active); });
-	connect(ui->widgetControl, &WidgetControl::requestPlay, this,
-			[this] { ctrl->play(); });
+	connect(ui->widgetControl, &WidgetControl::requestPlay, this, [this] { ctrl->play(); });
 	connect(ui->widgetControl, &WidgetControl::requestSAI, this,
 			[this](int row, int col) { ctrl->updateSAI(row, col); });
 
-	connect(ui->widgetControl, &WidgetControl::requestColorEq, this,
-			[this] { ctrl->color_equalize(); });
-	connect(ui->widgetControl, &WidgetControl::requestRefocus, this,
-			[this] { ctrl->refocus(); });
-	connect(ui->widgetControl, &WidgetControl::requestSR, this,
-			[this] { ctrl->upsample(); });
-	connect(ui->widgetControl, &WidgetControl::requestDE, this,
-			[this] { ctrl->depth(); });
+	connect(ui->widgetControl, &WidgetControl::requestColorEq, this, [this] { ctrl->color_equalize(); });
+	connect(ui->widgetControl, &WidgetControl::requestRefocus, this, [this] { ctrl->refocus(); });
+	connect(ui->widgetControl, &WidgetControl::requestSR, this, [this] { ctrl->upsample(); });
+	connect(ui->widgetControl, &WidgetControl::requestDE, this, [this] { ctrl->depth(); });
 	connect(ui->widgetControl, &WidgetControl::requestChangingColor, this,
 			[this](int index) { ctrl->colorChanged(index); });
 
 	// 图像就绪
-	connect(ctrl.get(), &LFControl::imageReady, ui->widgetImage,
-			&WidgetImage::updateImage);
+	connect(ctrl.get(), &LFControl::imageReady, ui->widgetImage, &WidgetImage::updateImage);
 
 	// 启动业务
 	// ctrl->params.path.white = "D:\\code\\LightFieldCamera\\B5152102610";
@@ -148,11 +134,7 @@ void MainWindow::initStatusBar() {
 	// 2. 创建控件 (Performance Metrics)
 	// ==========================================
 	lblResolution = new QLabel("RES: -- x --", this);
-	lblFPS = new QLabel(QString("FPS: %1 / %2 / %3 (Cap/Proc/UI)")
-							.arg(0, 'f', 1)
-							.arg(0, 'f', 1)
-							.arg(0, 'f', 1),
-						this);
+	lblFPS = new QLabel(QString("FPS: %1 / %2 / %3 (Cap/Proc/UI)").arg(0, 'f', 1).arg(0, 'f', 1).arg(0, 'f', 1), this);
 
 	// ==========================================
 	// 3. 美化样式
@@ -209,8 +191,7 @@ void MainWindow::initStatusBar() {
 // 槽函数实现：用于实时更新数据
 // ==========================================
 
-void MainWindow::updateMouseInfo(int x, int y, const QColor &color,
-								 double scale, int w, int h) {
+void MainWindow::updateMouseInfo(int x, int y, const QColor &color, double scale, int w, int h) {
 	// --- 更新分辨率 (RES) ---
 	// 如果没有图 (w=0)，显示 -- x --
 	if (w > 0 && h > 0) {
@@ -231,10 +212,7 @@ void MainWindow::updateMouseInfo(int x, int y, const QColor &color,
 	} else {
 		// 鼠标在图片上
 		lblCoords->setText(QString("X: %1  Y: %2").arg(x).arg(y));
-		lblRGB->setText(QString("R: %1  G: %2  B: %3")
-							.arg(color.red())
-							.arg(color.green())
-							.arg(color.blue()));
+		lblRGB->setText(QString("R: %1  G: %2  B: %3").arg(color.red()).arg(color.green()).arg(color.blue()));
 	}
 	// m_uiFrameCount++;
 }
