@@ -1,30 +1,25 @@
-﻿#include "lfdepth.h"
+﻿#include "lfde.h"
 
 #include <format> // C++20 std::format
 #include <iostream>
 
 // [移除] #include "lfparams.h"
 
-bool LFDepthEstimation::depth(const std::vector<cv::Mat> &views,
-							  DEMethod method) {
+bool LFDepthEstimation::depth(const std::vector<cv::Mat> &views, DEMethod method) {
 	if (views.empty()) {
-		std::cerr << "[LFDepthEstimation] Error: Empty views input."
-				  << std::endl;
+		std::cerr << "[LFDepthEstimation] Error: Empty views input." << std::endl;
 		return false;
 	}
 
 	if (views[0].depth() != CV_8U) {
-		std::cerr
-			<< "[LFDepthEstimation] Error: Input views must be 8-bit (CV_8U)."
-			<< std::endl;
+		std::cerr << "[LFDepthEstimation] Error: Input views must be 8-bit (CV_8U)." << std::endl;
 		return false;
 	}
 
 	// --- 智能加载：检查并按需加载模型 ---
 	// 将 method 传入，与内部状态比对
 	if (!checkAndLoadModel(method)) {
-		std::cerr << "[LFDepthEstimation] Abort: Model check/load failed."
-				  << std::endl;
+		std::cerr << "[LFDepthEstimation] Abort: Model check/load failed." << std::endl;
 		return false;
 	}
 
@@ -90,8 +85,7 @@ cv::Mat LFDepthEstimation::getVisualizedResult(DEColor color) const {
 bool LFDepthEstimation::checkAndLoadModel(DEMethod targetMethod) {
 	// 1. 检查状态是否发生变化
 	bool methodChanged = (m_loadedMethod != targetMethod);
-	bool paramChanged = (m_loadedAngRes != m_targetAngRes)
-						|| (m_loadedPatchSize != m_targetPatchSize);
+	bool paramChanged = (m_loadedAngRes != m_targetAngRes) || (m_loadedPatchSize != m_targetPatchSize);
 	bool engineNotLoaded = !distg_.isEngineLoaded();
 
 	// 如果所有状态一致且引擎已加载，直接跳过，复用现有模型
@@ -100,14 +94,11 @@ bool LFDepthEstimation::checkAndLoadModel(DEMethod targetMethod) {
 	}
 
 	// 2. 准备加载
-	std::string modelPath =
-		getModelPath(targetMethod, m_targetAngRes, m_targetPatchSize);
+	std::string modelPath = getModelPath(targetMethod, m_targetAngRes, m_targetPatchSize);
 
 	// 打印调试信息
-	std::string methodName =
-		(targetMethod == DEMethod::DistgDisp) ? "DistgDisp" : "OACC";
-	std::cout << "[LFDepthEstimation] Model change detected. Reloading..."
-			  << std::endl;
+	std::string methodName = (targetMethod == DEMethod::DistgDisp) ? "DistgDisp" : "OACC";
+	std::cout << "[LFDepthEstimation] Model change detected. Reloading..." << std::endl;
 	std::cout << "   Target DEMethod: " << methodName << std::endl;
 	std::cout << "   Target Path:   " << modelPath << std::endl;
 
@@ -124,13 +115,11 @@ bool LFDepthEstimation::checkAndLoadModel(DEMethod targetMethod) {
 		m_loadedPatchSize = m_targetPatchSize;
 		m_loadedMethod = targetMethod; // 记录当前加载的是哪种方法
 
-		std::cout << "[LFDepthEstimation] Model loaded successfully."
-				  << std::endl;
+		std::cout << "[LFDepthEstimation] Model loaded successfully." << std::endl;
 		return true;
 
 	} catch (const std::exception &e) {
-		std::cerr << "[LFDepthEstimation] Failed to load model: " << modelPath
-				  << "\nReason: " << e.what() << std::endl;
+		std::cerr << "[LFDepthEstimation] Failed to load model: " << modelPath << "\nReason: " << e.what() << std::endl;
 
 		// 如果加载失败，重置状态为无效，强制下次必须重试
 		m_loadedAngRes = -1;
@@ -138,8 +127,7 @@ bool LFDepthEstimation::checkAndLoadModel(DEMethod targetMethod) {
 	}
 }
 
-std::string LFDepthEstimation::getModelPath(DEMethod method, int angRes,
-											int patchSize) const {
+std::string LFDepthEstimation::getModelPath(DEMethod method, int angRes, int patchSize) const {
 	// 基础名称前缀
 	std::string prefix;
 	if (method == DEMethod::DistgDisp) {
@@ -161,6 +149,5 @@ std::string LFDepthEstimation::getModelPath(DEMethod method, int angRes,
 
 	// 使用 format 拼接路径
 	// 格式: data/{DEMethod}_{Ang}x{Ang}_{Patch}_FP16_{OS}.engine
-	return std::format("models/{}_{}x{}_{}_FP16_{}.engine", prefix, angRes,
-					   angRes, patchSize, osSuffix);
+	return std::format("models/{}_{}x{}_{}_FP16_{}.engine", prefix, angRes, angRes, patchSize, osSuffix);
 }

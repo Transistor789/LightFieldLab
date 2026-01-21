@@ -93,7 +93,6 @@ MainWindow::MainWindow(QWidget *parent)
 	connect(ui->widgetControl, &WidgetControl::requestSAI, this,
 			[this](int row, int col) { ctrl->updateSAI(row, col); });
 
-	connect(ui->widgetControl, &WidgetControl::requestColorEq, this, [this] { ctrl->color_equalize(); });
 	connect(ui->widgetControl, &WidgetControl::requestRefocus, this, [this] { ctrl->refocus(); });
 	connect(ui->widgetControl, &WidgetControl::requestSR, this, [this] { ctrl->upsample(); });
 	connect(ui->widgetControl, &WidgetControl::requestDE, this, [this] { ctrl->depth(); });

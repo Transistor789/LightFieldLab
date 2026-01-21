@@ -4,7 +4,7 @@
 #include "colormatcher.h"
 #include "dialogccm.h"
 #include "lfcalibrate.h"
-#include "lfdepth.h"
+#include "lfde.h"
 #include "lfisp.h"
 #include "lfparams.h"
 #include "lfsr.h"
@@ -164,14 +164,20 @@ WidgetControl::WidgetControl(QWidget *parent) : QWidget(parent), ui(new Ui::Widg
 			&WidgetControl::requestCalibrate); // 标定按钮
 
 	// 4. ISP 管道控制
+	connect(ui->checkBoxRAW, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableRAW = val; });
 	connect(ui->checkBoxBLC, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableBLC = val; });
 	connect(ui->checkBoxDPC, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableDPC = val; });
-	connect(ui->checkBoxNR, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableNR = val; });
+	connect(ui->checkBoxNR, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableRawNR = val; });
 	connect(ui->checkBoxLSC, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableLSC = val; });
 	connect(ui->checkBoxWB, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableAWB = val; });
-	connect(ui->checkBoxDemosaic, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableDemosaic = val; });
+	connect(ui->checkBoxRGB, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableDemosaic = val; });
 	connect(ui->checkBoxCCM, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableCCM = val; });
 	connect(ui->checkBoxGamma, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableGamma = val; });
+	connect(ui->checkBoxYUV, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableCSC = val; });
+	connect(ui->checkBoxUVNR, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableUVNR = val; });
+	connect(ui->checkBoxColorEq, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableColorEq = val; });
+	connect(ui->checkBoxContrast, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableCE = val; });
+	connect(ui->checkBoxSaturation, &QCheckBox::toggled, this, [this](bool val) { params_->isp.enableSE = val; });
 	connect(ui->checkBoxExtract, &QCheckBox::toggled, this, [this](bool val) {
 		params_->isp.enableExtract = val;
 		ui->checkBoxDehex->setEnabled(val);
@@ -185,9 +191,9 @@ WidgetControl::WidgetControl(QWidget *parent) : QWidget(parent), ui(new Ui::Widg
 	connect(ui->spinBoxThreshold, &QSpinBox::valueChanged, this,
 			[this](int value) { params_->isp.dpcThreshold = static_cast<int>(value); });
 	connect(ui->doubleSpinBoxSigmaS, &QDoubleSpinBox::valueChanged, this,
-			[this](double value) { params_->isp.nr_sigma_s = static_cast<float>(value); });
+			[this](double value) { params_->isp.rawnr_sigma_s = static_cast<float>(value); });
 	connect(ui->doubleSpinBoxSigmaR, &QDoubleSpinBox::valueChanged, this,
-			[this](double value) { params_->isp.nr_sigma_r = static_cast<float>(value); });
+			[this](double value) { params_->isp.rawnr_sigma_r = static_cast<float>(value); });
 	connect(ui->doubleSpinBoxExpo, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) { params_->isp.lscExp = static_cast<float>(value); });
 	connect(ui->doubleSpinBoxGain0, &QDoubleSpinBox::valueChanged, this,
@@ -198,9 +204,7 @@ WidgetControl::WidgetControl(QWidget *parent) : QWidget(parent), ui(new Ui::Widg
 			[this](double value) { params_->isp.awb_gains[2] = static_cast<float>(value); });
 	connect(ui->doubleSpinBoxGain3, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) { params_->isp.awb_gains[3] = static_cast<float>(value); });
-	connect(ui->comboBoxDemosaicAlgo, &QComboBox::currentIndexChanged, this,
-			[this](int index) { params_->isp.demosaicMethod = static_cast<DemosaicMethod>(index); });
-	connect(ui->btnSetCCM, &QPushButton::clicked, this, [this] {
+	connect(ui->btnSetCCM, &QToolButton::clicked, this, [this] {
 		DialogCCM dialog(params_->isp.ccm_matrix, this);
 		if (dialog.exec() == QDialog::Accepted) {
 			updateUI();
@@ -208,12 +212,29 @@ WidgetControl::WidgetControl(QWidget *parent) : QWidget(parent), ui(new Ui::Widg
 	});
 	connect(ui->doubleSpinBoxGamma, &QDoubleSpinBox::valueChanged, this,
 			[this](double value) { params_->isp.gamma = static_cast<float>(value); });
+	connect(ui->doubleSpinBoxUVNRSigmaS, &QDoubleSpinBox::valueChanged, this,
+			[this](double value) { params_->isp.uvnr_sigma_s = static_cast<float>(value); });
+	connect(ui->doubleSpinBoxUVNRSigmaR, &QDoubleSpinBox::valueChanged, this,
+			[this](double value) { params_->isp.uvnr_sigma_r = static_cast<float>(value); });
 	connect(ui->comboBoxColorEq, &QComboBox::currentIndexChanged, this,
-			[this](int index) { params_->colorEqMethod = static_cast<ColorEqualizeMethod>(index); });
+			[this](int index) { params_->isp.colorEqMethod = static_cast<ColorEqualizeMethod>(index); });
+	connect(ui->doubleSpinBoxClipLimit, &QDoubleSpinBox::valueChanged, this,
+			[this](double value) { params_->isp.ceClipLimit = static_cast<float>(value); });
+	connect(ui->spinBoxGridSize, &QSpinBox::valueChanged, this,
+			[this](int value) { params_->isp.ceGridSize = static_cast<int>(value); });
+	connect(ui->doubleSpinBoxSEFactor, &QDoubleSpinBox::valueChanged, this,
+			[this](double value) { params_->isp.seFactor = static_cast<float>(value); });
 	connect(ui->comboBoxDevice, &QComboBox::currentIndexChanged, this,
 			[this](int index) { params_->isp.device = static_cast<Device>(index); });
-	connect(ui->btnFastPreview, &QPushButton::clicked, this, &WidgetControl::requestFastPreview);
-	connect(ui->btnISP, &QPushButton::clicked, this, &WidgetControl::requestISP);
+	connect(ui->btnFastPreview, &QToolButton::clicked, this, &WidgetControl::requestFastPreview);
+	connect(ui->btnISP, &QToolButton::clicked, this, &WidgetControl::requestISP);
+	connect(ui->toolButtonSaveSAI, &QToolButton::clicked, this, [this] {
+		QString path = QFileDialog::getExistingDirectory(this, "保存子孔径图像", "",
+														 QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+		if (!path.isEmpty()) {
+			emit requestSaveSAI(path);
+		}
+	});
 
 	// Dynamic
 	connect(ui->pushButtonDetectCamera, &QPushButton::clicked, this, [this] { emit requestDetectCamera(); });
@@ -243,13 +264,6 @@ WidgetControl::WidgetControl(QWidget *parent) : QWidget(parent), ui(new Ui::Widg
 
 		emit requestProcess(canProcess);
 	});
-	connect(ui->pushButtonSaveSAI, &QPushButton::clicked, this, [this] {
-		QString path = QFileDialog::getExistingDirectory(this, "保存子孔径图像", "",
-														 QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
-		if (!path.isEmpty()) {
-			emit requestSaveSAI(path);
-		}
-	});
 
 	// 5. 子孔径与播放 (SAI)
 	connect(ui->spinBoxHorz, &QSpinBox::valueChanged, this, [this](int value) {
@@ -274,9 +288,6 @@ WidgetControl::WidgetControl(QWidget *parent) : QWidget(parent), ui(new Ui::Widg
 	});
 
 	// 6. 后处理 (Refocus, SR, DE)
-
-	// Color equalize
-	connect(ui->pushButtonColorEq, &QPushButton::clicked, this, [this] { emit requestColorEq(); });
 	// Refocus
 	connect(ui->spinBoxRefocusCrop, &QSpinBox::valueChanged, this,
 			[this](int value) { params_->refocus.crop = value; });
@@ -347,35 +358,41 @@ void WidgetControl::updateUI() {
 	setValSilent(ui->checkBoxGenLUT, params_->calibrate.genLUT);
 
 	// ISP - Static
+	setValSilent(ui->checkBoxRAW, params_->isp.enableRAW);
 	setValSilent(ui->checkBoxBLC, params_->isp.enableBLC);
 	setValSilent(ui->checkBoxDPC, params_->isp.enableDPC);
-	setValSilent(ui->checkBoxNR, params_->isp.enableNR);
+	setValSilent(ui->checkBoxNR, params_->isp.enableRawNR);
 	setValSilent(ui->checkBoxLSC, params_->isp.enableLSC);
 	setValSilent(ui->checkBoxWB, params_->isp.enableAWB);
-	setValSilent(ui->checkBoxDemosaic, params_->isp.enableDemosaic);
+	setValSilent(ui->checkBoxRGB, params_->isp.enableDemosaic);
 	setValSilent(ui->checkBoxCCM, params_->isp.enableCCM);
 	setValSilent(ui->checkBoxGamma, params_->isp.enableGamma);
+	setValSilent(ui->checkBoxYUV, params_->isp.enableCSC);
+	setValSilent(ui->checkBoxUVNR, params_->isp.enableUVNR);
+	setValSilent(ui->checkBoxColorEq, params_->isp.enableColorEq);
+	setValSilent(ui->checkBoxContrast, params_->isp.enableCE);
+	setValSilent(ui->checkBoxSaturation, params_->isp.enableSE);
 	setValSilent(ui->checkBoxExtract, params_->isp.enableExtract);
 	setValSilent(ui->checkBoxDehex, params_->isp.enableDehex);
+	setValSilent(ui->comboBoxColorEq, params_->isp.colorEqMethod);
 
 	setValSilent(ui->spinBoxBL, params_->isp.black_level);
 	setValSilent(ui->spinBoxWL, params_->isp.white_level);
 	setValSilent(ui->spinBoxThreshold, params_->isp.dpcThreshold);
-	setValSilent(ui->doubleSpinBoxSigmaS, params_->isp.nr_sigma_s);
-	setValSilent(ui->doubleSpinBoxSigmaR, params_->isp.nr_sigma_r);
+	setValSilent(ui->doubleSpinBoxSigmaS, params_->isp.rawnr_sigma_s);
+	setValSilent(ui->doubleSpinBoxSigmaR, params_->isp.rawnr_sigma_r);
 	setValSilent(ui->doubleSpinBoxExpo, params_->isp.lscExp);
-
 	setValSilent(ui->doubleSpinBoxGain0, params_->isp.awb_gains[0]);
 	setValSilent(ui->doubleSpinBoxGain1, params_->isp.awb_gains[1]);
 	setValSilent(ui->doubleSpinBoxGain2, params_->isp.awb_gains[2]);
 	setValSilent(ui->doubleSpinBoxGain3, params_->isp.awb_gains[3]);
-
-	setValSilent(ui->comboBoxDemosaicAlgo, params_->isp.demosaicMethod);
 	setValSilent(ui->doubleSpinBoxGamma, params_->isp.gamma);
+	setValSilent(ui->doubleSpinBoxUVNRSigmaS, params_->isp.uvnr_sigma_s);
+	setValSilent(ui->doubleSpinBoxUVNRSigmaR, params_->isp.uvnr_sigma_r);
+	setValSilent(ui->doubleSpinBoxClipLimit, params_->isp.ceClipLimit);
+	setValSilent(ui->spinBoxGridSize, params_->isp.ceGridSize);
+	setValSilent(ui->doubleSpinBoxSEFactor, params_->isp.seFactor);
 	setValSilent(ui->comboBoxDevice, params_->isp.device);
-
-	// ColorEq
-	setValSilent(ui->comboBoxColorEq, params_->colorEqMethod);
 
 	// Dynamic
 	if (!params_->dynamic.cameraID.empty()) {

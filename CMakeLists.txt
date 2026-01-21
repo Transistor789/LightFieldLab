@@ -129,7 +129,7 @@ set(SRCS_CORE
     core/lfcapture.cpp
     core/lfcalibrate.cpp
     core/lfrefocus.cpp
-    core/lfdepth.cpp
+    core/lfde.cpp
     core/distgdisp.cpp
     core/lfsr.cpp
     core/distgssr.cpp
@@ -138,13 +138,16 @@ set(SRCS_CORE
     core/trtwrapper.cpp
     core/califinder.cpp
     core/dpc.cu
-    core/nr.cu
+    core/rawnr.cu
     core/lsc.cu
     core/awb.cu
     core/lsc_awb.cu
     core/ccm.cu
     core/gc.cu
     core/ccm_gc.cu
+    core/uvnr.cu
+    core/colormatcher.cu
+    core/se.cu
 )
 
 # UI 界面模块

@@ -1,5 +1,5 @@
-﻿#ifndef LFDEPTH_
-#define LFDEPTH_
+﻿#ifndef LFDEPTH_H
+#define LFDEPTH_H
 
 #include "distgdisp.h"
 

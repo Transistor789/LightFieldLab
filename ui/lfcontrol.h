@@ -3,7 +3,7 @@
 
 #include "lfcalibrate.h"
 #include "lfcapture.h"
-#include "lfdepth.h"
+#include "lfde.h"
 #include "lfio.h"
 #include "lfisp.h"
 #include "lfparams.h"
@@ -58,7 +58,6 @@ public slots:
 	void play();
 	void refocus();
 	void processAllInFocus();
-	void color_equalize();
 	void upsample();
 	void depth();
 	void colorChanged(int index);
@@ -76,33 +75,29 @@ private:
 
 	template <typename Func>
 	void runAsync(Func &&task, const QString &taskName) {
-		QThreadPool::globalInstance()->start(
-			QRunnable::create([this, task, taskName]() mutable {
-				// 1. 创建计时器 (构造时自动 start)
-				Timer timer;
+		QThreadPool::globalInstance()->start(QRunnable::create([this, task, taskName]() mutable {
+			// 1. 创建计时器 (构造时自动 start)
+			Timer timer;
 
-				try {
-					// 2. 执行任务
-					task();
+			try {
+				// 2. 执行任务
+				task();
 
-					// 3. 任务结束，停止计时
-					timer.stop();
-					double costMs = timer.elapsed_ms();
+				// 3. 任务结束，停止计时
+				timer.stop();
+				double costMs = timer.elapsed_ms();
 
-					// 4. 打印日志 (包含耗时)
-					// {:.2f} 保留两位小数，看起来更整洁
-					LOG_INFO(std::format("{} finished. (Time: {:.2f} ms)",
-										 taskName.toStdString(), costMs));
+				// 4. 打印日志 (包含耗时)
+				// {:.2f} 保留两位小数，看起来更整洁
+				LOG_INFO(std::format("{} finished. (Time: {:.2f} ms)", taskName.toStdString(), costMs));
 
-				} catch (const std::exception &e) {
-					LOG_ERROR(std::format("{} failed: {}",
-										  taskName.toStdString(), e.what()));
+			} catch (const std::exception &e) {
+				LOG_ERROR(std::format("{} failed: {}", taskName.toStdString(), e.what()));
 
-				} catch (...) {
-					LOG_ERROR(std::format("{} failed: Unknown error",
-										  taskName.toStdString()));
-				}
-			}));
+			} catch (...) {
+				LOG_ERROR(std::format("{} failed: Unknown error", taskName.toStdString()));
+			}
+		}));
 	}
 
 public:

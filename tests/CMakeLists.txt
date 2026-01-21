@@ -25,13 +25,16 @@ set(SRCS_ALGO
     ${SOURCE_DIR}/centers_sort.cpp
     ${SOURCE_DIR}/hexgrid_fit.cpp
     ${SOURCE_DIR}/dpc.cu
-    ${SOURCE_DIR}/nr.cu
+    ${SOURCE_DIR}/rawnr.cu
     ${SOURCE_DIR}/lsc.cu
     ${SOURCE_DIR}/awb.cu
     ${SOURCE_DIR}/lsc_awb.cu
     ${SOURCE_DIR}/ccm.cu
     ${SOURCE_DIR}/gc.cu
     ${SOURCE_DIR}/ccm_gc.cu
+    ${SOURCE_DIR}/uvnr.cu
+    ${SOURCE_DIR}/colormatcher.cu
+    ${SOURCE_DIR}/se.cu
 )
 
 # 深度学习/推理模块: TensorRT Wrapper, LFMBase, LFSRBase, LFDispBase
@@ -158,7 +161,7 @@ add_executable(test_epit test_epit.cpp ${SOURCE_DIR}/epit.cpp ${SRCS_COMMON} ${S
 target_link_libraries(test_epit PRIVATE ${LIBS_BASIC} ${NVINFER_LIB} CUDA::cudart)
 
 # Test: Depth Estimation High Level
-add_executable(test_lfdepth test_lfdepth.cpp ${SOURCE_DIR}/lfdepth.cpp ${SOURCE_DIR}/distgdisp.cpp ${SRCS_COMMON} ${SRCS_INFER})
+add_executable(test_lfdepth test_lfde.cpp ${SOURCE_DIR}/lfde.cpp ${SOURCE_DIR}/distgdisp.cpp ${SRCS_COMMON} ${SRCS_INFER})
 target_link_libraries(test_lfdepth PRIVATE ${LIBS_BASIC} ${NVINFER_LIB} CUDA::cudart)
 
 # Test: Super Resolution High Level (包含 OpenCV DNN)

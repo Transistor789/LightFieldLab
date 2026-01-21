@@ -1,60 +1,35 @@
-﻿#include <cuda_runtime.h>
-#include <device_launch_parameters.h>
-#include <opencv2/core/cuda/common.hpp>
-#include <opencv2/core/cuda/vec_math.hpp>
-#include <opencv2/core/cuda/vec_traits.hpp>
+﻿#include <opencv2/core/cuda/common.hpp>
 #include <opencv2/core/cuda_stream_accessor.hpp>
 
+// 手写 CCM Kernel：[R, G, B]^T_out = CCM * [R, G, B]^T_in
+__global__ void ccm_8uc3_kernel(cv::cuda::PtrStepSz<uchar3> img, float m0, float m1, float m2, float m3, float m4,
+								float m5, float m6, float m7, float m8) {
+	int x = blockIdx.x * blockDim.x + threadIdx.x;
+	int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-// 使用常量内存或寄存器传参均可，这里为了简单直接传参
-// 矩阵通常是 3x3
-__global__ void ccm_8uc3_inplace_kernel(cv::cuda::PtrStepSz<uchar3> img,
-										float c00, float c01, float c02,
-										float c10, float c11, float c12,
-										float c20, float c21, float c22) {
-	const int x = blockIdx.x * blockDim.x + threadIdx.x;
-	const int y = blockIdx.y * blockDim.y + threadIdx.y;
+	if (x < img.cols && y < img.rows) {
+		uchar3 p = img(y, x);
 
-	if (x >= img.cols || y >= img.rows)
-		return;
+		// 使用传入的参数进行计算 (此时 m0-m8 位于寄存器/常量内存中，速度极快)
+		float r = m0 * p.z + m1 * p.y + m2 * p.x;
+		float g = m3 * p.z + m4 * p.y + m5 * p.x;
+		float b = m6 * p.z + m7 * p.y + m8 * p.x;
 
-	// 1. 读取 BGR (OpenCV 默认顺序)
-	uchar3 bgr = img(y, x);
+		p.z = (unsigned char)fmaxf(0.0f, fminf(255.0f, r + 0.5f));
+		p.y = (unsigned char)fmaxf(0.0f, fminf(255.0f, g + 0.5f));
+		p.x = (unsigned char)fmaxf(0.0f, fminf(255.0f, b + 0.5f));
 
-	// 2. 转为 RGB Float (方便矩阵乘法)
-	float r = (float)bgr.z; // z is R
-	float g = (float)bgr.y; // y is G
-	float b = (float)bgr.x; // x is B
-
-	// 3. 矩阵乘法 (Result = CCM * Source)
-	// R' = c00*R + c01*G + c02*B
-	float r_new = c00 * r + c01 * g + c02 * b;
-	float g_new = c10 * r + c11 * g + c12 * b;
-	float b_new = c20 * r + c21 * g + c22 * b;
-
-	// 4. 饱和截断 (Saturate)
-	// CUDA 内置 fminf/fmaxf 指令非常快
-	r_new = fminf(fmaxf(r_new, 0.0f), 255.0f);
-	g_new = fminf(fmaxf(g_new, 0.0f), 255.0f);
-	b_new = fminf(fmaxf(b_new, 0.0f), 255.0f);
-
-	// 5. 写回 BGR (交换顺序)
-	// make_uchar3(B, G, R)
-	img(y, x) = make_uchar3((unsigned char)(b_new + 0.5f),
-							(unsigned char)(g_new + 0.5f),
-							(unsigned char)(r_new + 0.5f));
+		img(y, x) = p;
+	}
 }
 
-// Launcher
-void launch_ccm_8uc3(cv::cuda::GpuMat &img, const float *m,
-					 cv::cuda::Stream &stream) {
+void launch_ccm_8uc3(cv::cuda::GpuMat &img, const float *h_ccm, cv::cuda::Stream &stream) {
+	cudaStream_t s = cv::cuda::StreamAccessor::getStream(stream);
+
 	dim3 block(32, 16);
-	dim3 grid(cv::cuda::device::divUp(img.cols, block.x),
-			  cv::cuda::device::divUp(img.rows, block.y));
+	dim3 grid((img.cols + block.x - 1) / block.x, (img.rows + block.y - 1) / block.y);
 
-	cudaStream_t cuda_stream = cv::cuda::StreamAccessor::getStream(stream);
-
-	// 直接把数组展开传进去，避免在 kernel 里访问 global memory 的指针
-	ccm_8uc3_inplace_kernel<<<grid, block, 0, cuda_stream>>>(
-		img, m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
+	// 【关键修复】将主机指针指向的内容作为数值传入，而不是传指针
+	ccm_8uc3_kernel<<<grid, block, 0, s>>>(img, h_ccm[0], h_ccm[1], h_ccm[2], h_ccm[3], h_ccm[4], h_ccm[5], h_ccm[6],
+										   h_ccm[7], h_ccm[8]);
 }

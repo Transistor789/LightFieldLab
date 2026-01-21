@@ -4,7 +4,7 @@
 #include "colormatcher.h"
 #include "json.hpp"
 #include "lfcalibrate.h"
-#include "lfdepth.h"
+#include "lfde.h"
 #include "lfisp.h"
 #include "lfsr.h"
 #include "utils.h"
@@ -77,7 +77,6 @@ struct LFParams {
 	IspConfig isp;
 	LFParamsDynamic dynamic;
 	LFParamsSAI sai;
-	ColorEqualizeMethod colorEqMethod = ColorEqualizeMethod::Reinhard;
 	LFParamsRefocus refocus;
 	LFParamsSR sr;
 	LFParamsDE de;
@@ -102,12 +101,8 @@ NLOHMANN_JSON_SERIALIZE_ENUM(Orientation, {{Orientation::HORZ, "HORZ"}, {Orienta
 
 NLOHMANN_JSON_SERIALIZE_ENUM(DpcMethod, {{DpcMethod::Diretional, "Diretional"}})
 
-NLOHMANN_JSON_SERIALIZE_ENUM(DemosaicMethod, {{DemosaicMethod::Bilinear, "Bilinear"},
-											  {DemosaicMethod::Gray, "EdgeAware"},
-											  {DemosaicMethod::VGN, "VGN"},
-											  {DemosaicMethod::EA, "EA"}})
-
-NLOHMANN_JSON_SERIALIZE_ENUM(Device, {{Device::CPU, "CPU"}, {Device::GPU, "GPU"}})
+NLOHMANN_JSON_SERIALIZE_ENUM(Device,
+							 {{Device::CPU, "CPU"}, {Device::CPU_OPENMP_SIMD, "CPU_OPENMP_SIMD"}, {Device::GPU, "GPU"}})
 
 NLOHMANN_JSON_SERIALIZE_ENUM(ColorEqualizeMethod, {{ColorEqualizeMethod::Reinhard, "Reinhard"},
 												   {ColorEqualizeMethod::HistMatch, "HistMatch"},
@@ -119,9 +114,11 @@ NLOHMANN_JSON_SERIALIZE_ENUM(ColorEqualizeMethod, {{ColorEqualizeMethod::Reinhar
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(LFParamsPath, lfp, sai, white, extractLUT, dehexLUT, srModel, deModel)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(CalibrateConfig, hexgridfit, genLUT, autoEstimate, diameter, bitDepth, views, bayer,
 								   ceMethod, orientation)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(IspConfig, dpcThreshold, nr_sigma_r, nr_sigma_s, lscExp, enableBLC, enableDPC,
-								   enableNR, enableLSC, enableAWB, enableDemosaic, enableCCM, enableGamma,
-								   enableExtract, enableDehex, benchmark, dpcMethod, demosaicMethod, device)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(LFParams, imageType, path, calibrate, isp, colorEqMethod)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(IspConfig, dpcThreshold, rawnr_sigma_r, rawnr_sigma_s, lscExp, uvnr_sigma_r,
+								   uvnr_sigma_s, colorEqMethod, ceClipLimit, ceGridSize, seFactor, enableRAW, enableBLC,
+								   enableDPC, enableRawNR, enableLSC, enableAWB, enableDemosaic, enableCCM, enableGamma,
+								   enableCSC, enableUVNR, enableColorEq, enableCE, enableSE, enableExtract, enableDehex,
+								   benchmark, dpcMethod, device)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(LFParams, imageType, path, calibrate, isp)
 
 #endif

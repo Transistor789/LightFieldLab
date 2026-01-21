@@ -4,7 +4,7 @@
 #include "config.h"
 #include "lfcalibrate.h"
 #include "lfdata.h"
-#include "lfdepth.h"
+#include "lfde.h"
 #include "lfisp.h"
 #include "lfparams.h"
 #include "lfsr.h"
@@ -176,7 +176,7 @@ void LFControl::readSAI(const QString &path) {
 	runAsync(
 		[this, path] {
 			// 1. 耗时操作
-			std::shared_ptr<LFData> tempLF = LFIO::ReadSAI(path.toStdString());
+			std::shared_ptr<LFData> tempLF = io->ReadSAI(path.toStdString());
 
 			// 2. 加锁赋值
 			{
@@ -202,7 +202,7 @@ void LFControl::readLFP(const QString &path) {
 			if (params.imageType == ImageFileType::Lytro) {
 				json LfpMeta;
 				// 读取 LFP 并获取元数据 j
-				lfraw = LFIO::ReadLFP(path.toStdString(), LfpMeta);
+				lfraw = io->ReadLFP(path.toStdString(), LfpMeta);
 				isp->parseJsonToConfig(LfpMeta, params.isp);
 				params.image.bayer = params.calibrate.bayer = params.isp.bayer;
 				params.image.bitDepth = params.calibrate.bitDepth = params.isp.bitDepth;
@@ -211,7 +211,7 @@ void LFControl::readLFP(const QString &path) {
 				if (!params.path.white.empty() && std::filesystem::is_directory(params.path.white)) {
 					// 传入 LFP 路径(用于提取Key) 和 标定目录
 					json WhiteMeta;
-					cv::Mat autoWhite = LFIO::ReadWhiteImageAuto(path.toStdString(), params.path.white, WhiteMeta);
+					cv::Mat autoWhite = io->ReadWhiteImageAuto(path.toStdString(), params.path.white, WhiteMeta);
 					if (!autoWhite.empty()) {
 						white = autoWhite; // 更新类的白图成员变量
 						isp->initConfig(white, params.isp);
@@ -221,7 +221,7 @@ void LFControl::readLFP(const QString &path) {
 				}
 			} else if (params.imageType == ImageFileType::Raw) {
 			} else {
-				lfraw = LFIO::ReadStandardImage(path.toStdString());
+				lfraw = io->ReadStandardImage(path.toStdString());
 			}
 			params.image.height = lfraw.size().height;
 			params.image.width = lfraw.size().width;
@@ -237,13 +237,13 @@ void LFControl::readWhite(const QString &path) {
 		[this, path] {
 			json WhiteMeta;
 			if (params.imageType == ImageFileType::Lytro) {
-				white = LFIO::ReadWhiteImageManual(path.toStdString(), WhiteMeta);
+				white = io->ReadWhiteImageManual(path.toStdString(), WhiteMeta);
 				params.image.bitDepth = 10;
 				params.image.bayer = BayerPattern::GRBG;
 				isp->initConfig(white, params.isp);
 			} else if (params.imageType == ImageFileType::Raw) {
 			} else {
-				white = LFIO::ReadStandardImage(path.toStdString());
+				white = io->ReadStandardImage(path.toStdString());
 				// white = 255 - white;
 			}
 
@@ -260,12 +260,18 @@ void LFControl::readExtractLUT(const QString &path) {
 	runAsync(
 		[this, path] {
 			params.path.extractLUT = path.toStdString();
-			LFIO::LoadLookUpTables(path.toStdString(), isp->maps.extract, params.calibrate.views);
-			params.sai.cols = params.sai.rows = params.calibrate.views;
+			// 加载到 isp->maps.extract
+			if (io->LoadLookUpTables(params.path.extractLUT, isp->maps.extract, params.calibrate.views)) {
+				params.sai.cols = params.sai.rows = params.calibrate.views;
 
-			emit paramsChanged();
+				// 【核心修复】必须同步到 GPU，否则会出现影子移动但视角不变
+				isp->update_resample_maps();
+
+				emit paramsChanged();
+				LOG_INFO("Extract LUT loaded and synchronized to GPU.");
+			}
 		},
-		"Load extract-lut");
+		"Loading extract-lut");
 }
 
 void LFControl::readDehexLUT(const QString &path) {
@@ -273,8 +279,12 @@ void LFControl::readDehexLUT(const QString &path) {
 		[this, path] {
 			params.path.dehexLUT = path.toStdString();
 			int _;
-			LFIO::LoadLookUpTables(path.toStdString(), isp->maps.dehex, _);
-			emit paramsChanged();
+			if (io->LoadLookUpTables(params.path.dehexLUT, isp->maps.dehex, _)) {
+				// 【核心修复】必须同步到 GPU
+				isp->update_resample_maps();
+				emit paramsChanged();
+				LOG_INFO("Dehex LUT loaded and synchronized to GPU.");
+			}
 		},
 		"Load dehex-lut");
 }
@@ -286,14 +296,16 @@ void LFControl::calibrate() {
 			cal->run(white, params.calibrate);
 			params.calibrate.diameter = cal->getDiameter();
 			if (params.calibrate.genLUT) {
+				isp->maps.extract.clear();
+				isp->maps.dehex.clear();
 				isp->maps.extract = cal->getExtractMaps();
 				isp->maps.dehex = cal->getDehexMaps();
 				isp->update_resample_maps();
 			}
 			if (!cal->isExtractLutEmpty() && !cal->isDehexLutEmpty()) {
-				LFIO::SaveLookUpTables(std::format("data/calibration/lut_extract_{}.bin", params.calibrate.views),
-									   cal->getExtractMaps(), params.calibrate.views);
-				LFIO::SaveLookUpTables("data/calibration/lut_dehex.bin", cal->getDehexMaps(), 1);
+				io->SaveLookUpTables(std::format("data/calibration/lut_extract_{}.bin", params.calibrate.views),
+									 cal->getExtractMaps(), params.calibrate.views);
+				io->SaveLookUpTables("data/calibration/lut_dehex.bin", cal->getDehexMaps(), 1);
 				LOG_INFO("LUTs saved to data/calibration/");
 			}
 			cv::Mat draw = draw_points(white, cal->getPoints(), 0, cv::Scalar(0));
@@ -337,10 +349,14 @@ void LFControl::process() {
 	runAsync(
 		[this] {
 			if (params.isp.device == Device::CPU) {
+				isp->set_lf_img(lfraw.clone()).process(params.isp);
+				lf = std::make_shared<LFData>(isp->getSAIs());
+				emit imageReady(ImageType::LFP, cvMatToQImage(isp->getResult(), params.image.bitDepth));
+			} else if (params.isp.device == Device::CPU_OPENMP_SIMD) {
 				isp->set_lf_img(lfraw.clone()).process_fast(params.isp);
 				lf = std::make_shared<LFData>(isp->getSAIs());
 				emit imageReady(ImageType::LFP, cvMatToQImage(isp->getResult(), params.image.bitDepth));
-			} else {
+			} else if (params.isp.device == Device::GPU) {
 				isp->set_lf_gpu(lfraw.clone()).process_gpu(params.isp);
 				// isp->global_resample_gpu(cal->getFitter(), false);
 				lf = std::make_shared<LFData>(isp->getSAIsGpu());
@@ -488,21 +504,6 @@ void LFControl::play() {
 			}
 		},
 		"SAI played");
-}
-
-void LFControl::color_equalize() {
-	runAsync(
-		[this] {
-			if (!lf || lf->data.empty()) {
-				LOG_ERROR("[Color Equalize] Cancelled: Light field data is empty!");
-				return;
-			}
-
-			ColorMatcher::equalize(lf->data, params.colorEqMethod);
-			emit imageReady(ImageType::Center, cvMatToQImage(lf->getCenter(), 8));
-			emit paramsChanged();
-		},
-		"Color equalize");
 }
 
 void LFControl::refocus() {

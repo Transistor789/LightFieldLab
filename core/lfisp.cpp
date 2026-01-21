@@ -1,5 +1,6 @@
 ﻿#include "lfisp.h"
 
+#include "colormatcher.h"
 #include "hexgrid_fit.h"
 #include "utils.h"
 
@@ -26,6 +27,8 @@ extern void launch_fused_lsc_awb(cv::cuda::GpuMat &img, const cv::cuda::GpuMat &
 extern void launch_ccm_8uc3(cv::cuda::GpuMat &img, const float *m, cv::cuda::Stream &stream);
 extern void launch_gc_8u(cv::cuda::GpuMat &img, float gamma, cv::cuda::Stream &stream);
 extern void launch_ccm_gamma_fused(cv::cuda::GpuMat &img, const float *m, float gamma, cv::cuda::Stream &stream);
+extern void launch_se_gpu(cv::cuda::GpuMat &img, float factor, cv::cuda::Stream &stream);
+extern void launch_uvnr_8uc3(cv::cuda::GpuMat &img, float sigma_s, float sigma_r, cv::cuda::Stream &stream);
 
 namespace {
 
@@ -263,6 +266,174 @@ void dpc_simd_u8(cv::Mat &img, int threshold) {
 
 		for (; c < cols - border; ++c) {
 			dpc_scalar_kernel(r, c, ptr_curr, ptr_up, ptr_down, threshold);
+		}
+	}
+}
+
+std::vector<float> prepare_range_lut_generic(float sigma_color, int max_val) {
+	std::vector<float> lut(max_val + 1);
+	float inv_2_sigma2 = -1.0f / (2.0f * sigma_color * sigma_color);
+	for (int i = 0; i <= max_val; ++i) {
+		lut[i] = std::exp(i * i * inv_2_sigma2);
+	}
+	return lut;
+}
+
+void nr_simd_u16(cv::Mat &img, float sigma_spatial, float sigma_color) {
+	const int rows = img.rows;
+	const int cols = img.cols;
+	cv::Mat src = img.clone();
+
+	int radius = static_cast<int>(sigma_spatial * 1.5f);
+	if (radius < 1)
+		radius = 1;
+
+	auto range_lut = prepare_range_lut_generic(sigma_color, 65535);
+	const float *lut_ptr = range_lut.data();
+
+	// 空间权重预计算
+	std::vector<float> sw((radius * 2 + 1) * (radius * 2 + 1));
+	float inv_2_s2 = -1.0f / (2.0f * sigma_spatial * sigma_spatial);
+	for (int i = -radius; i <= radius; ++i) {
+		for (int j = -radius; j <= radius; ++j) {
+			sw[(i + radius) * (radius * 2 + 1) + (j + radius)] =
+				std::exp(static_cast<float>(i * i + j * j) * 4.0f * inv_2_s2);
+		}
+	}
+
+#pragma omp parallel for
+	for (int r = radius * 2; r < rows - radius * 2; ++r) {
+		uint16_t *dst = img.ptr<uint16_t>(r);
+		for (int c = radius * 2; c < cols - radius * 2; ++c) {
+			float sw_sum = 0, sv_sum = 0;
+			uint16_t center = src.ptr<uint16_t>(r)[c];
+
+			for (int i = -radius; i <= radius; ++i) {
+				const uint16_t *row = src.ptr<uint16_t>(r + i * 2);
+				for (int j = -radius; j <= radius; ++j) {
+					// 同色采样核心修复
+					uint16_t val = row[c + j * 2];
+					float w = lut_ptr[std::abs(center - val)] * sw[(i + radius) * (radius * 2 + 1) + (j + radius)];
+					sw_sum += w;
+					sv_sum += w * val;
+				}
+			}
+			dst[c] = static_cast<uint16_t>(sv_sum / sw_sum + 0.5f);
+		}
+	}
+}
+
+void nr_simd_u8(cv::Mat &img, float sigma_spatial, float sigma_color) {
+	const int rows = img.rows;
+	const int cols = img.cols;
+	cv::Mat src = img.clone();
+
+	// 1. 自动确定搜索半径 (匹配 GPU: radius = sigma_s * 1.5)
+	int radius = static_cast<int>(sigma_spatial * 1.5f);
+	if (radius < 1)
+		radius = 1;
+
+	// 2. 预计算查找表
+	auto range_lut = prepare_range_lut_generic(sigma_color, 255);
+	const float *lut_ptr = range_lut.data();
+
+	// 预计算空间权重：d2 = (i*i + j*j) * 4.0f (因为步长为 2)
+	std::vector<float> space_weights((radius * 2 + 1) * (radius * 2 + 1));
+	float inv_2sigma_s2 = 1.0f / (2.0f * sigma_spatial * sigma_spatial);
+	for (int i = -radius; i <= radius; ++i) {
+		for (int j = -radius; j <= radius; ++j) {
+			float d2 = static_cast<float>(i * i + j * j) * 4.0f;
+			space_weights[(i + radius) * (radius * 2 + 1) + (j + radius)] = std::exp(-(d2 * inv_2sigma_s2));
+		}
+	}
+
+	// 3. 并行行扫描
+#pragma omp parallel for
+	for (int r = radius * 2; r < rows - radius * 2; ++r) {
+		uint8_t *dst_ptr = img.ptr<uint8_t>(r);
+		int c = radius * 2;
+
+		// SIMD 主循环：每次处理 16 个像素
+		for (; c <= cols - radius * 2 - 16; c += 16) {
+			// 加载中心像素块 (包含 R-G 或 G-B 混合模式)
+			__m128i v_center_8 = _mm_loadu_si128((const __m128i *)(src.ptr<uint8_t>(r) + c));
+			__m256i v_center_16 = _mm256_cvtepu8_epi16(v_center_8);
+
+			// 累加器 (float)
+			__m256 sum_v_lo = _mm256_cvtepi32_ps(_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_center_16)));
+			__m256 sum_v_hi = _mm256_cvtepi32_ps(_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_center_16, 1)));
+			__m256 sum_w_lo = _mm256_set1_ps(1.0f);
+			__m256 sum_w_hi = _mm256_set1_ps(1.0f);
+
+			for (int i = -radius; i <= radius; ++i) {
+				const uint8_t *src_row_ptr = src.ptr<uint8_t>(r + i * 2); // 步长 2
+				for (int j = -radius; j <= radius; ++j) {
+					if (i == 0 && j == 0)
+						continue;
+
+					// 【核心修复】采样同色邻域：偏移必须为 j * 2
+					__m128i v_nb_8 = _mm_loadu_si128((const __m128i *)(src_row_ptr + c + j * 2));
+					__m256i v_nb_16 = _mm256_cvtepu8_epi16(v_nb_8);
+
+					// 计算亮度差值
+					__m256i v_diff = _mm256_abs_epi16(_mm256_sub_epi16(v_center_16, v_nb_16));
+
+					// SIMD Gather 查表获取 Range Weight
+					__m256 v_w_r_lo =
+						_mm256_i32gather_ps(lut_ptr, _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_diff)), 4);
+					__m256 v_w_r_hi =
+						_mm256_i32gather_ps(lut_ptr, _mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_diff, 1)), 4);
+
+					// 结合空间权重
+					float sw = space_weights[(i + radius) * (radius * 2 + 1) + (j + radius)];
+					__m256 v_w_lo = _mm256_mul_ps(v_w_r_lo, _mm256_set1_ps(sw));
+					__m256 v_w_hi = _mm256_mul_ps(v_w_r_hi, _mm256_set1_ps(sw));
+
+					sum_w_lo = _mm256_add_ps(sum_w_lo, v_w_lo);
+					sum_w_hi = _mm256_add_ps(sum_w_hi, v_w_hi);
+
+					// 累加像素值
+					__m256 v_nb_f_lo = _mm256_cvtepi32_ps(_mm256_cvtepu16_epi32(_mm256_castsi256_si128(v_nb_16)));
+					__m256 v_nb_f_hi = _mm256_cvtepi32_ps(_mm256_cvtepu16_epi32(_mm256_extracti128_si256(v_nb_16, 1)));
+					sum_v_lo = _mm256_add_ps(sum_v_lo, _mm256_mul_ps(v_w_lo, v_nb_f_lo));
+					sum_v_hi = _mm256_add_ps(sum_v_hi, _mm256_mul_ps(v_w_hi, v_nb_f_hi));
+				}
+			}
+
+			// 归一化结果
+			__m256i v_res_lo_i =
+				_mm256_cvtps_epi32(_mm256_add_ps(_mm256_div_ps(sum_v_lo, sum_w_lo), _mm256_set1_ps(0.5f)));
+			__m256i v_res_hi_i =
+				_mm256_cvtps_epi32(_mm256_add_ps(_mm256_div_ps(sum_v_hi, sum_w_hi), _mm256_set1_ps(0.5f)));
+
+			// 【核心修复】跨 Lane 打包重排 (消除条纹)
+			__m256i v_res_16 = _mm256_packus_epi32(v_res_lo_i, v_res_hi_i);
+			v_res_16 = _mm256_permute4x64_epi64(v_res_16, 0xD8); // 控制字 0xD8 恢复顺序
+
+			__m256i v_res_8 = _mm256_packus_epi16(v_res_16, v_res_16);
+			v_res_8 = _mm256_permute4x64_epi64(v_res_8, 0xD8);
+
+			_mm_storeu_si128((__m128i *)(dst_ptr + c), _mm256_castsi256_si128(v_res_8));
+		}
+
+		// 4. 边界标量处理 (必须同样使用 j*2)
+		for (; c < cols - radius * 2; ++c) {
+			float sw_sum = 1.0f, sv_sum = (float)src.ptr<uint8_t>(r)[c];
+			uint8_t center = src.ptr<uint8_t>(r)[c];
+			for (int i = -radius; i <= radius; ++i) {
+				const uint8_t *s_row = src.ptr<uint8_t>(r + i * 2);
+				for (int j = -radius; j <= radius; ++j) {
+					if (i == 0 && j == 0)
+						continue;
+					uint8_t val = s_row[c + j * 2];
+					float d2 = (i * i + j * j) * 4.0f;
+					float r2 = (center - val) * (center - val);
+					float w = std::exp(-(d2 * inv_2sigma_s2 + r2 / (2.0f * sigma_color * sigma_color)));
+					sw_sum += w;
+					sv_sum += w * val;
+				}
+			}
+			dst_ptr[c] = (uint8_t)(sv_sum / sw_sum + 0.5f);
 		}
 	}
 }
@@ -1378,6 +1549,70 @@ LFIsp &LFIsp::lsc(float exposure) {
 	return *this;
 } // lsc
 
+LFIsp &LFIsp::rawnr(float sigma_spatial, float sigma_color) {
+	if (lfp_img_.empty() || lfp_img_.type() != CV_8UC1)
+		return *this;
+
+	// 1. 初始化 4 个子通道 (R, Gr, Gb, B)
+	// 尺寸为原图的一半
+	int sub_rows = lfp_img_.rows / 2;
+	int sub_cols = lfp_img_.cols / 2;
+	std::vector<cv::Mat> channels(4);
+	for (int i = 0; i < 4; ++i) {
+		channels[i] = cv::Mat(sub_rows, sub_cols, CV_8UC1);
+	}
+
+	// 2. 像素分发 (De-interleaving)
+	// 按照 2x2 矩阵跨步提取，对应 Bayer 格式的四个位置
+	for (int r = 0; r < sub_rows; ++r) {
+		const uchar *p0 = lfp_img_.ptr<uchar>(2 * r);	  // 偶数行
+		const uchar *p1 = lfp_img_.ptr<uchar>(2 * r + 1); // 奇数行
+
+		uchar *c0 = channels[0].ptr<uchar>(r);
+		uchar *c1 = channels[1].ptr<uchar>(r);
+		uchar *c2 = channels[2].ptr<uchar>(r);
+		uchar *c3 = channels[3].ptr<uchar>(r);
+
+		for (int c = 0; c < sub_cols; ++c) {
+			c0[c] = p0[2 * c];	   // 位置 (0,0) - 如 Gr
+			c1[c] = p0[2 * c + 1]; // 位置 (0,1) - 如 R
+			c2[c] = p1[2 * c];	   // 位置 (1,0) - 如 B
+			c3[c] = p1[2 * c + 1]; // 位置 (1,1) - 如 Gb
+		}
+	}
+
+	//
+
+	// 3. 对 4 个通道分别应用双边滤波
+	// 直接在 CV_8U 上操作，符合 baseline 的直接性要求
+	for (int i = 0; i < 4; ++i) {
+		cv::Mat filtered;
+		// d=0 表示滤波器直径由 sigma_spatial 自动导出
+		cv::bilateralFilter(channels[i], filtered, 0, sigma_color, sigma_spatial);
+		channels[i] = filtered;
+	}
+
+	// 4. 将降噪后的通道重新交织回原图 (Re-interleaving)
+	for (int r = 0; r < sub_rows; ++r) {
+		uchar *p0 = lfp_img_.ptr<uchar>(2 * r);
+		uchar *p1 = lfp_img_.ptr<uchar>(2 * r + 1);
+
+		uchar *c0 = channels[0].ptr<uchar>(r);
+		uchar *c1 = channels[1].ptr<uchar>(r);
+		uchar *c2 = channels[2].ptr<uchar>(r);
+		uchar *c3 = channels[3].ptr<uchar>(r);
+
+		for (int c = 0; c < sub_cols; ++c) {
+			p0[2 * c] = c0[c];
+			p0[2 * c + 1] = c1[c];
+			p1[2 * c] = c2[c];
+			p1[2 * c + 1] = c3[c];
+		}
+	}
+
+	return *this;
+} // rawnr
+
 LFIsp &LFIsp::awb(const std::vector<float> &wbgains) {
 	if (lfp_img_.empty())
 		return *this;
@@ -1421,7 +1656,7 @@ LFIsp &LFIsp::awb(const std::vector<float> &wbgains) {
 	return *this;
 } // awb
 
-LFIsp &LFIsp::demosaic(BayerPattern bayer, DemosaicMethod method) {
+LFIsp &LFIsp::demosaic(BayerPattern bayer) {
 	if (lfp_img_.empty())
 		return *this;
 	if (lfp_img_.channels() != 1)
@@ -1432,37 +1667,204 @@ LFIsp &LFIsp::demosaic(BayerPattern bayer, DemosaicMethod method) {
 	return *this;
 } // demosaic
 
+LFIsp &LFIsp::resample(bool dehex) {
+	int num_views = maps.extract.size() / 2;
+	sais.clear();
+	sais.resize(num_views);
+
+#pragma omp parallel for schedule(dynamic)
+	for (int i = 0; i < num_views; ++i) {
+		cv::Mat temp;
+		cv::remap(lfp_img_, temp, maps.extract[i * 2], maps.extract[i * 2 + 1], cv::INTER_LANCZOS4,
+				  cv::BORDER_REPLICATE);
+		if (dehex && !maps.dehex.empty()) {
+			cv::remap(temp, temp, maps.dehex[0], maps.dehex[1], cv::INTER_LANCZOS4, cv::BORDER_REPLICATE);
+		}
+		sais[i] = temp;
+	}
+	return *this;
+} // resample
+
 LFIsp &LFIsp::ccm(const std::vector<float> &ccm_matrix) {
-	if (lfp_img_.empty() || lfp_img_.channels() != 3)
+	if (sais.empty()) // 假设类成员名为 sais
 		return *this;
 
-	// 1. 必须转为 RGB，否则矩阵乘法会错位
-	cv::cvtColor(lfp_img_, lfp_img_, cv::COLOR_BGR2RGB);
-
-	// 2. 执行变换
 	cv::Mat m(3, 3, CV_32F, (void *)ccm_matrix.data());
-	cv::transform(lfp_img_, lfp_img_, m);
 
-	// 3. 转回 BGR (如果你后面还需要 BGR)
-	cv::cvtColor(lfp_img_, lfp_img_, cv::COLOR_RGB2BGR);
+	for (int i = 0; i < (int)sais.size(); ++i) {
+		if (sais[i].empty() || sais[i].channels() != 3)
+			continue;
+		cv::transform(sais[i], sais[i], m);
+	}
 
 	return *this;
 } // ccm
 
 LFIsp &LFIsp::gc(float gamma) {
-	// 1. 基础检查
-	if (lfp_img_.empty())
+	if (sais.empty())
 		return *this;
-	if (gamma < 1e-5)
-		return *this; // 防止除零
 
-	cv::Mat float_img;
-	lfp_img_.convertTo(float_img, CV_32F, 1.0 / 255.0);
-	cv::pow(float_img, gamma, float_img);
-	float_img.convertTo(lfp_img_, CV_8U, 255.0);
+	// 1. 参数初始化 (sRGB 标准默认使用 1/2.4)
+	float inv_gamma = (gamma > 1e-5f) ? gamma : 0.416667f;
+
+	// sRGB 分段常数
+	const float low_threshold = 0.0031308f;
+	const float low_slope = 12.92f;
+	const float alpha = 0.055f;
+
+	// 2. 遍历视角栈中的每一张图像 (sais 是 std::vector<cv::Mat>)
+	for (int i = 0; i < (int)sais.size(); ++i) {
+		cv::Mat &img = sais[i];
+		if (img.empty())
+			continue;
+
+		int rows = img.rows;
+		int cols = img.cols;
+		int chans = img.channels();
+
+		// 3. 逐像素遍历 (最直接的 CV 指针访问)
+		for (int r = 0; r < rows; ++r) {
+			unsigned char *ptr = img.ptr<unsigned char>(r);
+
+			// 线性遍历所有通道像素
+			for (int c = 0; c < cols * chans; ++c) {
+				// a. 归一化到 0.0 - 1.0
+				float norm = static_cast<float>(ptr[c]) * (1.0f / 255.0f);
+				float res;
+
+				// b. 执行分段计算逻辑 (对应 CUDA 内核 apply_gamma_device)
+				if (norm <= low_threshold) {
+					// 暗部线性段
+					res = low_slope * norm;
+				} else {
+					// 亮部幂律压缩段
+					res = (1.0f + alpha) * std::pow(norm, inv_gamma) - alpha;
+				}
+
+				// c. 反归一化并钳位到 0-255
+				// 使用 cv::saturate_cast 保证数值鲁棒性，防止溢出
+				ptr[c] = cv::saturate_cast<unsigned char>(res * 255.0f + 0.5f);
+			}
+		}
+	}
 
 	return *this;
-} // gc
+}
+
+LFIsp &LFIsp::csc() {
+	if (sais.empty()) {
+		return *this;
+	}
+
+	static bool is_ycrcb = false;
+	int code = is_ycrcb ? cv::COLOR_YCrCb2BGR : cv::COLOR_BGR2YCrCb;
+
+#pragma omp parallel for schedule(dynamic)
+	for (int i = 0; i < static_cast<int>(sais.size()); ++i) {
+		if (sais[i].empty() || sais[i].channels() != 3) {
+			continue;
+		}
+
+		cv::cvtColor(sais[i], sais[i], code);
+	}
+	is_ycrcb = !is_ycrcb;
+
+	return *this;
+}
+
+LFIsp &LFIsp::uvnr(float h_sigma_s, float h_sigma_r) {
+	// 1. 基础检查：确保视角栈不为空
+	if (sais.empty())
+		return *this;
+
+	// 2. 逐视角处理 (Baseline 版本不使用 OpenMP 加速)
+	for (int i = 0; i < (int)sais.size(); ++i) {
+		if (sais[i].empty() || sais[i].channels() != 3)
+			continue;
+
+		// 3. 拆分 YUV 通道
+		std::vector<cv::Mat> yuv_channels;
+		cv::split(sais[i], yuv_channels);
+
+		// 4. 对色度通道 U 和 V 分别应用双边滤波
+		cv::Mat filtered_u, filtered_v;
+
+		cv::bilateralFilter(yuv_channels[1], filtered_u, 0, h_sigma_r, h_sigma_s);
+		cv::bilateralFilter(yuv_channels[2], filtered_v, 0, h_sigma_r, h_sigma_s);
+
+		// 5. 将处理后的色度数据回填
+		yuv_channels[1] = filtered_u;
+		yuv_channels[2] = filtered_v;
+
+		// 6. 合并回三通道图像
+		cv::merge(yuv_channels, sais[i]);
+	}
+
+	return *this;
+} // uvnr
+
+LFIsp &LFIsp::color_eq(ColorEqualizeMethod method) {
+	if (lfp_img_.empty())
+		return *this;
+
+	ColorMatcher::equalize(sais, method);
+
+	return *this;
+}
+
+LFIsp &LFIsp::ce(float clipLimit, int gridSize) {
+	if (sais.empty())
+		return *this;
+
+	for (int i = 0; i < static_cast<int>(sais.size()); ++i) {
+		if (sais[i].empty() || sais[i].channels() != 3)
+			continue;
+
+		std::vector<cv::Mat> channels;
+		cv::split(sais[i], channels);
+
+		cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE();
+		clahe->setClipLimit(clipLimit);
+		clahe->setTilesGridSize(cv::Size(gridSize, gridSize));
+		clahe->apply(channels[0], channels[0]);
+		cv::merge(channels, sais[i]);
+	}
+
+	return *this;
+} // ce
+
+LFIsp &LFIsp::se(float factor) {
+	// 因子为 1.0 时不处理
+	if (sais.empty() || std::abs(factor - 1.0f) < 1e-4)
+		return *this;
+
+	for (int i = 0; i < static_cast<int>(sais.size()); ++i) {
+		if (sais[i].empty() || sais[i].channels() != 3)
+			continue;
+
+		std::vector<cv::Mat> channels;
+		cv::split(sais[i], channels);
+
+		// 计算色度偏移的中心点 (8-bit: 128, 16-bit: 32768)
+		double shift = (sais[i].depth() == CV_8U) ? 128.0 : 32768.0;
+
+		for (int k = 1; k <= 2; ++k) { // 处理 Cr (1) 和 Cb (2)
+			cv::Mat float_chan;
+			channels[k].convertTo(float_chan, CV_32F);
+
+			// 饱和度计算公式：(Val - Mid) * Factor + Mid
+			// 结果增加 0.5f 以确保 convertTo 时四舍五入准确
+			float_chan = (float_chan - (float)shift) * factor + (float)shift;
+
+			// 回填并截断
+			float_chan.convertTo(channels[k], sais[i].type());
+		}
+
+		cv::merge(channels, sais[i]);
+	}
+
+	return *this;
+}
 
 LFIsp &LFIsp::process(const IspConfig &config) {
 	ScopedTimer t_total(" Total Process", profiler_cpu, config.benchmark);
@@ -1495,6 +1897,14 @@ LFIsp &LFIsp::process(const IspConfig &config) {
 		}
 	}
 	{
+		ScopedTimer t("NR", profiler_cpu, config.benchmark);
+		if (config.enableRawNR) {
+			rawnr(config.rawnr_sigma_s, config.rawnr_sigma_r);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'NR' is disabled in settings." << std::endl;
+		}
+	}
+	{
 		ScopedTimer t("LSC", profiler_cpu, config.benchmark);
 		if (config.enableLSC) {
 			lsc(config.lscExp);
@@ -1513,9 +1923,24 @@ LFIsp &LFIsp::process(const IspConfig &config) {
 	{
 		ScopedTimer t("Demosaic", profiler_cpu, config.benchmark);
 		if (config.enableDemosaic) {
-			demosaic(config.bayer, config.demosaicMethod);
+			demosaic(config.bayer);
 		} else {
 			std::cout << "[LFISP] Pipeline: 'Demosaic' is disabled in settings." << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("Resample", profiler_cpu, config.benchmark);
+		if (config.enableExtract) {
+			resample(config.enableDehex);
+			if (!config.enableDehex) {
+				std::cout << "[LFISP] Pipeline: 'Dehex' is disabled in "
+							 "settings."
+						  << std::endl;
+			}
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Extract' is disabled in "
+						 "settings."
+					  << std::endl;
 		}
 	}
 	{
@@ -1537,23 +1962,68 @@ LFIsp &LFIsp::process(const IspConfig &config) {
 		}
 	}
 	{
-		ScopedTimer t("Resample", profiler_cpu, config.benchmark);
-		if (config.enableExtract) {
-			resample(config.enableDehex);
-			if (!config.enableDehex) {
-				std::cout << "[LFISP] Pipeline: 'Dehex' is disabled in "
-							 "settings."
-						  << std::endl;
-			}
+		ScopedTimer t("RGB2YUV", profiler_cpu, config.benchmark);
+		if (config.enableCSC) {
+			csc();
 		} else {
-			std::cout << "[LFISP] Pipeline: 'Extract' is disabled in "
+			std::cout << "[LFISP] Pipeline: 'RGB to YUV conversion' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("UVNR", profiler_cpu, config.benchmark);
+		if (config.enableUVNR) {
+			uvnr(config.uvnr_sigma_s, config.uvnr_sigma_r);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'UVNR' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("Color Equalization", profiler_cpu, config.benchmark);
+		if (config.enableColorEq) {
+			color_eq(config.colorEqMethod);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Color Equalization' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("CE", profiler_cpu, config.benchmark);
+		if (config.enableCE) {
+			ce(config.ceClipLimit, config.ceGridSize);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'CLAHE' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("SE", profiler_cpu, config.benchmark);
+		if (config.enableSE) {
+			se(config.seFactor);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'SE' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("YUV2RGB", profiler_cpu, config.benchmark);
+		if (config.enableCSC) {
+			csc();
+		} else {
+			std::cout << "[LFISP] Pipeline: 'YUV to RGB conversion' is disabled in "
 						 "settings."
 					  << std::endl;
 		}
 	}
 
 	return *this;
-}
+} // process
 
 // ============================================================================
 // 快速处理流程 (SIMD Implementation Dispatcher)
@@ -1621,6 +2091,23 @@ LFIsp &LFIsp::dpc_fast(DpcMethod method, int threshold) {
 	return *this;
 } // dpc_fast
 
+LFIsp &LFIsp::rawnr_fast(float sigma_spatial, float sigma_color) {
+	if (lfp_img_.empty())
+		return *this;
+
+	// 限制 sigma 范围防止溢出
+	sigma_spatial = std::max(0.5f, sigma_spatial);
+	sigma_color = std::max(0.5f, sigma_color);
+
+	if (lfp_img_.depth() == CV_16U) {
+		nr_simd_u16(lfp_img_, sigma_spatial, sigma_color);
+	} else if (lfp_img_.depth() == CV_8U) {
+		nr_simd_u8(lfp_img_, sigma_spatial, sigma_color);
+	}
+
+	return *this;
+}
+
 LFIsp &LFIsp::lsc_fast(float exposure) {
 	if (lfp_img_.empty())
 		return *this;
@@ -1667,69 +2154,208 @@ LFIsp &LFIsp::lsc_awb_fused_fast(float exposure, const std::vector<float> &wbgai
 } // lsc_awb_fused_fast
 
 LFIsp &LFIsp::ccm_fast(const std::vector<float> &ccm_matrix) {
-	if (lfp_img_.empty() || lfp_img_.channels() != 3)
+	if (sais.empty())
 		return *this;
 
+	// 1. 预处理固定点矩阵（在并行循环外完成，确保线程安全）
 	if (ccm_matrix_int_.empty() || ccm_matrix != last_ccm_matrix_) {
 		prepare_ccm_fixed_point(ccm_matrix);
 		last_ccm_matrix_ = ccm_matrix;
 	}
-	if (lfp_img_.depth() == CV_16U) {
-		ccm_fixed_u16(lfp_img_, ccm_matrix_int_);
-	} else if (lfp_img_.depth() == CV_8U) {
-		ccm_fixed_u8(lfp_img_, ccm_matrix_int_);
+
+// 2. 使用 OpenMP 并行处理 81 个视角
+#pragma omp parallel for schedule(dynamic)
+	for (int i = 0; i < (int)sais.size(); ++i) {
+		cv::Mat &img = sais[i];
+		if (img.empty() || img.channels() != 3)
+			continue;
+
+		// 根据位深调用对应的固定点运算函数
+		if (img.depth() == CV_16U) {
+			ccm_fixed_u16(img, ccm_matrix_int_);
+		} else if (img.depth() == CV_8U) {
+			ccm_fixed_u8(img, ccm_matrix_int_);
+		}
 	}
 	return *this;
 } // ccm_fast
 
 LFIsp &LFIsp::gc_fast(float gamma, int bitDepth) {
-	if (lfp_img_.empty())
+	if (sais.empty())
 		return *this;
 
-	int depth = lfp_img_.depth();
-
+	// 1. 状态检查与 LUT 准备（在并行循环外完成）
 	bool gamma_changed = std::abs(gamma - last_gamma_) > 1e-6f;
 	bool bitdepth_changed = (bitDepth != last_bit_depth_);
 
+	// 预先根据第一个有效视角的位深准备好 LUT
+	int depth = sais[0].depth();
 	if (depth == CV_8U) {
 		if (gamma_lut_u8.empty() || gamma_changed) {
 			prepare_gamma_lut(gamma, 8);
 			last_gamma_ = gamma;
 			last_bit_depth_ = 8;
 		}
-		cv::LUT(lfp_img_, gamma_lut_u8, lfp_img_);
 	} else if (depth == CV_16U) {
 		if (gamma_lut_u16.empty() || gamma_changed || bitdepth_changed) {
 			prepare_gamma_lut(gamma, bitDepth);
 			last_gamma_ = gamma;
 			last_bit_depth_ = bitDepth;
 		}
-		cv::LUT(lfp_img_, gamma_lut_u8, lfp_img_);
+	}
+
+// 2. 并行查表处理
+#pragma omp parallel for schedule(dynamic)
+	for (int i = 0; i < (int)sais.size(); ++i) {
+		cv::Mat &img = sais[i];
+		if (img.empty())
+			continue;
+
+		if (img.depth() == CV_8U) {
+			cv::LUT(img, gamma_lut_u8, img);
+		} else if (img.depth() == CV_16U) {
+			// 注意：OpenCV 的 cv::LUT 仅支持 8位输入，
+			// 16位 Gamma 通常需要自定义映射函数或在 prepare_gamma_lut 中特殊处理
+			cv::LUT(img, gamma_lut_u16, img);
+		}
 	}
 
 	return *this;
-} // gc_fast
+}
 
-LFIsp &LFIsp::ccm_fast_sai(const std::vector<float> &ccm_matrix) {
-	if (sais.empty() || sais[0].channels() != 3)
+LFIsp &LFIsp::uvnr_fast(float h_sigma_s, float h_sigma_r) {
+	if (sais.empty()) {
+		return *this;
+	}
+
+#pragma omp parallel for schedule(dynamic)
+	for (int i = 0; i < static_cast<int>(sais.size()); ++i) {
+		cv::Mat &img = sais[i];
+
+		// 确保输入是 3 通道 YUV 数据 (CV_8UC3)
+		if (img.empty() || img.channels() != 3) {
+			continue;
+		}
+
+		// 1. 拆分 YUV 通道
+		std::vector<cv::Mat> yuv_channels;
+		cv::split(img, yuv_channels);
+
+		// 2. 对 U 和 V 分量应用双边滤波
+		// Y 通道 (Index 0) 包含核心结构信息，保持不动以防模糊
+		cv::Mat filtered_u, filtered_v;
+
+		// d=0 表示滤波器直径由 sigma_s 自动计算
+		cv::bilateralFilter(yuv_channels[1], filtered_u, 0, h_sigma_r, h_sigma_s);
+		cv::bilateralFilter(yuv_channels[2], filtered_v, 0, h_sigma_r, h_sigma_s);
+
+		// 3. 回填降噪后的色度分量
+		yuv_channels[1] = filtered_u;
+		yuv_channels[2] = filtered_v;
+
+		// 4. 合并回原视图
+		cv::merge(yuv_channels, img);
+	}
+
+	return *this;
+}
+
+LFIsp &LFIsp::ce_fast(float clipLimit, int gridSize) {
+	if (sais.empty())
 		return *this;
 
-	if (ccm_matrix_int_.empty() || ccm_matrix != last_ccm_matrix_) {
-		prepare_ccm_fixed_point(ccm_matrix);
-		last_ccm_matrix_ = ccm_matrix;
+#pragma omp parallel for schedule(dynamic)
+	for (int i = 0; i < static_cast<int>(sais.size()); ++i) {
+		if (sais[i].empty() || sais[i].channels() != 3)
+			continue;
+
+		std::vector<cv::Mat> channels(3);
+		cv::split(sais[i], channels);
+
+		cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE();
+		clahe->setClipLimit(clipLimit);
+		clahe->setTilesGridSize(cv::Size(gridSize, gridSize));
+		clahe->apply(channels[0], channels[0]);
+		cv::merge(channels, sais[i]);
 	}
 
-	if (lfp_img_.depth() == CV_16U) {
-		for (auto &sai : sais) {
-			ccm_fixed_u16(sai, lsc_gain_map_int_);
-		}
-	} else if (lfp_img_.depth() == CV_8U) {
-		for (auto &sai : sais) {
-			ccm_fixed_u8(sai, lsc_gain_map_int_);
+	return *this;
+} // ce_fast
+
+LFIsp &LFIsp::se_fast(float factor) {
+	if (sais.empty())
+		return *this;
+
+	// 1. 预计算 3 组不同的掩码，对应 SIMD 块相对于 YUV 三元组的 3 种相位
+	int16_t f = static_cast<int16_t>(factor * 256.0f);
+	__m256i v_offset = _mm256_set1_epi16(128);
+
+	// 相位 0: [Y, Cr, Cb, Y, Cr, Cb, Y, Cr, Cb, Y, Cr, Cb, Y, Cr, Cb, Y]
+	__m256i v_f0 = _mm256_setr_epi16(256, f, f, 256, f, f, 256, f, f, 256, f, f, 256, f, f, 256);
+	// 相位 1: [Cr, Cb, Y, Cr, Cb, Y, Cr, Cb, Y, Cr, Cb, Y, Cr, Cb, Y, Cr]
+	__m256i v_f1 = _mm256_setr_epi16(f, f, 256, f, f, 256, f, f, 256, f, f, 256, f, f, 256, f);
+	// 相位 2: [Cb, Y, Cr, Cb, Y, Cr, Cb, Y, Cr, Cb, Y, Cr, Cb, Y, Cr, Cb]
+	__m256i v_f2 = _mm256_setr_epi16(f, 256, f, f, 256, f, f, 256, f, f, 256, f, f, 256, f, f);
+
+#pragma omp parallel for schedule(dynamic)
+	for (int i = 0; i < static_cast<int>(sais.size()); ++i) {
+		cv::Mat &img = sais[i];
+		if (img.empty() || img.channels() != 3)
+			continue;
+
+		for (int r = 0; r < img.rows; ++r) {
+			uint8_t *ptr = img.ptr<uint8_t>(r);
+			int c = 0;
+			int total_channels = img.cols * 3;
+
+			// 2. 以 48 字节为一组处理，消除相位偏移
+			for (; c <= total_channels - 48; c += 48) {
+				// 处理第一个 16 字节 (相位 0)
+				__m256i v0 = _mm256_add_epi16(
+					_mm256_srai_epi16(
+						_mm256_mullo_epi16(
+							_mm256_sub_epi16(_mm256_cvtepu8_epi16(_mm_loadu_si128((__m128i *)(ptr + c))), v_offset),
+							v_f0),
+						8),
+					v_offset);
+				__m256i p0 = _mm256_permute4x64_epi64(_mm256_packus_epi16(v0, v0), 0xD8);
+				_mm_storeu_si128((__m128i *)(ptr + c), _mm256_castsi256_si128(p0));
+
+				// 处理第二个 16 字节 (相位 1)
+				__m256i v1 = _mm256_add_epi16(
+					_mm256_srai_epi16(
+						_mm256_mullo_epi16(
+							_mm256_sub_epi16(_mm256_cvtepu8_epi16(_mm_loadu_si128((__m128i *)(ptr + c + 16))),
+											 v_offset),
+							v_f1),
+						8),
+					v_offset);
+				__m256i p1 = _mm256_permute4x64_epi64(_mm256_packus_epi16(v1, v1), 0xD8);
+				_mm_storeu_si128((__m128i *)(ptr + c + 16), _mm256_castsi256_si128(p1));
+
+				// 处理第三个 16 字节 (相位 2)
+				__m256i v2 = _mm256_add_epi16(
+					_mm256_srai_epi16(
+						_mm256_mullo_epi16(
+							_mm256_sub_epi16(_mm256_cvtepu8_epi16(_mm_loadu_si128((__m128i *)(ptr + c + 32))),
+											 v_offset),
+							v_f2),
+						8),
+					v_offset);
+				__m256i p2 = _mm256_permute4x64_epi64(_mm256_packus_epi16(v2, v2), 0xD8);
+				_mm_storeu_si128((__m128i *)(ptr + c + 32), _mm256_castsi256_si128(p2));
+			}
+
+			// 3. 处理余下的末尾字节
+			for (; c < total_channels; ++c) {
+				if (c % 3 != 0) { // 跳过 Y 通道
+					ptr[c] = cv::saturate_cast<uint8_t>((ptr[c] - 128) * factor + 128);
+				}
+			}
 		}
 	}
 	return *this;
-} // ccm_fast_sai
+} // se_fast
 
 LFIsp &LFIsp::preview(const IspConfig &config) {
 	if (lfp_img_.empty() || config.bayer == BayerPattern::NONE)
@@ -1788,6 +2414,14 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 			std::cout << "[LFISP] Pipeline: 'DPC' is disabled in settings." << std::endl;
 		}
 	}
+	{
+		ScopedTimer t("NR", profiler_fast, config.benchmark);
+		if (config.enableRawNR) {
+			rawnr_fast(config.rawnr_sigma_s, config.rawnr_sigma_r);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'NR' is disabled in settings." << std::endl;
+		}
+	}
 	if (config.enableLSC && config.enableAWB) {
 		ScopedTimer t("LSC+AWB", profiler_fast, config.benchmark);
 		lsc_awb_fused_fast(config.lscExp, config.awb_gains);
@@ -1812,12 +2446,26 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 	{
 		ScopedTimer t("Demosaic", profiler_fast, config.benchmark);
 		if (config.enableDemosaic) {
-			demosaic(config.bayer, config.demosaicMethod);
+			demosaic(config.bayer);
 		} else {
 			std::cout << "[LFISP] Pipeline: 'Demosaic' is disabled in settings." << std::endl;
 		}
 	}
-
+	{
+		ScopedTimer t("Resample", profiler_fast, config.benchmark);
+		if (config.enableExtract && !maps.extract.empty()) {
+			resample(config.enableDehex);
+			if (!config.enableDehex) {
+				std::cout << "[LFISP] Pipeline: 'Dehex' is disabled in "
+							 "settings."
+						  << std::endl;
+			}
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Extract' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
 	{
 		ScopedTimer t("CCM", profiler_fast, config.benchmark);
 		if (config.enableCCM) {
@@ -1837,16 +2485,61 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 		}
 	}
 	{
-		ScopedTimer t("Resample", profiler_fast, config.benchmark);
-		if (config.enableExtract) {
-			resample(config.enableDehex);
-			if (!config.enableDehex) {
-				std::cout << "[LFISP] Pipeline: 'Dehex' is disabled in "
-							 "settings."
-						  << std::endl;
-			}
+		ScopedTimer t("RGB2YUV", profiler_cpu, config.benchmark);
+		if (config.enableCSC) {
+			csc();
 		} else {
-			std::cout << "[LFISP] Pipeline: 'Extract' is disabled in "
+			std::cout << "[LFISP] Pipeline: 'RGB to YUV conversion' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("UVNR", profiler_cpu, config.benchmark);
+		if (config.enableUVNR) {
+			uvnr(config.uvnr_sigma_s, config.uvnr_sigma_r);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'UVNR' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("Color Equalization", profiler_cpu, config.benchmark);
+		if (config.enableColorEq) {
+			color_eq(config.colorEqMethod);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Color Equalization' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("CE", profiler_cpu, config.benchmark);
+		if (config.enableCE) {
+			ce_fast(config.ceClipLimit, config.ceGridSize);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'CLAHE' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("SE", profiler_cpu, config.benchmark);
+		if (config.enableSE) {
+			se_fast(config.seFactor);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'SE' is disabled in "
+						 "settings."
+					  << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("YUV2RGB", profiler_cpu, config.benchmark);
+		if (config.enableCSC) {
+			csc();
+		} else {
+			std::cout << "[LFISP] Pipeline: 'YUV to RGB conversion' is disabled in "
 						 "settings."
 					  << std::endl;
 		}
@@ -1890,7 +2583,7 @@ void LFIsp::prepare_lsc_maps(const cv::Mat &raw_wht, int black_level) {
 
 #pragma omp parallel for
 	for (int k = 0; k < 4; ++k) {
-		cv::GaussianBlur(channels[k], channels[k], cv::Size(7, 7), 0);
+		cv::GaussianBlur(channels[k], channels[k], cv::Size(9, 9), 0);
 	}
 
 	std::vector<double> maxVals(4);
@@ -1924,11 +2617,6 @@ void LFIsp::prepare_lsc_maps(const cv::Mat &raw_wht, int black_level) {
 	lsc_map_gpu.upload(lsc_gain_map_);
 } // prepare_lsc_maps
 
-// 确保在类中定义或在此处定义 saturate 辅助函数 (OpenCV已有)
-// 假设 ccm_matrix_int_ 是标准的 RGB->RGB 矩阵 (Row0: R, Row1: G, Row2: B)
-
-// 确保包含必要的头文件
-
 // ============================================================================
 // CCM SIMD Implementation
 // ============================================================================
@@ -1946,167 +2634,68 @@ void LFIsp::prepare_ccm_fixed_point(const std::vector<float> &matrix) {
 	return;
 } // prepare_ccm_fixed_point
 
-LFIsp &LFIsp::resample(bool dehex) {
-	int num_views = maps.extract.size() / 2;
-	sais.clear();
-	sais.resize(num_views);
-
-#pragma omp parallel for schedule(dynamic)
-	for (int i = 0; i < num_views; ++i) {
-		cv::Mat temp;
-		cv::remap(lfp_img_, temp, maps.extract[i * 2], maps.extract[i * 2 + 1], cv::INTER_LANCZOS4,
-				  cv::BORDER_REPLICATE);
-		if (dehex) {
-			cv::remap(temp, temp, maps.dehex[0], maps.dehex[1], cv::INTER_LANCZOS4, cv::BORDER_REPLICATE);
-		}
-		sais[i] = temp;
-	}
-	return *this;
-} // resample
-
 void LFIsp::prepare_gamma_lut(float gamma, int bitDepth) {
-	float g = gamma > 0 ? gamma : 0.4166f;
+	// 默认使用 sRGB 标准指数 1/2.4 ≈ 0.416667
+	float g = gamma > 0 ? gamma : 0.416667f;
+
+	// sRGB 标准分段函数参数
+	const double alpha = 0.055;
+	const double low_threshold = 0.0031308;
+	const double low_slope = 12.92;
 
 	if (bitDepth > 8) {
-		// =========================================================
-		// A. 针对 >8bit (10/12/14/16) 的情况 -> 生成 16-bit LUT
-		// =========================================================
-
-		// 1. 确保 vector 大小正确
-		// 16位输入覆盖 0~65535，所以表大小固定为 65536
 		if (gamma_lut_u16.size() != 65536) {
 			gamma_lut_u16.resize(65536);
 		}
-
-		// 2. 释放不需要的 8-bit 表 (节省内存)
 		if (!gamma_lut_u8.empty()) {
 			gamma_lut_u8.release();
 		}
 
-		// 3. 计算归一化参数
-		// 输入的最大值 (White Point)，例如 10bit 就是 1023
-		int valid_bits = bitDepth;
-		double max_input_val = (1 << valid_bits) - 1.0;
-
-		// 输出的最大值
-		// 【关键】既然要保留 16-bit 特性，建议映射到 0-65535 (全范围)
-		// 这样精度最高，后续你转 8-bit 时精度损失最小。
+		double max_input_val = (1 << bitDepth) - 1.0;
 		double max_output_val = 65535.0;
 
 #pragma omp parallel for
 		for (int i = 0; i < 65536; ++i) {
 			if (i > max_input_val) {
-				// 超过输入位深范围的值（过曝/坏点），直接钳位到最大值
 				gamma_lut_u16[i] = (uint16_t)max_output_val;
-			} else {
-				// 归一化 -> Gamma -> 映射回 16-bit 全范围
-				double norm = (double)i / max_input_val;
-				double res = std::pow(norm, g) * max_output_val;
-				gamma_lut_u16[i] = cv::saturate_cast<uint16_t>(res);
+				continue;
 			}
+
+			double norm = (double)i / max_input_val;
+			double res;
+
+			// 分段逻辑：暗部线性拉伸，亮部非线性压缩
+			if (norm <= low_threshold) {
+				res = low_slope * norm;
+			} else {
+				res = (1.0 + alpha) * std::pow(norm, g) - alpha;
+			}
+
+			gamma_lut_u16[i] = cv::saturate_cast<uint16_t>(res * max_output_val);
 		}
 	} else {
-		// =========================================================
-		// B. 针对 8bit 的情况 -> 生成 8-bit LUT
-		// =========================================================
-
-		// 1. 释放不需要的 16-bit 表
 		if (!gamma_lut_u16.empty()) {
 			gamma_lut_u16.clear();
 		}
-
-		// 2. 准备 OpenCV LUT (CV_8U)
 		if (gamma_lut_u8.empty()) {
 			gamma_lut_u8.create(1, 256, CV_8U);
 		}
 
 		uchar *p = gamma_lut_u8.ptr();
 		for (int i = 0; i < 256; ++i) {
-			p[i] = cv::saturate_cast<uchar>(std::pow(i / 255.0, g) * 255.0);
-		}
-	}
-} // prepare_gamma_lut
+			double norm = i / 255.0;
+			double res;
 
-// =========================================================
-// 新增: gc_fast_sai (针对 sais 的 Gamma + 转 8-bit)
-// =========================================================
-LFIsp &LFIsp::gc_fast_sai(float gamma, int bitDepth) {
-	if (sais.empty())
-		return *this;
-
-	// 获取当前图像实际深度
-	int depth = sais[0].depth();
-
-	// =========================================================
-	// 脏检测 (Dirty Check)
-	// =========================================================
-	// 判断 Gamma 是否发生了变动
-	bool gamma_changed = std::abs(gamma - last_gamma_) > 1e-6f;
-
-	// 判断 BitDepth 是否发生了变动 (仅对 16-bit 分支重要)
-	bool bitdepth_changed = (bitDepth != last_bit_depth_);
-
-	// =========================================================
-	// 分支 A: 处理 8-bit 图像
-	// =========================================================
-	if (depth == CV_8U) {
-		// 如果表为空，或者 Gamma 变了，就需要重算
-		// (注：8-bit LUT 不依赖 bitDepth 参数，只依赖 gamma)
-		if (gamma_lut_u8.empty() || gamma_changed) {
-			prepare_gamma_lut(gamma, 8);
-
-			// 更新缓存
-			last_gamma_ = gamma;
-			// bitDepth 在 8-bit 模式下不影响 LUT，但也顺便更新防止逻辑混乱
-			last_bit_depth_ = 8;
-		}
-
-#pragma omp parallel for
-		for (int i = 0; i < sais.size(); ++i) {
-			if (!sais[i].empty())
-				cv::LUT(sais[i], gamma_lut_u8, sais[i]);
-		}
-	}
-	// =========================================================
-	// 分支 B: 处理 16-bit 图像
-	// =========================================================
-	else if (depth == CV_16U) {
-		// 如果表为空，或者 Gamma 变了，或者位深变了（例如从 10bit 切到
-		// 12bit），都得重算
-		if (gamma_lut_u16.empty() || gamma_changed || bitdepth_changed) {
-			prepare_gamma_lut(gamma, bitDepth);
-
-			// 更新缓存
-			last_gamma_ = gamma;
-			last_bit_depth_ = bitDepth;
-		}
-
-		const uint16_t *lut_ptr = gamma_lut_u16.data();
-
-#pragma omp parallel for
-		for (int i = 0; i < sais.size(); ++i) {
-			cv::Mat &img = sais[i];
-			if (img.empty())
-				continue;
-
-			int rows = img.rows;
-			int cols = img.cols * img.channels();
-			if (img.isContinuous()) {
-				cols *= rows;
-				rows = 1;
+			if (norm <= low_threshold) {
+				res = low_slope * norm;
+			} else {
+				res = (1.0 + alpha) * std::pow(norm, g) - alpha;
 			}
 
-			for (int r = 0; r < rows; ++r) {
-				uint16_t *ptr = img.ptr<uint16_t>(r);
-				for (int c = 0; c < cols; ++c) {
-					ptr[c] = lut_ptr[ptr[c]];
-				}
-			}
+			p[i] = cv::saturate_cast<uchar>(res * 255.0);
 		}
 	}
-
-	return *this;
-} // gc_fast_sai
+}
 
 //  GPU
 LFIsp &LFIsp::set_lf_gpu(const cv::Mat &img) {
@@ -2133,11 +2722,12 @@ std::vector<cv::Mat> LFIsp::getSAIsGpu() {
 } // getSAIsGpu
 
 void LFIsp::update_resample_maps() {
+	extract_maps_gpu.clear();
 	extract_maps_gpu.resize(maps.extract.size());
 	for (int i = 0; i < maps.extract.size(); ++i) {
 		extract_maps_gpu[i].upload(maps.extract[i]);
 	}
-
+	dehex_maps_gpu.clear();
 	dehex_maps_gpu.resize(maps.dehex.size());
 	for (int i = 0; i < maps.dehex.size(); ++i) {
 		dehex_maps_gpu[i].upload(maps.dehex[i]);
@@ -2305,38 +2895,36 @@ LFIsp &LFIsp::ccm_gpu(const std::vector<float> &ccm_matrix) {
 		return *this;
 	}
 
-	launch_ccm_8uc3(lfp_img_gpu, ccm_matrix.data(), stream);
+	for (size_t i = 0; i < sais_gpu.size(); ++i) {
+		if (sais_gpu[i].empty() || sais_gpu[i].type() != CV_8UC3) {
+			continue;
+		}
+		launch_ccm_8uc3(sais_gpu[i], ccm_matrix.data(), stream);
+	}
 
 	return *this;
 } // ccm_gpu
 
 LFIsp &LFIsp::gc_gpu(float gamma) {
-	// 1. 检查输入
-	if (lfp_img_gpu.empty())
+	// 1. 检查 SAI 向量是否为空
+	if (sais_gpu.empty())
 		return *this;
 
-	// 只支持 8U 类型
-	int depth = lfp_img_gpu.depth();
-	if (depth != CV_8U) {
-		// 如果不是 8U，直接返回或者报错
-		// 因为 Gamma 放在最后一步，此时图像理应是 8-bit
+	// 2. 检查参数有效性
+	// 如果 Gamma 接近 1.0，通常视为线性输出，不执行操作
+	if (gamma > 0 && std::abs(gamma - 1.0f) < 1e-5)
 		return *this;
+
+	// 3. 遍历所有视角图像
+	for (size_t i = 0; i < sais_gpu.size(); ++i) {
+		if (sais_gpu[i].empty() || sais_gpu[i].depth() != CV_8U) {
+			continue;
+		}
+		launch_gc_8u(sais_gpu[i], gamma, stream);
 	}
-
-	// 2. 检查 Gamma 值
-	// 如果 Gamma 接近 1.0，不需要做任何操作
-	if (std::abs(gamma - 1.0f) < 1e-5)
-		return *this;
-	if (gamma < 1e-5)
-		return *this; // 防止除以 0
-
-	// 3. 调用 Kernel
-	launch_gc_8u(lfp_img_gpu, gamma, stream);
 
 	return *this;
 } // gc_gpu
-
-// 外部声明
 
 LFIsp &LFIsp::ccm_gamma_fused_gpu(const std::vector<float> &ccm_matrix, float gamma) {
 	// 1. 检查输入：必须是 8UC3 (Demosaic 之后的图)
@@ -2363,6 +2951,95 @@ LFIsp &LFIsp::ccm_gamma_fused_gpu(const std::vector<float> &ccm_matrix, float ga
 
 	return *this;
 } // ccm_gamma_fused_gpu
+
+LFIsp &LFIsp::csc_gpu() {
+	if (sais_gpu.empty())
+		return *this;
+
+	static bool is_ycrcb_gpu = false;
+	int code = !is_ycrcb_gpu ? cv::COLOR_BGR2YCrCb : cv::COLOR_YCrCb2BGR;
+
+	// 遍历所有视角图像
+	for (size_t i = 0; i < sais_gpu.size(); ++i) {
+		if (sais_gpu[i].empty())
+			continue;
+
+		cv::cuda::cvtColor(sais_gpu[i], sais_gpu[i], code, 0, stream);
+	}
+
+	is_ycrcb_gpu = !is_ycrcb_gpu;
+
+	return *this;
+}
+
+LFIsp &LFIsp::uvnr_gpu(float h_sigma_s, float h_sigma_r) {
+	if (sais_gpu.empty())
+		return *this;
+
+	// 参数合理性检查
+	if (h_sigma_s < 0.1f || h_sigma_r < 0.1f)
+		return *this;
+
+	for (size_t i = 0; i < sais_gpu.size(); ++i) {
+		if (sais_gpu[i].empty() || sais_gpu[i].type() != CV_8UC3) {
+			continue;
+		}
+
+		// 调用手写高性能内核
+		launch_uvnr_8uc3(sais_gpu[i], h_sigma_s, h_sigma_r, stream);
+	}
+
+	return *this;
+}
+
+LFIsp &LFIsp::color_eq_gpu(ColorEqualizeMethod method) {
+	if (sais_gpu.empty())
+		return *this;
+
+	ColorMatcher::equalize_gpu(sais_gpu, method, stream);
+	ColorMatcher::equalize_gpu(sais_gpu, method, stream);
+	ColorMatcher::equalize_gpu(sais_gpu, method, stream);
+
+	return *this;
+}
+
+LFIsp &LFIsp::ce_gpu(float clipLimit, int gridSize) {
+	if (lfp_img_gpu.empty())
+		return *this;
+
+	cv::Ptr<cv::cuda::CLAHE> clahe = cv::cuda::createCLAHE(clipLimit, cv::Size(gridSize, gridSize));
+	for (size_t i = 0; i < sais_gpu.size(); ++i) {
+		if (sais_gpu[i].empty() || sais_gpu[i].channels() != 3)
+			continue;
+
+		// 1. 分离通道 (GPU 端)
+		// 注意：建议预分配 channels 缓存以进一步压榨性能
+		std::vector<cv::cuda::GpuMat> channels;
+		cv::cuda::split(sais_gpu[i], channels, stream);
+
+		// 2. 仅对 Y 通道 (index 0) 应用 CLAHE
+		//
+		clahe->apply(channels[0], channels[0], stream);
+
+		// 3. 合并回原图
+		cv::cuda::merge(channels, sais_gpu[i], stream);
+	}
+
+	return *this;
+}
+
+LFIsp &LFIsp::se_gpu(float factor) {
+	if (lfp_img_gpu.empty() || std::abs(factor - 1.0f) < 1e-4)
+		return *this;
+
+	for (size_t i = 0; i < sais_gpu.size(); ++i) {
+		if (sais_gpu[i].empty())
+			continue;
+		launch_se_gpu(sais_gpu[i], factor, stream);
+	}
+
+	return *this;
+}
 
 LFIsp &LFIsp::process_gpu(const IspConfig &config) {
 	ScopedTimer t_total(" Total Process", profiler_gpu, config.benchmark);
@@ -2396,8 +3073,8 @@ LFIsp &LFIsp::process_gpu(const IspConfig &config) {
 	}
 	{
 		ScopedTimer t("Noise Reduction", profiler_gpu, config.benchmark);
-		if (config.enableNR) {
-			nr_gpu(config.nr_sigma_s, config.nr_sigma_r);
+		if (config.enableRawNR) {
+			nr_gpu(config.rawnr_sigma_s, config.rawnr_sigma_r);
 		} else {
 			std::cout << "[LFISP] Pipeline: 'Noise Reduction' is disabled in settings." << std::endl;
 		}
@@ -2427,6 +3104,17 @@ LFIsp &LFIsp::process_gpu(const IspConfig &config) {
 		}
 	}
 	{
+		ScopedTimer t("Resample", profiler_gpu, config.benchmark);
+		if (config.enableExtract) {
+			resample_gpu(config.enableDehex);
+			if (!config.enableDehex) {
+				std::cout << "[LFISP] Pipeline: 'Dehex' is disabled in settings." << std::endl;
+			}
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Extract' is disabled in settings." << std::endl;
+		}
+	}
+	{
 		ScopedTimer t("CCM", profiler_gpu, config.benchmark);
 		if (config.enableCCM) {
 			ccm_gpu(config.ccm_matrix);
@@ -2434,31 +3122,60 @@ LFIsp &LFIsp::process_gpu(const IspConfig &config) {
 			std::cout << "[LFISP] Pipeline: 'CCM' is disabled in settings." << std::endl;
 		}
 	}
-
 	{
 		ScopedTimer t("Gamma", profiler_gpu, config.benchmark);
 		if (config.enableGamma) {
 			gc_gpu(config.gamma);
 		} else {
-			std::cout << "[LFISP] Pipeline: 'Gamma correction' is disabled in "
-						 "settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'Gamma correction' is disabled in settings." << std::endl;
 		}
 	}
-
 	{
-		ScopedTimer t("Resample", profiler_gpu, config.benchmark);
-		if (config.enableExtract) {
-			resample_gpu(config.enableDehex);
-			if (!config.enableDehex) {
-				std::cout << "[LFISP] Pipeline: 'Dehex' is disabled in "
-							 "settings."
-						  << std::endl;
-			}
+		ScopedTimer t("RGB2YUV", profiler_gpu, config.benchmark);
+		if (config.enableCSC) {
+			csc_gpu();
 		} else {
-			std::cout << "[LFISP] Pipeline: 'Extract' is disabled in "
-						 "settings."
-					  << std::endl;
+			std::cout << "[LFISP] Pipeline: 'RGB to YUV' is disabled in settings." << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("Color Equalization", profiler_gpu, config.benchmark);
+		if (config.enableColorEq) {
+			color_eq_gpu(config.colorEqMethod);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'Color Equalization' is disabled in settings." << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("UVNR", profiler_gpu, config.benchmark);
+		if (config.enableUVNR) {
+			uvnr_gpu(config.uvnr_sigma_s, config.uvnr_sigma_r);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'UVNR' is disabled in settings." << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("CE", profiler_gpu, config.benchmark);
+		if (config.enableCE) {
+			ce_gpu(config.ceClipLimit, config.ceGridSize);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'CE' is disabled in settings." << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("SE", profiler_gpu, config.benchmark);
+		if (config.enableSE) {
+			se_gpu(config.seFactor);
+		} else {
+			std::cout << "[LFISP] Pipeline: 'SE' is disabled in settings." << std::endl;
+		}
+	}
+	{
+		ScopedTimer t("YUV2RGB", profiler_gpu, config.benchmark);
+		if (config.enableCSC) {
+			csc_gpu();
+		} else {
+			std::cout << "[LFISP] Pipeline: 'YUV to RGB' is disabled in settings." << std::endl;
 		}
 	}
 

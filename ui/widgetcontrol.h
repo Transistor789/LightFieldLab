@@ -54,7 +54,6 @@ signals:
 	void requestSaveSAI(const QString &path);
 	void requestPlay();
 	void requestSAI(int row, int col);
-	void requestColorEq();
 	void requestRefocus();
 	void requestSR();
 	void requestSRModel(const QString &path);

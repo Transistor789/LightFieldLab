@@ -35,8 +35,8 @@ void test_isp() {
 	isp.dpc_fast(DpcMethod::Diretional, 100)
 		.blc_fast(66, 1023)
 		.lsc_awb_fused_fast(0, {})
-		.demosaic(config.bayer, DemosaicMethod::Bilinear)
-		.ccm_fast_sai({});
+		.demosaic(config.bayer)
+		.ccm_fast({});
 	cv::Mat img;
 	isp.getResult().convertTo(img, CV_8U, 255.0 / 1023.0);
 	cv::imshow("", img);
