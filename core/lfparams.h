@@ -1,7 +1,7 @@
 ﻿#ifndef LFPARAMS_H
 #define LFPARAMS_H
 
-#include "colormatcher.h"
+#include "colorequalize.h"
 #include "json.hpp"
 #include "lfcalibrate.h"
 #include "lfde.h"
@@ -78,6 +78,7 @@ struct LFParams {
 	LFParamsDynamic dynamic;
 	LFParamsSAI sai;
 	LFParamsRefocus refocus;
+	ColorEqualizeMethod colorEqMethod = ColorEqualizeMethod::Reinhard;
 	LFParamsSR sr;
 	LFParamsDE de;
 };
@@ -99,8 +100,6 @@ NLOHMANN_JSON_SERIALIZE_ENUM(ExtractMethod, {{ExtractMethod::Contour, "Contour"}
 
 NLOHMANN_JSON_SERIALIZE_ENUM(Orientation, {{Orientation::HORZ, "HORZ"}, {Orientation::VERT, "VERT"}})
 
-NLOHMANN_JSON_SERIALIZE_ENUM(DpcMethod, {{DpcMethod::Diretional, "Diretional"}})
-
 NLOHMANN_JSON_SERIALIZE_ENUM(Device,
 							 {{Device::CPU, "CPU"}, {Device::CPU_OPENMP_SIMD, "CPU_OPENMP_SIMD"}, {Device::GPU, "GPU"}})
 
@@ -112,13 +111,12 @@ NLOHMANN_JSON_SERIALIZE_ENUM(ColorEqualizeMethod, {{ColorEqualizeMethod::Reinhar
 												   {ColorEqualizeMethod::HM_MVGD_HM, "HM_MVGD_HM"}})
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(LFParamsPath, lfp, sai, white, extractLUT, dehexLUT, srModel, deModel)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(CalibrateConfig, hexgridfit, genLUT, autoEstimate, diameter, bitDepth, views, bayer,
-								   ceMethod, orientation)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(CalibrateConfig, hexgridfit, autoEstimate, genLUT, saveLUT, showPoints, diameter,
+								   bitDepth, views, crop, space, bayer, ceMethod, orientation)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(IspConfig, dpcThreshold, rawnr_sigma_r, rawnr_sigma_s, lscExp, uvnr_sigma_r,
-								   uvnr_sigma_s, colorEqMethod, ceClipLimit, ceGridSize, seFactor, enableRAW, enableBLC,
-								   enableDPC, enableRawNR, enableLSC, enableAWB, enableDemosaic, enableCCM, enableGamma,
-								   enableCSC, enableUVNR, enableColorEq, enableCE, enableSE, enableExtract, enableDehex,
-								   benchmark, dpcMethod, device)
+								   uvnr_sigma_s, ceClipLimit, ceGridSize, seFactor, enableRAW, enableBLC, enableDPC,
+								   enableRawNR, enableLSC, enableWB, enableDemosaic, enableCCM, enableGamma, enableCSC,
+								   enableUVNR, enableCE, enableSE, enableExtract, enableDehex, benchmark, device)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(LFParams, imageType, path, calibrate, isp)
 
 #endif

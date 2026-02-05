@@ -89,10 +89,11 @@ MainWindow::MainWindow(QWidget *parent)
 			[this](bool active) { ctrl->setCapturing(active); });
 	connect(ui->widgetControl, &WidgetControl::requestProcess, this,
 			[this](bool active) { ctrl->setProcessing(active); });
-	connect(ui->widgetControl, &WidgetControl::requestPlay, this, [this] { ctrl->play(); });
+	connect(ui->widgetControl, &WidgetControl::requestPlay, this, [this] { ctrl->play(7); });
 	connect(ui->widgetControl, &WidgetControl::requestSAI, this,
 			[this](int row, int col) { ctrl->updateSAI(row, col); });
 
+	connect(ui->widgetControl, &WidgetControl::requestColorEq, this, [this] { ctrl->colorEqualize(); });
 	connect(ui->widgetControl, &WidgetControl::requestRefocus, this, [this] { ctrl->refocus(); });
 	connect(ui->widgetControl, &WidgetControl::requestSR, this, [this] { ctrl->upsample(); });
 	connect(ui->widgetControl, &WidgetControl::requestDE, this, [this] { ctrl->depth(); });

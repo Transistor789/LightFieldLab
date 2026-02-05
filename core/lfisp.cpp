@@ -1,6 +1,5 @@
 ﻿#include "lfisp.h"
 
-#include "colormatcher.h"
 #include "hexgrid_fit.h"
 #include "utils.h"
 
@@ -540,7 +539,7 @@ void lsc_simd_u8(cv::Mat &img, const cv::Mat &lsc_gain_map_int, float exposure) 
 	}
 }
 
-void awb_simd_u16(cv::Mat &img, const std::vector<float> &wbgains) {
+void wb_simd_u16(cv::Mat &img, const std::vector<float> &wbgains) {
 	int rows = img.rows;
 	int cols = img.cols;
 	const float scale = FIXED_SCALE;
@@ -596,7 +595,7 @@ void awb_simd_u16(cv::Mat &img, const std::vector<float> &wbgains) {
 	}
 }
 
-void awb_simd_u8(cv::Mat &img, const std::vector<float> &wbgains) {
+void wb_simd_u8(cv::Mat &img, const std::vector<float> &wbgains) {
 	int rows = img.rows;
 	int cols = img.cols;
 	const float scale = FIXED_SCALE;
@@ -647,8 +646,7 @@ void awb_simd_u8(cv::Mat &img, const std::vector<float> &wbgains) {
 	}
 }
 
-void lsc_awb_simd_u16(cv::Mat &img, float exposure, const cv::Mat &lsc_gain_map_int,
-					  const std::vector<float> &wbgains) {
+void lsc_wb_simd_u16(cv::Mat &img, float exposure, const cv::Mat &lsc_gain_map_int, const std::vector<float> &wbgains) {
 	int rows = img.rows;
 	int cols = img.cols;
 	const float scale = FIXED_SCALE;
@@ -711,7 +709,7 @@ void lsc_awb_simd_u16(cv::Mat &img, float exposure, const cv::Mat &lsc_gain_map_
 	}
 }
 
-void lsc_awb_simd_u8(cv::Mat &img, float exposure, const cv::Mat &lsc_gain_map_int, const std::vector<float> &wbgains) {
+void lsc_wb_simd_u8(cv::Mat &img, float exposure, const cv::Mat &lsc_gain_map_int, const std::vector<float> &wbgains) {
 	int rows = img.rows;
 	int cols = img.cols;
 	const float scale = FIXED_SCALE;
@@ -1479,7 +1477,8 @@ LFIsp &LFIsp::set_lf_img(const cv::Mat &img) {
 LFIsp &LFIsp::initConfig(const cv::Mat &img, const IspConfig &config) {
 	if (img.empty())
 		throw std::runtime_error("White image is empty.");
-	prepare_lsc_maps(img, config.black_level);
+	// prepare_lsc_maps(img, config.black_level);
+	prepare_lsc_maps_optimized(img, config.black_level, config.bayer);
 	prepare_ccm_fixed_point(config.ccm_matrix);
 	prepare_gamma_lut(config.gamma, 8);
 
@@ -1539,13 +1538,17 @@ LFIsp &LFIsp::dpc(int threshold) {
 LFIsp &LFIsp::lsc(float exposure) {
 	if (lfp_img_.empty() || lsc_gain_map_.empty())
 		return *this;
-	if (lfp_img_.size() != lsc_gain_map_.size())
+
+	if (lfp_img_.size() != lsc_gain_map_.size()) {
+		std::cerr << "[LFISP] LSC Error: Image size and gain map size mismatch." << std::endl;
 		return *this;
+	}
 
 	cv::Mat float_img;
 	lfp_img_.convertTo(float_img, CV_32F);
-	cv::multiply(float_img, lsc_gain_map_, float_img);
+	cv::multiply(float_img, lsc_gain_map_, float_img, exposure);
 	float_img.convertTo(lfp_img_, lfp_img_.type());
+
 	return *this;
 } // lsc
 
@@ -1803,15 +1806,6 @@ LFIsp &LFIsp::uvnr(float h_sigma_s, float h_sigma_r) {
 	return *this;
 } // uvnr
 
-LFIsp &LFIsp::color_eq(ColorEqualizeMethod method) {
-	if (lfp_img_.empty())
-		return *this;
-
-	ColorMatcher::equalize(sais, method);
-
-	return *this;
-}
-
 LFIsp &LFIsp::ce(float clipLimit, int gridSize) {
 	if (sais.empty())
 		return *this;
@@ -1914,7 +1908,7 @@ LFIsp &LFIsp::process(const IspConfig &config) {
 	}
 	{
 		ScopedTimer t("AWB", profiler_cpu, config.benchmark);
-		if (config.enableAWB) {
+		if (config.enableWB) {
 			awb(config.awb_gains);
 		} else {
 			std::cout << "[LFISP] Pipeline: 'AWB' is disabled in settings." << std::endl;
@@ -1981,16 +1975,7 @@ LFIsp &LFIsp::process(const IspConfig &config) {
 					  << std::endl;
 		}
 	}
-	{
-		ScopedTimer t("Color Equalization", profiler_cpu, config.benchmark);
-		if (config.enableColorEq) {
-			color_eq(config.colorEqMethod);
-		} else {
-			std::cout << "[LFISP] Pipeline: 'Color Equalization' is disabled in "
-						 "settings."
-					  << std::endl;
-		}
-	}
+
 	{
 		ScopedTimer t("CE", profiler_cpu, config.benchmark);
 		if (config.enableCE) {
@@ -2080,7 +2065,7 @@ LFIsp &LFIsp::blc_fast(int black_level, int white_level) {
 	return *this;
 } // blc_fast
 
-LFIsp &LFIsp::dpc_fast(DpcMethod method, int threshold) {
+LFIsp &LFIsp::dpc_fast(int threshold) {
 	if (lfp_img_.empty())
 		return *this;
 	if (lfp_img_.depth() == CV_16U) {
@@ -2129,9 +2114,9 @@ LFIsp &LFIsp::awb_fast(const std::vector<float> &wbgains) {
 	if (lfp_img_.empty())
 		return *this;
 	if (lfp_img_.depth() == CV_16U) {
-		awb_simd_u16(lfp_img_, wbgains);
+		wb_simd_u16(lfp_img_, wbgains);
 	} else if (lfp_img_.depth() == CV_8U) {
-		awb_simd_u8(lfp_img_, wbgains);
+		wb_simd_u8(lfp_img_, wbgains);
 	}
 	return *this;
 } // awb_fast
@@ -2145,9 +2130,9 @@ LFIsp &LFIsp::lsc_awb_fused_fast(float exposure, const std::vector<float> &wbgai
 	}
 
 	if (lfp_img_.depth() == CV_16U) {
-		lsc_awb_simd_u16(lfp_img_, exposure, lsc_gain_map_int_, wbgains);
+		lsc_wb_simd_u16(lfp_img_, exposure, lsc_gain_map_int_, wbgains);
 	} else if (lfp_img_.depth() == CV_8U) {
-		lsc_awb_simd_u8(lfp_img_, exposure, lsc_gain_map_int_, wbgains);
+		lsc_wb_simd_u8(lfp_img_, exposure, lsc_gain_map_int_, wbgains);
 	}
 
 	return *this;
@@ -2409,7 +2394,7 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 	{
 		ScopedTimer t("DPC", profiler_fast, config.benchmark);
 		if (config.enableDPC) {
-			dpc_fast(config.dpcMethod, config.dpcThreshold);
+			dpc_fast(config.dpcThreshold);
 		} else {
 			std::cout << "[LFISP] Pipeline: 'DPC' is disabled in settings." << std::endl;
 		}
@@ -2422,7 +2407,7 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 			std::cout << "[LFISP] Pipeline: 'NR' is disabled in settings." << std::endl;
 		}
 	}
-	if (config.enableLSC && config.enableAWB) {
+	if (config.enableLSC && config.enableWB) {
 		ScopedTimer t("LSC+AWB", profiler_fast, config.benchmark);
 		lsc_awb_fused_fast(config.lscExp, config.awb_gains);
 	} else {
@@ -2436,7 +2421,7 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 		}
 		{
 			ScopedTimer t("AWB", profiler_fast, config.benchmark);
-			if (config.enableAWB) {
+			if (config.enableWB) {
 				awb_fast(config.awb_gains);
 			} else {
 				std::cout << "[LFISP] Pipeline: 'AWB' is disabled in settings." << std::endl;
@@ -2500,16 +2485,6 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 			uvnr(config.uvnr_sigma_s, config.uvnr_sigma_r);
 		} else {
 			std::cout << "[LFISP] Pipeline: 'UVNR' is disabled in "
-						 "settings."
-					  << std::endl;
-		}
-	}
-	{
-		ScopedTimer t("Color Equalization", profiler_cpu, config.benchmark);
-		if (config.enableColorEq) {
-			color_eq(config.colorEqMethod);
-		} else {
-			std::cout << "[LFISP] Pipeline: 'Color Equalization' is disabled in "
 						 "settings."
 					  << std::endl;
 		}
@@ -2617,6 +2592,83 @@ void LFIsp::prepare_lsc_maps(const cv::Mat &raw_wht, int black_level) {
 	lsc_map_gpu.upload(lsc_gain_map_);
 } // prepare_lsc_maps
 
+void LFIsp::prepare_lsc_maps_optimized(const cv::Mat &raw_wht, int black_level, BayerPattern pattern) {
+	cv::Mat processed_wht;
+
+	// --- 1. 颜色空间转换 (对应 Python __init__ 和 rgb2gry 逻辑) ---
+	if (pattern != BayerPattern::NONE) {
+		// 如果是 Bayer 阵列，先转换为灰度图以平衡色彩分量对亮度的贡献
+		int bayer_code = -1;
+		switch (pattern) {
+			case BayerPattern::RGGB:
+				bayer_code = cv::COLOR_BayerRG2GRAY;
+				break;
+			case BayerPattern::GRBG:
+				bayer_code = cv::COLOR_BayerGR2GRAY;
+				break;
+			case BayerPattern::GBRG:
+				bayer_code = cv::COLOR_BayerGB2GRAY;
+				break;
+			case BayerPattern::BGGR:
+				bayer_code = cv::COLOR_BayerBG2GRAY;
+				break;
+			default:
+				break;
+		}
+		if (bayer_code != -1) {
+			cv::cvtColor(raw_wht, processed_wht, bayer_code);
+		} else {
+			processed_wht = raw_wht.clone();
+		}
+	} else if (raw_wht.channels() == 3) {
+		// 如果是三通道 RGB 且无 Bayer，转为灰度图
+		cv::cvtColor(raw_wht, processed_wht, cv::COLOR_BGR2GRAY);
+	} else {
+		// 单通道且无 Bayer，不作处理
+		processed_wht = raw_wht.clone();
+	}
+
+	// --- 2. 预处理：转为浮点并减去黑电平 ---
+	cv::Mat float_wht;
+	processed_wht.convertTo(float_wht, CV_32F);
+
+	float bl = static_cast<float>(black_level);
+	cv::subtract(float_wht, cv::Scalar(bl), float_wht);
+	// 除零与负值保护
+	cv::max(float_wht, 1.0f, float_wht);
+
+	// --- 3. 归一化 (对应 Python main 中的 np.percentile(img, 99.9)) ---
+	cv::Mat flat = float_wht.reshape(1, 1);
+	std::vector<float> vec;
+	if (flat.isContinuous()) {
+		vec.assign((float *)flat.data, (float *)flat.data + flat.total());
+	} else {
+		flat.copyTo(vec);
+	}
+
+	// 快速选择 99.9% 处的元素
+	auto n = static_cast<std::size_t>(vec.size() * 0.999);
+	std::nth_element(vec.begin(), vec.begin() + n, vec.end());
+	float p999 = vec[n];
+
+	if (p999 < 1e-6f)
+		p999 = 1.0f;
+
+	// 执行归一化：self._wht_img /= np.percentile(...)
+	cv::Mat wht_norm = float_wht / p999;
+
+	// --- 4. 计算增益图并导出 (1.0 / wht_norm) ---
+	lsc_gain_map_.create(wht_norm.size(), CV_32F);
+	cv::divide(1.0f, wht_norm, lsc_gain_map_);
+
+	// 转化为定点数以提升 GPU 处理效率
+	// FIXED_SCALE 建议设为 1024.0f 或更高
+	lsc_gain_map_.convertTo(lsc_gain_map_int_, CV_16U, FIXED_SCALE);
+
+	// --- 5. 上传 GPU ---
+	lsc_map_gpu.upload(lsc_gain_map_);
+} // prepare_lsc_maps_optimized
+
 // ============================================================================
 // CCM SIMD Implementation
 // ============================================================================
@@ -2706,6 +2758,24 @@ LFIsp &LFIsp::set_lf_gpu(const cv::Mat &img) {
 	return *this;
 } // set_lf_gpu
 
+LFIsp &LFIsp::set_white_gpu(const cv::Mat &img, int black_level, int white_level) {
+	if (img.empty()) {
+		return *this;
+	}
+
+	white_img_gpu.upload(img);
+	white_img_gpu.convertTo(white_img_gpu, CV_32F);
+
+	cv::cuda::subtract(white_img_gpu, cv::Scalar(black_level), white_img_gpu);
+	cv::cuda::threshold(white_img_gpu, white_img_gpu, 0, 0, cv::THRESH_TOZERO);
+	float range = static_cast<float>(white_level - black_level);
+	cv::cuda::divide(white_img_gpu, cv::Scalar(range), white_img_gpu);
+
+	cv::cuda::threshold(white_img_gpu, white_img_gpu, 1e-5, 0, cv::THRESH_TOZERO);
+
+	return *this;
+} // set_white_gpu
+
 cv::Mat LFIsp::getResultGpu() {
 	cv::Mat temp;
 	lfp_img_gpu.download(temp);
@@ -2776,6 +2846,18 @@ LFIsp &LFIsp::lsc_gpu(float exposure) {
 		return *this;
 
 	launch_lsc_8u_apply_32f(lfp_img_gpu, lsc_map_gpu, exposure, stream);
+
+	return *this;
+} // lsc_gpu
+
+LFIsp &LFIsp::lsc_gpu() {
+	if (lfp_img_gpu.empty() || white_img_gpu.empty())
+		return *this;
+
+	cv::cuda::GpuMat float_lfp;
+	lfp_img_gpu.convertTo(float_lfp, CV_32F);
+	cv::cuda::divide(float_lfp, white_img_gpu, float_lfp);
+	float_lfp.convertTo(lfp_img_gpu, lfp_img_gpu.type());
 
 	return *this;
 } // lsc_gpu
@@ -2992,17 +3074,6 @@ LFIsp &LFIsp::uvnr_gpu(float h_sigma_s, float h_sigma_r) {
 	return *this;
 }
 
-LFIsp &LFIsp::color_eq_gpu(ColorEqualizeMethod method) {
-	if (sais_gpu.empty())
-		return *this;
-
-	ColorMatcher::equalize_gpu(sais_gpu, method, stream);
-	ColorMatcher::equalize_gpu(sais_gpu, method, stream);
-	ColorMatcher::equalize_gpu(sais_gpu, method, stream);
-
-	return *this;
-}
-
 LFIsp &LFIsp::ce_gpu(float clipLimit, int gridSize) {
 	if (lfp_img_gpu.empty())
 		return *this;
@@ -3082,6 +3153,7 @@ LFIsp &LFIsp::process_gpu(const IspConfig &config) {
 	{
 		ScopedTimer t("LSC", profiler_gpu, config.benchmark);
 		if (config.enableLSC) {
+			// lsc_gpu();
 			lsc_gpu(config.lscExp);
 		} else {
 			std::cout << "[LFISP] Pipeline: 'LSC' is disabled in settings." << std::endl;
@@ -3089,7 +3161,7 @@ LFIsp &LFIsp::process_gpu(const IspConfig &config) {
 	}
 	{
 		ScopedTimer t("AWB", profiler_gpu, config.benchmark);
-		if (config.enableAWB) {
+		if (config.enableWB) {
 			awb_gpu(config.awb_gains);
 		} else {
 			std::cout << "[LFISP] Pipeline: 'AWB' is disabled in settings." << std::endl;
@@ -3136,14 +3208,6 @@ LFIsp &LFIsp::process_gpu(const IspConfig &config) {
 			csc_gpu();
 		} else {
 			std::cout << "[LFISP] Pipeline: 'RGB to YUV' is disabled in settings." << std::endl;
-		}
-	}
-	{
-		ScopedTimer t("Color Equalization", profiler_gpu, config.benchmark);
-		if (config.enableColorEq) {
-			color_eq_gpu(config.colorEqMethod);
-		} else {
-			std::cout << "[LFISP] Pipeline: 'Color Equalization' is disabled in settings." << std::endl;
 		}
 	}
 	{

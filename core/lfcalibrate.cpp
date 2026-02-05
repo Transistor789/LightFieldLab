@@ -7,6 +7,7 @@
 #include "utils.h"
 
 #include <format>
+#include <iostream>
 #include <numeric> // for std::iota
 #include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
@@ -42,13 +43,13 @@ void LFCalibrate::run(const cv::Mat &img, const CalibrateConfig &config) {
 	if (config.orientation == Orientation::VERT) {
 		cv::transpose(img, temp);
 	} else {
-		temp = img;
+		temp = img.clone();
 	}
 
 	// 1. 预处理：消除 Bayer 棋盘格
 	if (config.bayer != BayerPattern::NONE) {
 		// 使用高斯模糊平滑 Bayer 纹理，保留几何质心
-		cv::GaussianBlur(temp, temp, cv::Size(3, 3), 0);
+		cv::GaussianBlur(temp, temp, cv::Size(9, 9), 0);
 	}
 
 	// 2. 预处理：位深归一化 (转 8-bit)
@@ -74,28 +75,31 @@ void LFCalibrate::run(const cv::Mat &img, const CalibrateConfig &config) {
 
 	// 4. 排序与网格化 (Centroids Sort)
 	CentroidsSort cs(ce.getPoints(), ce.getPitch());
-	cs.run2(); // 使用泛洪填充算法
-	_hex_odd = cs.getHexOdd();
+	cs.run2(config.rot); // 使用泛洪填充算法
+	_maps = cs.getPointsAsMats(config.crop);
+	cv::Mat x_mat = _maps.first;
+	_hex_odd = x_mat.at<float>(0, 0) < x_mat.at<float>(0, 1);
+	// _hex_odd = cs.getHexOdd();
 
 	if (config.hexgridfit) {
 		// 5. 网格拟合 (HexGrid Fit)
-		_fitter = std::make_shared<HexGridFitter>(cs.getPointsAsMats(), _hex_odd);
+		_fitter = std::make_shared<HexGridFitter>(_maps, _hex_odd);
 
 		// 使用快速鲁棒拟合
 		_fitter->fitFastRobust(2.0f, 1500);
 		_maps = _fitter->predict();
-	} else {
-		_maps = cs.getPointsAsMats();
 	}
-
+	if (config.orientation == Orientation::VERT) {
+		cv::transpose(_maps.first, _maps.first);
+		cv::transpose(_maps.second, _maps.second);
+		std::swap(_maps.first, _maps.second);
+	}
 	if (config.genLUT) {
-		computeExtractMaps(config.views, config.space);
+		// computeExtractMaps(config.views, config.space);
+		// computeExtractMaps(config.views, config.space, config.rot);
+		computeExtractMapsStepByStep(config.views, config.space, config.rot);
 		computeDehexMaps();
 		if (config.orientation == Orientation::VERT) {
-			cv::transpose(_maps.first, _maps.first);
-			cv::transpose(_maps.second, _maps.second);
-			std::swap(_maps.first, _maps.second);
-
 			for (size_t i = 0; i < _extract_maps.size(); i += 2) {
 				cv::transpose(_extract_maps[i], _extract_maps[i]);
 				cv::transpose(_extract_maps[i + 1], _extract_maps[i + 1]);
@@ -144,36 +148,41 @@ void LFCalibrate::savePoints(const std::string &filename) {
 	writeJson(filename, j);
 }
 
-const std::vector<cv::Mat> &LFCalibrate::computeExtractMaps(int winSize, float space) {
-	// 1. 安全检查：检查 X 和 Y 坐标矩阵是否为空
+const std::vector<cv::Mat> &LFCalibrate::computeExtractMaps(int winSize, float space, float rad) {
+	rad = 0.0f;
 	if (_maps.first.empty() || _maps.second.empty()) {
-		std::cerr << "[LFCalibrate] Error: No maps data. Run centroids sort first." << std::endl;
+		std::cerr << "[LFCalibrate] Error: No maps data." << std::endl;
 		return _extract_maps;
 	}
+
+	// 1. 计算旋转分量
+	float cos_r = std::cos(rad);
+	float sin_r = std::sin(rad);
 
 	int m_rows = _maps.first.rows;
 	int m_cols = _maps.first.cols;
 	int total_views = winSize * winSize;
 
-	// 2. 初始化查找表容器
 	_extract_maps.clear();
 	_extract_maps.resize(total_views * 2);
 
-	// 3. 计算视图偏移基准
 	float startOffset = -(winSize - 1) / 2.0f;
 
-	// 4. 并行计算查找表
 #pragma omp parallel for
 	for (int u = 0; u < winSize; ++u) {
 		for (int v = 0; v < winSize; ++v) {
-			// 计算当前视角的偏移量
-			float off_y = (startOffset + u) * space;
-			float off_x = (startOffset + v) * space;
+			// 2. 原始未旋转的逻辑偏移量
+			float raw_off_y = (startOffset + u) * space;
+			float raw_off_x = (startOffset + v) * space;
 
-			// 5. 利用 OpenCV 矩阵算术运算简化代码
-			// 直接将偏移量加到中心点矩阵上，生成当前视角的采样 Map
-			cv::Mat map_x = _maps.first + off_x;
-			cv::Mat map_y = _maps.second + off_y;
+			// 3. 应用旋转矩阵进行坐标变换
+			// 注意：这里旋转的是相对于中心点的“偏移向量”
+			float rot_off_x = raw_off_x * cos_r - raw_off_y * sin_r;
+			float rot_off_y = raw_off_x * sin_r + raw_off_y * cos_r;
+
+			// 4. 将旋转后的偏移量应用到全局中心点矩阵上
+			cv::Mat map_x = _maps.first + rot_off_x;
+			cv::Mat map_y = _maps.second + rot_off_y;
 
 			int idx = (u * winSize + v) * 2;
 			_extract_maps[idx] = map_x;
@@ -181,11 +190,150 @@ const std::vector<cv::Mat> &LFCalibrate::computeExtractMaps(int winSize, float s
 		}
 	}
 
-	// 6. 打印日志
-	std::cout << std::format(
-		"[LFCalibrate] Extract maps computed from Mats. (winSize: {}, space: {:.2f}, "
-		"map: {}x{})",
-		winSize, space, m_cols, m_rows)
+	std::cout << std::format("[LFCalibrate] Extract maps computed with Rotation: {:.4f} deg, Space: {:.2f}", rad, space)
+			  << std::endl;
+
+	return _extract_maps;
+}
+
+const std::vector<cv::Mat> &LFCalibrate::computeExtractMapsStepByStep(int winSize, float space, float rad) {
+	rad *= -0.0;
+	if (_maps.first.empty() || _maps.second.empty()) {
+		std::cerr << "[LFCalibrate] Error: No maps data." << std::endl;
+		return _extract_maps;
+	}
+
+	int m_rows = _maps.first.rows; // 434
+	int m_cols = _maps.first.cols; // 625
+	int total_views = winSize * winSize;
+	float startOffset = -(winSize - 1) / 2.0f;
+
+	// 扁平化连续内存，存储所有采样点
+	// 布局索引：((r * m_cols + c) * total_views) + (u * winSize + v)
+	std::vector<cv::Point2f> flat_points(m_rows * m_cols * total_views);
+
+// --- 第一步：生成初始采样点 (未旋转) ---
+#pragma omp parallel for
+	for (int r = 0; r < m_rows; ++r) {
+		for (int c = 0; c < m_cols; ++c) {
+			float cx = _maps.first.at<float>(r, c);
+			float cy = _maps.second.at<float>(r, c);
+			int lens_offset = (r * m_cols + c) * total_views;
+
+			for (int u = 0; u < winSize; ++u) {
+				for (int v = 0; v < winSize; ++v) {
+					int pt_idx = lens_offset + (u * winSize + v);
+					// 存储绝对坐标（未旋转）
+					flat_points[pt_idx].x = cx + (startOffset + v) * space;
+					flat_points[pt_idx].y = cy + (startOffset + u) * space;
+					// if (r == m_rows / 2 && c == m_cols / 2) {
+					// 	std::cout << std::format("[Step 1 - Original] Lens({},{}) View({},{}): ({:.4f}, {:.4f})\n", r,
+					// 							 c, u, v, flat_points[pt_idx].x, flat_points[pt_idx].y);
+					// }
+				}
+			}
+		}
+	}
+
+	// --- 调试：提取并输出中心透镜的 9x9 采样矩阵 ---
+	// int r_mid = 0;
+	// int c_mid = 0;
+	// // int r_mid = m_rows / 2;
+	// // int c_mid = m_cols / 2;
+	// int debug_lens_offset = (r_mid * m_cols + c_mid) * total_views;
+
+	// cv::Mat debug_x(winSize, winSize, CV_32F);
+	// cv::Mat debug_y(winSize, winSize, CV_32F);
+
+	// for (int u = 0; u < winSize; ++u) {
+	// 	for (int v = 0; v < winSize; ++v) {
+	// 		int pt_idx = debug_lens_offset + (u * winSize + v);
+	// 		debug_x.at<float>(u, v) = flat_points[pt_idx].x;
+	// 		debug_y.at<float>(u, v) = flat_points[pt_idx].y;
+	// 	}
+	// }
+
+	// // 直接使用 OpenCV 的格式化输出矩阵信息
+	// std::cout << std::format("\n[Debug] Center Lens({},{}) 9x9 X-Sampling Matrix:\n", r_mid, c_mid) << debug_x
+	// 		  << std::endl;
+	// std::cout << std::format("\n[Debug] Center Lens({},{}) 9x9 Y-Sampling Matrix:\n", r_mid, c_mid) << debug_y
+	// 		  << std::endl;
+
+	// --- 第二步：应用旋转变换 ---
+	float cos_r = std::cos(rad);
+	float sin_r = std::sin(rad);
+
+#pragma omp parallel for
+	for (int r = 0; r < m_rows; ++r) {
+		for (int c = 0; c < m_cols; ++c) {
+			float cx = _maps.first.at<float>(r, c);
+			float cy = _maps.second.at<float>(r, c);
+			int lens_offset = (r * m_cols + c) * total_views;
+
+			for (int uv = 0; uv < total_views; ++uv) {
+				int pt_idx = lens_offset + uv;
+
+				// 1. 计算相对于中心点的偏移
+				float dx = flat_points[pt_idx].x - cx;
+				float dy = flat_points[pt_idx].y - cy;
+
+				// 2. 旋转偏移量并重新写回绝对坐标
+				flat_points[pt_idx].x = cx + (dx * cos_r - dy * sin_r);
+				flat_points[pt_idx].y = cy + (dx * sin_r + dy * cos_r);
+				// if (r == m_rows / 2 && c == m_cols / 2) {
+				// 	// 还原 u, v 索引用于打印展示
+				// 	int u_idx = uv / winSize;
+				// 	int v_idx = uv % winSize;
+				// 	std::cout << std::format(
+				// 		"[Step 2 - Rotated]  Lens({},{}) View({},{}): ({:.4f}, {:.4f}) | Offset: ({:.4f}, {:.4f})\n", r,
+				// 		c, u_idx, v_idx, flat_points[pt_idx].x, flat_points[pt_idx].y, flat_points[pt_idx].x - cx,
+				// 		flat_points[pt_idx].y - cy);
+				// }
+			}
+		}
+	}
+
+	// for (int u = 0; u < winSize; ++u) {
+	// 	for (int v = 0; v < winSize; ++v) {
+	// 		int pt_idx = debug_lens_offset + (u * winSize + v);
+	// 		debug_x.at<float>(u, v) = flat_points[pt_idx].x;
+	// 		debug_y.at<float>(u, v) = flat_points[pt_idx].y;
+	// 	}
+	// }
+	// std::cout << std::format("\n[Debug] Center Lens({},{}) 9x9 X-Sampling Matrix:\n", r_mid, c_mid) << debug_x
+	// 		  << std::endl;
+	// std::cout << std::format("\n[Debug] Center Lens({},{}) 9x9 Y-Sampling Matrix:\n", r_mid, c_mid) << debug_y
+	// 		  << std::endl;
+	// --- [此处可插入代码：打印旋转后的特定点坐标进行对比] ---
+
+	// --- 第三步：重排为视角地图 (cv::Mat) ---
+	_extract_maps.clear();
+	_extract_maps.resize(total_views * 2);
+
+	for (int uv = 0; uv < total_views; ++uv) {
+		int u = uv / winSize;
+		int v = uv % winSize;
+
+		cv::Mat map_x(m_rows, m_cols, CV_32F);
+		cv::Mat map_y(m_rows, m_cols, CV_32F);
+
+#pragma omp parallel for
+		for (int r = 0; r < m_rows; ++r) {
+			float *ptr_x = map_x.ptr<float>(r);
+			float *ptr_y = map_y.ptr<float>(r);
+			for (int c = 0; c < m_cols; ++c) {
+				int pt_idx = (r * m_cols + c) * total_views + uv;
+				ptr_x[c] = flat_points[pt_idx].x;
+				ptr_y[c] = flat_points[pt_idx].y;
+			}
+		}
+
+		int idx = uv * 2;
+		_extract_maps[idx] = map_x;
+		_extract_maps[idx + 1] = map_y;
+	}
+
+	std::cout << std::format("[LFCalibrate] Extract maps computed with Rotation: {:.4f} deg, Space: {:.2f}", rad, space)
 			  << std::endl;
 
 	return _extract_maps;

@@ -53,7 +53,7 @@ public:
 	 * @brief [新增] 增强版运行入口 (泛洪填充算法)
 	 * 针对边缘缺失、渐晕等情况更鲁棒
 	 */
-	void run2();
+	void run2(float rotation_deg = 0.0f);
 
 	// === 核心查找方法 (原有) ===
 	std::vector<cv::Point2f> neighbors_by_idx(const IntIndex &idx, int radius = 3) const;
@@ -70,11 +70,11 @@ public:
 	std::vector<int> getPointsSize() const { return _size; }
 	bool getHexOdd() const { return _hex_odd; }
 	std::vector<cv::Point2f> const getPoints() { return _centroids_list; }
-	std::pair<cv::Mat, cv::Mat> getPointsAsMats() const;
+	std::pair<cv::Mat, cv::Mat> getPointsAsMats(int crop = 0) const;
 
 private:
 	// === 新增辅助函数 (用于 run2) ===
-	void flood_fill_from_center();
+	void flood_fill_from_center(float rotation_deg = 0.0f);
 	cv::Point2f find_nearest_existing(const cv::Point2f &target, float radius) const;
 
 private:

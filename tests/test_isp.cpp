@@ -32,11 +32,7 @@ void test_isp() {
 	// cv::imshow("", isp.getPreviewResult());
 	// cv::waitKey();
 
-	isp.dpc_fast(DpcMethod::Diretional, 100)
-		.blc_fast(66, 1023)
-		.lsc_awb_fused_fast(0, {})
-		.demosaic(config.bayer)
-		.ccm_fast({});
+	isp.dpc_fast(100).blc_fast(66, 1023).lsc_awb_fused_fast(0, {}).demosaic(config.bayer).ccm_fast({});
 	cv::Mat img;
 	isp.getResult().convertTo(img, CV_8U, 255.0 / 1023.0);
 	cv::imshow("", img);
@@ -255,7 +251,7 @@ void test_gpu() {
 	config.enableBLC = true;
 	config.enableDPC = true;
 	config.enableLSC = true;
-	config.enableAWB = true;
+	config.enableWB = true;
 	config.enableDemosaic = true;
 	config.enableCCM = true;
 	config.enableGamma = true;
@@ -331,7 +327,7 @@ void benchmark() {
 	config.enableBLC = true;
 	config.enableDPC = true;
 	config.enableLSC = true;
-	config.enableAWB = true;
+	config.enableWB = true;
 	config.enableDemosaic = true;
 	config.enableCCM = true;
 	config.enableGamma = true;

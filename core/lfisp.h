@@ -1,7 +1,6 @@
 ﻿#ifndef LFISP_H
 #define LFISP_H
 
-#include "colormatcher.h"
 #include "hexgrid_fit.h"
 #include "json.hpp"
 #include "utils.h"
@@ -18,7 +17,6 @@
 
 using json = nlohmann::json;
 
-enum class DpcMethod { Diretional };
 enum class Device { CPU, CPU_OPENMP_SIMD, GPU };
 static constexpr int FIXED_BITS = 10;		  // 位移量
 static constexpr float FIXED_SCALE = 1024.0f; // 缩放因子 (1 << 10)
@@ -31,14 +29,13 @@ struct IspConfig {
 	std::vector<float> ccm_matrix = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
 	float gamma = 1.0f;
 
-	DpcMethod dpcMethod = DpcMethod::Diretional;
 	int dpcThreshold = 25;
 	float rawnr_sigma_s = 1.5f;	 // 空间域：对应约 5x5 窗口
 	float rawnr_sigma_r = 15.0f; // 值域：保护边缘，滤除中低强度噪点
 	float lscExp = 1.0;
 	float uvnr_sigma_s = 3.0f;	// 空间域：色度斑块通常是低频的，半径需略大
 	float uvnr_sigma_r = 20.0f; // 值域：色度边缘较缓，可放宽过滤阈值以抹除色斑
-	ColorEqualizeMethod colorEqMethod = ColorEqualizeMethod::Reinhard;
+
 	float ceClipLimit = 2.0f;
 	int ceGridSize = 8;
 	float seFactor = 1.2f;
@@ -48,15 +45,14 @@ struct IspConfig {
 	bool enableDPC = true;
 	bool enableRawNR = true;
 	bool enableLSC = true;
-	bool enableAWB = true;
+	bool enableWB = true;
 	bool enableDemosaic = true;
 	bool enableCCM = true;
 	bool enableGamma = true;
 	bool enableCSC = true;
 	bool enableUVNR = true;
-	bool enableColorEq = true;
-	bool enableCE = true;
-	bool enableSE = true;
+	bool enableCE = false;
+	bool enableSE = false;
 	bool enableExtract = true;
 	bool enableDehex = true;
 	bool benchmark = false;
@@ -101,14 +97,13 @@ public:
 	LFIsp &gc(float gamma);
 	LFIsp &csc();
 	LFIsp &uvnr(float h_sigma_s, float h_sigma_r);
-	LFIsp &color_eq(ColorEqualizeMethod method);
 	LFIsp &ce(float clipLimit = 2.0f, int gridSize = 8);
 	LFIsp &se(float factor = 1.2f);
 	LFIsp &process(const IspConfig &config);
 
 	// openmp+simd accelerated
 	LFIsp &blc_fast(int black_level, int white_level);
-	LFIsp &dpc_fast(DpcMethod method, int threshold = 100);
+	LFIsp &dpc_fast(int threshold = 100);
 	LFIsp &rawnr_fast(float sigma_spatial, float sigma_color);
 	LFIsp &lsc_fast(float exposure);
 	LFIsp &awb_fast(const std::vector<float> &wbgains);
@@ -136,11 +131,14 @@ private:
 
 private:
 	void prepare_lsc_maps(const cv::Mat &raw_wht, int black_level);
+	void prepare_lsc_maps_python_style(const cv::Mat &raw_wht, int black_level);
+	void prepare_lsc_maps_optimized(const cv::Mat &raw_wht, int black_level, BayerPattern pattern);
 	void prepare_ccm_fixed_point(const std::vector<float> &matrix);
 	void prepare_gamma_lut(float gamma, int bitDepth);
 
 public: // gpu
 	LFIsp &set_lf_gpu(const cv::Mat &img);
+	LFIsp &set_white_gpu(const cv::Mat &img, int black_level, int white_level);
 	cv::Mat getResultGpu();
 	std::vector<cv::Mat> getSAIsGpu();
 	void update_resample_maps();
@@ -149,13 +147,13 @@ public: // gpu
 	LFIsp &dpc_gpu(int threshold);
 	LFIsp &nr_gpu(float sigma_spatial, float sigma_color);
 	LFIsp &lsc_gpu(float exposure);
+	LFIsp &lsc_gpu();
 	LFIsp &awb_gpu(const std::vector<float> &wbgains);
 	LFIsp &lsc_awb_fused_gpu(float exposure, const std::vector<float> &wbgains);
 	LFIsp &demosaic_gpu(BayerPattern bayer);
 	LFIsp &ccm_gpu(const std::vector<float> &ccm_matrix);
 	LFIsp &gc_gpu(float gamma);
 	LFIsp &csc_gpu();
-	LFIsp &color_eq_gpu(ColorEqualizeMethod method);
 	LFIsp &uvnr_gpu(float h_sigma_s, float h_sigma_r);
 	LFIsp &ce_gpu(float clipLimit = 2.0f, int gridSize = 8);
 	LFIsp &se_gpu(float factor = 1.2f);
@@ -165,7 +163,7 @@ public: // gpu
 	LFIsp &global_resample_gpu(std::shared_ptr<HexGridFitter> fitter, bool hex_stretch = true);
 
 private:
-	cv::cuda::GpuMat lfp_img_gpu, lsc_map_gpu;
+	cv::cuda::GpuMat lfp_img_gpu, lsc_map_gpu, white_img_gpu;
 	cv::cuda::Stream stream;
 	std::vector<cv::cuda::GpuMat> sais_gpu;
 	std::vector<cv::cuda::GpuMat> extract_maps_gpu;

@@ -1,10 +1,11 @@
 ﻿#include "lfcontrol.h"
 
-#include "colormatcher.h"
+#include "colorequalize.h"
 #include "config.h"
 #include "lfcalibrate.h"
 #include "lfdata.h"
 #include "lfde.h"
+#include "lfio.h"
 #include "lfisp.h"
 #include "lfparams.h"
 #include "lfsr.h"
@@ -17,11 +18,13 @@
 #include <format>
 #include <memory>
 #include <opencv2/core/hal/interface.h>
+#include <opencv2/core/types.hpp>
 #include <opencv2/highgui.hpp>
 #include <qcontainerfwd.h>
 #include <qtmetamacros.h>
 #include <string>
 #include <thread>
+#include <utility>
 
 const std::string CONFIG_FILE = "data/config.json";
 
@@ -176,7 +179,7 @@ void LFControl::readSAI(const QString &path) {
 	runAsync(
 		[this, path] {
 			// 1. 耗时操作
-			std::shared_ptr<LFData> tempLF = io->ReadSAI(path.toStdString());
+			std::shared_ptr<LFData> tempLF = LFIO::ReadSAI(path.toStdString());
 
 			// 2. 加锁赋值
 			{
@@ -202,7 +205,7 @@ void LFControl::readLFP(const QString &path) {
 			if (params.imageType == ImageFileType::Lytro) {
 				json LfpMeta;
 				// 读取 LFP 并获取元数据 j
-				lfraw = io->ReadLFP(path.toStdString(), LfpMeta);
+				lfraw = LFIO::ReadLFP(path.toStdString(), LfpMeta);
 				isp->parseJsonToConfig(LfpMeta, params.isp);
 				params.image.bayer = params.calibrate.bayer = params.isp.bayer;
 				params.image.bitDepth = params.calibrate.bitDepth = params.isp.bitDepth;
@@ -211,17 +214,20 @@ void LFControl::readLFP(const QString &path) {
 				if (!params.path.white.empty() && std::filesystem::is_directory(params.path.white)) {
 					// 传入 LFP 路径(用于提取Key) 和 标定目录
 					json WhiteMeta;
-					cv::Mat autoWhite = io->ReadWhiteImageAuto(path.toStdString(), params.path.white, WhiteMeta);
+					cv::Mat autoWhite = LFIO::ReadWhiteImageAuto(path.toStdString(), params.path.white, WhiteMeta);
 					if (!autoWhite.empty()) {
 						white = autoWhite; // 更新类的白图成员变量
-						isp->initConfig(white, params.isp);
+						params.calibrate.rot = WhiteMeta["master"]["picture"]["frameArray"][0]["frame"]["metadata"]
+														["devices"]["mla"]["rotation"];
+						isp->initConfig(white, params.isp)
+							.set_white_gpu(white, params.isp.black_level, params.isp.white_level);
 						LOG_INFO("Auto-loaded white imagesuccessfully.");
 						emit imageReady(ImageType::White, cvMatToQImage(white, params.image.bitDepth));
 					}
 				}
 			} else if (params.imageType == ImageFileType::Raw) {
 			} else {
-				lfraw = io->ReadStandardImage(path.toStdString());
+				lfraw = LFIO::ReadStandardImage(path.toStdString());
 			}
 			params.image.height = lfraw.size().height;
 			params.image.width = lfraw.size().width;
@@ -237,13 +243,16 @@ void LFControl::readWhite(const QString &path) {
 		[this, path] {
 			json WhiteMeta;
 			if (params.imageType == ImageFileType::Lytro) {
-				white = io->ReadWhiteImageManual(path.toStdString(), WhiteMeta);
+				white = LFIO::ReadWhiteImageManual(path.toStdString(), WhiteMeta);
+				params.calibrate.rot =
+					WhiteMeta["master"]["picture"]["frameArray"][0]["frame"]["metadata"]["devices"]["mla"]["rotation"];
 				params.image.bitDepth = 10;
 				params.image.bayer = BayerPattern::GRBG;
-				isp->initConfig(white, params.isp);
+				isp->initConfig(white, params.isp).set_white_gpu(white, params.isp.black_level, params.isp.white_level);
+
 			} else if (params.imageType == ImageFileType::Raw) {
 			} else {
-				white = io->ReadStandardImage(path.toStdString());
+				white = LFIO::ReadStandardImage(path.toStdString());
 				// white = 255 - white;
 			}
 
@@ -261,7 +270,7 @@ void LFControl::readExtractLUT(const QString &path) {
 		[this, path] {
 			params.path.extractLUT = path.toStdString();
 			// 加载到 isp->maps.extract
-			if (io->LoadLookUpTables(params.path.extractLUT, isp->maps.extract, params.calibrate.views)) {
+			if (LFIO::LoadLookUpTables(params.path.extractLUT, isp->maps.extract, params.calibrate.views)) {
 				params.sai.cols = params.sai.rows = params.calibrate.views;
 
 				// 【核心修复】必须同步到 GPU，否则会出现影子移动但视角不变
@@ -279,7 +288,7 @@ void LFControl::readDehexLUT(const QString &path) {
 		[this, path] {
 			params.path.dehexLUT = path.toStdString();
 			int _;
-			if (io->LoadLookUpTables(params.path.dehexLUT, isp->maps.dehex, _)) {
+			if (LFIO::LoadLookUpTables(params.path.dehexLUT, isp->maps.dehex, _)) {
 				// 【核心修复】必须同步到 GPU
 				isp->update_resample_maps();
 				emit paramsChanged();
@@ -302,14 +311,34 @@ void LFControl::calibrate() {
 				isp->maps.dehex = cal->getDehexMaps();
 				isp->update_resample_maps();
 			}
-			if (!cal->isExtractLutEmpty() && !cal->isDehexLutEmpty()) {
-				io->SaveLookUpTables(std::format("data/calibration/lut_extract_{}.bin", params.calibrate.views),
-									 cal->getExtractMaps(), params.calibrate.views);
-				io->SaveLookUpTables("data/calibration/lut_dehex.bin", cal->getDehexMaps(), 1);
+			if (params.calibrate.saveLUT && !cal->isExtractLutEmpty() && !cal->isDehexLutEmpty()) {
+				LFIO::SaveLookUpTables(std::format("data/calibration/lut_extract_{}.bin", params.calibrate.views),
+									   cal->getExtractMaps(), params.calibrate.views);
+				LFIO::SaveLookUpTables("data/calibration/lut_dehex.bin", cal->getDehexMaps(), 1);
 				LOG_INFO("LUTs saved to data/calibration/");
 			}
-			cv::Mat draw = draw_points(white, cal->getPoints(), 0, cv::Scalar(0));
-			emit imageReady(ImageType::White, cvMatToQImage(draw, params.image.bitDepth));
+			auto maps = cal->getPoints();
+
+			// std::ofstream file("data/calibration/maps.csv");
+			// if (file.is_open()) {
+			// 	int rows = maps.first.rows;
+			// 	for (int i = 0; i < maps.first.rows; ++i) {
+			// 		for (int j = 0; j < maps.first.cols; j++) {
+			// 			float x = maps.first.at<float>(i, j);
+			// 			float y = maps.second.at<float>(i, j);
+			// 			file << x << "," << y << "\n";
+			// 		}
+			// 	}
+			// 	file.close();
+			// 	LOG_INFO("Maps saved to data/calibration/maps.csv");
+			// }
+
+			if (params.calibrate.showPoints) {
+				cv::Mat draw = draw_points(white, std::make_pair(cal->getPoints().first, cal->getPoints().second), 0,
+										   cv::Scalar(0, 0, 255));
+				// cv::Mat draw = draw_points(white, maps, 0, cv::Scalar(0, 0, 255));
+				emit imageReady(ImageType::White, cvMatToQImage(draw, params.image.bitDepth));
+			}
 			emit paramsChanged();
 		},
 		"Calibrating");
@@ -375,7 +404,7 @@ void LFControl::process() {
 }
 
 void LFControl::saveSAI(const QString &path) {
-	runAsync([this, path] { io->SaveSAI(path.toStdString(), lf->data); }, "Save sai");
+	runAsync([this, path] { LFIO::SaveSAI(path.toStdString(), lf->data); }, "Save sai");
 }
 
 void LFControl::fast_preview() {
@@ -443,67 +472,90 @@ void LFControl::updateSAI(int row, int col) {
 		"SAI updated");
 }
 
-void LFControl::play() {
+void LFControl::play(int playSize) {
 	if (!params.sai.isPlaying) {
 		return;
 	}
-	runAsync(
-		[this] {
-			LOG_INFO("Playing...");
 
-			// 缓存一下边界，使代码更简洁
-			// 假设 params.sai.row/col 是 1-based 索引 (1 到 N)
-			const int maxR = params.sai.rows;
-			const int maxC = params.sai.cols;
+	runAsync(
+		[this, playSize] {
+			LOG_INFO(std::format("Playing in {}x{} area...", playSize, playSize));
+
+			// 1. 计算裁剪后的边界 (基于 1-based 索引)
+			// 计算填充量。例如 9x9 播 7x7，则 padding = (9-7)/2 = 1
+			int padR = std::max(0, (params.sai.rows - playSize) / 2);
+			int padC = std::max(0, (params.sai.cols - playSize) / 2);
+
+			const int minR = 1 + padR;
+			const int maxR = params.sai.rows - padR;
+			const int minC = 1 + padC;
+			const int maxC = params.sai.cols - padC;
+
+			// 如果计算出的范围无效（如 playSize > rows），强制设为满视角
+			if (minR >= maxR || minC >= maxC) {
+				// 降级逻辑... 略
+			}
 
 			while (params.sai.isPlaying) {
-				// --- TODO 开始: 计算下一帧坐标 ---
 				int r = params.sai.row;
 				int c = params.sai.col;
 
-				// 1. 上边缘 (Row=1): 向右走
-				if (r == 1 && c < maxC) {
-					c++;
-				}
-				// 2. 右边缘 (Col=Max): 向下走
-				else if (c == maxC && r < maxR) {
-					r++;
-				}
-				// 3. 下边缘 (Row=Max): 向左走
-				else if (r == maxR && c > 1) {
-					c--;
-				}
-				// 4. 左边缘 (Col=1): 向上走
-				else if (c == 1 && r > 1) {
-					r--;
-				}
-				// 5. 如果当前点不在边缘上（比如一开始就在中间），或者 1x1
-				// 的情况
-				else {
-					// 强制归位到左上角，开始循环
-					r = 1;
-					c = 1;
-					// 如果网格大于 1x1，下一步移动到 (1,2)
-					if (maxC > 1)
-						c = 2;
-					else if (maxR > 1)
-						r = 2;
+				// 2. 边界检查：如果当前位置在播放范围外，强行拉回起始点 (minR, minC)
+				if (r < minR || r > maxR || c < minC || c > maxC) {
+					r = minR;
+					c = minC;
+				} else {
+					// 3. 核心逻辑：按照裁剪后的矩形边缘移动
+					// 上边缘: 向右
+					if (r == minR && c < maxC) {
+						c++;
+					}
+					// 右边缘: 向下
+					else if (c == maxC && r < maxR) {
+						r++;
+					}
+					// 下边缘: 向左
+					else if (r == maxR && c > minC) {
+						c--;
+					}
+					// 左边缘: 向上
+					else if (c == minC && r > minR) {
+						r--;
+					}
+					// 内部或 1x1 情况：强制回到起始点
+					else {
+						r = minR;
+						c = minC;
+					}
 				}
 
 				// 更新状态
 				params.sai.row = r;
 				params.sai.col = c;
-				// --- TODO 结束 ---
 
-				// 发送信号更新界面
-				// 注意：getSAI 使用 0-based 索引，所以这里减 1
-				emit imageReady(ImageType::Center, cvMatToQImage(lf->getSAI(params.sai.row - 1, params.sai.col - 1),
-																 params.image.bitDepth));
+				// 发送信号
+				emit imageReady(ImageType::Center, cvMatToQImage(lf->getSAI(r - 1, c - 1), params.image.bitDepth));
 				emit paramsChanged();
+
 				std::this_thread::sleep_for(std::chrono::milliseconds(50));
 			}
 		},
 		"SAI played");
+}
+
+void LFControl::colorEqualize() {
+	runAsync(
+		[this] {
+			if (!lf || lf->data.empty()) {
+				LOG_WARN("[Color Equalization] Cancelled: Light field data is empty!");
+				return;
+			}
+			ColorEqualize::equalize(lf->data, params.colorEqMethod);
+
+			emit imageReady(ImageType::Center, cvMatToQImage(lf->getCenter(), 8));
+			emit paramsChanged();
+		},
+		"Color equalization");
 }
 
 void LFControl::refocus() {

@@ -29,6 +29,7 @@ if(WIN32)
     add_compile_options($<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:CXX>>:/Ob2>)
     add_compile_options($<$<CONFIG:RelWithDebInfo>:/O2>)
     add_compile_options($<$<CONFIG:RelWithDebInfo>:/Ob2>)
+    # add_compile_options(/openmp:llvm)
 
     # --- 依赖库路径 ---
     set(OpenCV_DIR "D:\\Libraries\\opencv-4.11.0-cuda-12.8")
@@ -134,7 +135,7 @@ set(SRCS_CORE
     core/lfsr.cpp
     core/distgssr.cpp
     core/lfisp.cpp
-    core/colormatcher.cpp
+    core/colorequalize.cpp
     core/trtwrapper.cpp
     core/califinder.cpp
     core/dpc.cu
@@ -146,7 +147,6 @@ set(SRCS_CORE
     core/gc.cu
     core/ccm_gc.cu
     core/uvnr.cu
-    core/colormatcher.cu
     core/se.cu
 )
 
@@ -213,6 +213,7 @@ target_precompile_headers(${BIN_NAME} PRIVATE ${SOURCE_DIR}/pch.h)
 
 # 添加测试子目录
 add_subdirectory(tests)
+add_subdirectory(tools)
 
 # ==============================================================================
 # 6. 资源拷贝 (跨平台：Linux/Windows 都会执行)

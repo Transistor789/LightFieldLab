@@ -140,7 +140,10 @@ void LFIO::SaveSAI(const std::string &path, const std::vector<cv::Mat> &lf) {
 	// 2. 遍历并保存图像
 	for (size_t i = 0; i < lf.size(); ++i) {
 		// 使用 C++20 std::format 匹配命名规则 input_Cam%03d
-		std::string fileName = std::format("input_Cam{:03d}.bmp", i + 1);
+		int views = static_cast<int>(lf.size());
+		int row = i / views;
+		int col = i % views;
+		std::string fileName = std::format("{:02d}_{:02d}.png", row, col);
 		fs::path fullPath = fs::path(path) / fileName;
 
 		try {

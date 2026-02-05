@@ -31,8 +31,7 @@ void CentroidsExtract::run(ExtractMethod method) {
 	} else {
 		_points = log_nms(_img, static_cast<double>(_estimatedM));
 		// crop_centers = log_nms(_cropImg, static_cast<double>(_estimatedM));
-		_pitch =
-			estimatePitchFromPoints(_points, static_cast<double>(_estimatedM));
+		_pitch = estimatePitchFromPoints(_points, static_cast<double>(_estimatedM));
 	}
 
 	// 3. 裁剪图检测
@@ -41,13 +40,10 @@ void CentroidsExtract::run(ExtractMethod method) {
 	// 4. 计算间距
 
 	// --- 输出调试信息 ---
-	std::cout << std::format("[CentroidsExtract] ExtractMethod: {}, Results:",
-							 getMethodString(method))
-			  << std::endl;
+	std::cout << std::format("[CentroidsExtract] ExtractMethod: {}, Results:", getMethodString(method)) << std::endl;
 	std::cout << "  > Diameter: " << _estimatedM << std::endl;
 	std::cout << "  > Points Count: " << _points.size() << std::endl;
-	std::cout << "  > Pitch: [" << _pitch[0] << ", " << _pitch[1] << "]"
-			  << std::endl;
+	std::cout << "  > Pitch: [" << _pitch[0] << ", " << _pitch[1] << "]" << std::endl;
 }
 
 void CentroidsExtract::run(ExtractMethod method, int diameter) {
@@ -59,18 +55,14 @@ void CentroidsExtract::run(ExtractMethod method, int diameter) {
 	} else {
 		_points = log_nms(_img, static_cast<double>(diameter));
 		// crop_centers = log_nms(_cropImg, static_cast<double>(diameter));
-		_pitch =
-			estimatePitchFromPoints(_points, static_cast<double>(diameter));
+		_pitch = estimatePitchFromPoints(_points, static_cast<double>(diameter));
 	}
 
 	// --- 输出调试信息 ---
-	std::cout << std::format("[CentroidsExtract] ExtractMethod: {}, Results:",
-							 getMethodString(method))
-			  << std::endl;
+	std::cout << std::format("[CentroidsExtract] ExtractMethod: {}, Results:", getMethodString(method)) << std::endl;
 	std::cout << "  > Diameter: " << _estimatedM << std::endl;
 	std::cout << "  > Points Count: " << _points.size() << std::endl;
-	std::cout << "  > Pitch: [" << _pitch[0] << ", " << _pitch[1] << "]"
-			  << std::endl;
+	std::cout << "  > Pitch: [" << _pitch[0] << ", " << _pitch[1] << "]" << std::endl;
 }
 
 cv::Mat CentroidsExtract::createGaussKernel(int length, float sigma) {
@@ -80,8 +72,7 @@ cv::Mat CentroidsExtract::createGaussKernel(int length, float sigma) {
 	return kernel1D * kernel1D.t();
 }
 
-std::vector<int> CentroidsExtract::findRelativeMaximaIndices(
-	const std::vector<float> &y) {
+std::vector<int> CentroidsExtract::findRelativeMaximaIndices(const std::vector<float> &y) {
 	std::vector<int> indices;
 	for (size_t i = 1; i < y.size() - 1; ++i) {
 		if (y[i] > y[i - 1] && y[i] > y[i + 1]) {
@@ -91,8 +82,7 @@ std::vector<int> CentroidsExtract::findRelativeMaximaIndices(
 	return indices;
 }
 
-std::vector<float> CentroidsExtract::computeSignedGradient(
-	const std::vector<float> &x, int /*precision*/) {
+std::vector<float> CentroidsExtract::computeSignedGradient(const std::vector<float> &x, int /*precision*/) {
 	if (x.size() < 2)
 		return {};
 	std::vector<float> grad(x.size());
@@ -121,8 +111,7 @@ cv::Mat CentroidsExtract::ensureGrayUint8(const cv::Mat &img) {
 	return gray;
 }
 
-std::vector<cv::Point2f> CentroidsExtract::detectMlaCenters(
-	const cv::Mat &img, int blockSize, ExtractMethod method) {
+std::vector<cv::Point2f> CentroidsExtract::detectMlaCenters(const cv::Mat &img, int blockSize, ExtractMethod method) {
 	// 1. 预处理：转灰度
 	cv::Mat gray = ensureGrayUint8(img);
 	int h = gray.rows;
@@ -134,14 +123,12 @@ std::vector<cv::Point2f> CentroidsExtract::detectMlaCenters(
 	blockSize = std::max(blockSize, 3);
 
 	cv::Mat binary;
-	cv::adaptiveThreshold(gray, binary, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C,
-						  cv::THRESH_BINARY, blockSize, 1);
+	cv::adaptiveThreshold(gray, binary, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, blockSize, 1);
 
 	// 3. 预处理：形态学去噪 (腐蚀)
 	// 腐蚀可以分离粘连的光斑，对微透镜阵列图像非常重要
 	int erodeSize = 2;
-	cv::Mat element = cv::getStructuringElement(
-		cv::MORPH_ELLIPSE, cv::Size(2 * erodeSize + 1, 2 * erodeSize + 1));
+	cv::Mat element = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(2 * erodeSize + 1, 2 * erodeSize + 1));
 	cv::erode(binary, binary, element);
 
 	// 准备结果容器和边界余量
@@ -153,8 +140,7 @@ std::vector<cv::Point2f> CentroidsExtract::detectMlaCenters(
 	// =========================================================
 	if (method == ExtractMethod::CCA) {
 		cv::Mat labels, stats, centroids;
-		int nLabels = cv::connectedComponentsWithStats(binary, labels, stats,
-													   centroids, 8, CV_32S);
+		int nLabels = cv::connectedComponentsWithStats(binary, labels, stats, centroids, 8, CV_32S);
 		// 预分配内存
 		centers.reserve(nLabels);
 
@@ -167,8 +153,7 @@ std::vector<cv::Point2f> CentroidsExtract::detectMlaCenters(
 			float cy = static_cast<float>(centroids.at<double>(i, 1));
 
 			// 边界检查
-			if (cx >= margin && cx <= w - margin && cy >= margin
-				&& cy <= h - margin) {
+			if (cx >= margin && cx <= w - margin && cy >= margin && cy <= h - margin) {
 				centers.emplace_back(cx, cy);
 			}
 		}
@@ -179,8 +164,7 @@ std::vector<cv::Point2f> CentroidsExtract::detectMlaCenters(
 	// 分支 2 & 3: 基于轮廓的处理 (Contour & GrayGravity)
 	// =========================================================
 	std::vector<std::vector<cv::Point>> contours;
-	cv::findContours(binary, contours, cv::RETR_EXTERNAL,
-					 cv::CHAIN_APPROX_SIMPLE);
+	cv::findContours(binary, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 	centers.reserve(contours.size());
 
 	for (const auto &cnt : contours) {
@@ -206,9 +190,7 @@ std::vector<cv::Point2f> CentroidsExtract::detectMlaCenters(
 				p.x -= r.x;
 				p.y -= r.y;
 			}
-			cv::drawContours(maskROI,
-							 std::vector<std::vector<cv::Point>>{localCnt}, 0,
-							 cv::Scalar(255), cv::FILLED);
+			cv::drawContours(maskROI, std::vector<std::vector<cv::Point>>{localCnt}, 0, cv::Scalar(255), cv::FILLED);
 
 			// 4. 应用掩码提取有效像素
 			// 这里优化一下：不一定要copyTo，可以直接传 mask 给 moments 吗？
@@ -240,10 +222,8 @@ std::vector<cv::Point2f> CentroidsExtract::detectMlaCenters(
 
 		// 统一保存结果
 		if (valid) {
-			if (cx >= margin && cx <= w - margin && cy >= margin
-				&& cy <= h - margin) {
-				centers.emplace_back(static_cast<float>(cx),
-									 static_cast<float>(cy));
+			if (cx >= margin && cx <= w - margin && cy >= margin && cy <= h - margin) {
+				centers.emplace_back(static_cast<float>(cx), static_cast<float>(cy));
 			}
 		}
 	}
@@ -251,8 +231,7 @@ std::vector<cv::Point2f> CentroidsExtract::detectMlaCenters(
 	return centers;
 }
 
-std::vector<float> CentroidsExtract::estimatePitchXY(
-	const std::vector<cv::Point2f> &points, int K, float tol) {
+std::vector<float> CentroidsExtract::estimatePitchXY(const std::vector<cv::Point2f> &points, int K, float tol) {
 	if (points.size() < 2)
 		return {0.0f, 0.0f};
 
@@ -265,26 +244,22 @@ std::vector<float> CentroidsExtract::estimatePitchXY(
 	// --- 1. 自动估计 K ---
 	if (K <= 0) {
 		std::vector<float> yVals(points.size());
-		std::transform(points.begin(), points.end(), yVals.begin(),
-					   [](const cv::Point2f &p) { return p.y; });
+		std::transform(points.begin(), points.end(), yVals.begin(), [](const cv::Point2f &p) { return p.y; });
 		std::sort(yVals.begin(), yVals.end());
 
 		std::vector<float> diffs;
-		std::adjacent_difference(yVals.begin(), yVals.end(),
-								 std::back_inserter(diffs));
+		std::adjacent_difference(yVals.begin(), yVals.end(), std::back_inserter(diffs));
 		if (!diffs.empty())
 			diffs.erase(diffs.begin());
 
 		if (!diffs.empty()) {
-			double mean =
-				std::accumulate(diffs.begin(), diffs.end(), 0.0) / diffs.size();
+			double mean = std::accumulate(diffs.begin(), diffs.end(), 0.0) / diffs.size();
 			double var = 0.0;
 			for (float d : diffs) var += (d - mean) * (d - mean);
 			double stdDev = std::sqrt(var / diffs.size());
 
-			int gaps = std::count_if(diffs.begin(), diffs.end(), [&](float d) {
-				return d > static_cast<float>(mean + stdDev);
-			});
+			int gaps = std::count_if(diffs.begin(), diffs.end(),
+									 [&](float d) { return d > static_cast<float>(mean + stdDev); });
 			K = gaps + 1;
 		} else {
 			K = 1;
@@ -294,8 +269,7 @@ std::vector<float> CentroidsExtract::estimatePitchXY(
 
 	// --- 2. K-means on Y ---
 	cv::Mat labels, centers_mat;
-	cv::TermCriteria criteria(
-		cv::TermCriteria::EPS + cv::TermCriteria::MAX_ITER, 100, 0.1);
+	cv::TermCriteria criteria(cv::TermCriteria::EPS + cv::TermCriteria::MAX_ITER, 100, 0.1);
 	cv::kmeans(Y, K, labels, criteria, 10, cv::KMEANS_PP_CENTERS, centers_mat);
 
 	// --- 3. 排序聚类中心 ---
@@ -331,12 +305,10 @@ std::vector<float> CentroidsExtract::estimatePitchXY(
 
 		std::sort(xCoords.begin(), xCoords.end());
 		std::vector<float> diffs;
-		std::adjacent_difference(xCoords.begin(), xCoords.end(),
-								 std::back_inserter(diffs));
+		std::adjacent_difference(xCoords.begin(), xCoords.end(), std::back_inserter(diffs));
 		diffs.erase(diffs.begin());
 
-		float rowPitch =
-			std::accumulate(diffs.begin(), diffs.end(), 0.0f) / diffs.size();
+		float rowPitch = std::accumulate(diffs.begin(), diffs.end(), 0.0f) / diffs.size();
 		allPitchesX.push_back(rowPitch);
 	}
 
@@ -350,15 +322,10 @@ std::vector<float> CentroidsExtract::estimatePitchXY(
 
 	// --- 6. 结果汇总 ---
 	float avgPitchX =
-		allPitchesX.empty()
-			? 0.0f
-			: std::accumulate(allPitchesX.begin(), allPitchesX.end(), 0.0f)
-				  / allPitchesX.size();
-	float avgPitchY =
-		pitchesYDiff.empty()
-			? 0.0f
-			: std::accumulate(pitchesYDiff.begin(), pitchesYDiff.end(), 0.0f)
-				  / pitchesYDiff.size();
+		allPitchesX.empty() ? 0.0f : std::accumulate(allPitchesX.begin(), allPitchesX.end(), 0.0f) / allPitchesX.size();
+	float avgPitchY = pitchesYDiff.empty()
+						  ? 0.0f
+						  : std::accumulate(pitchesYDiff.begin(), pitchesYDiff.end(), 0.0f) / pitchesYDiff.size();
 
 	// 回退到六边形假设
 	if (avgPitchY < 1e-6f && avgPitchX > 1e-6f) {
@@ -375,11 +342,9 @@ std::vector<float> CentroidsExtract::estimatePitchXY(
 void CentroidsExtract::cropImage() {
 	int S = _img.rows / 2;
 	int halfCrop = S / _CR;
-	cv::Rect roi(S - halfCrop, S - halfCrop, 2 * halfCrop - 1,
-				 2 * halfCrop - 1);
+	cv::Rect roi(S - halfCrop, S - halfCrop, 2 * halfCrop - 1, 2 * halfCrop - 1);
 
-	if (roi.x < 0 || roi.y < 0 || roi.x + roi.width > _img.cols
-		|| roi.y + roi.height > _img.rows) {
+	if (roi.x < 0 || roi.y < 0 || roi.x + roi.width > _img.cols || roi.y + roi.height > _img.rows) {
 		throw std::runtime_error("Crop ROI is out of image bounds.");
 	}
 
@@ -402,12 +367,10 @@ void CentroidsExtract::createScaleSpace() {
 	while (current.rows >= 3 && current.cols >= 3) {
 		cv::Mat gauss1, gauss2;
 
-		cv::filter2D(current, gauss1, CV_32F, sigOne, cv::Point(-1, -1), 0,
-					 cv::BORDER_CONSTANT);
+		cv::filter2D(current, gauss1, CV_32F, sigOne, cv::Point(-1, -1), 0, cv::BORDER_CONSTANT);
 		_scaleSpace.emplace_back(-(gauss1 - current));
 
-		cv::filter2D(gauss1, gauss2, CV_32F, sigSqrt, cv::Point(-1, -1), 0,
-					 cv::BORDER_CONSTANT);
+		cv::filter2D(gauss1, gauss2, CV_32F, sigSqrt, cv::Point(-1, -1), 0, cv::BORDER_CONSTANT);
 		_scaleSpace.emplace_back(-(gauss2 - gauss1));
 
 		cv::resize(gauss2, current, cv::Size(), 0.5, 0.5, cv::INTER_NEAREST);
@@ -420,14 +383,16 @@ std::string CentroidsExtract::getMethodString(ExtractMethod method) const {
 		methodStr = "Contour";
 	} else if (method == ExtractMethod::GrayGravity) {
 		methodStr = "GrayGravity";
-	} else {
+	} else if (method == ExtractMethod::CCA) {
 		methodStr = "CCA";
+	} else if (method == ExtractMethod::LOG_NMS) {
+		methodStr = "LOG_NMS";
 	}
 	return methodStr;
 }
 
-std::pair<std::vector<float>, std::vector<float>>
-CentroidsExtract::interpolateMaxima(const std::vector<float> &maxima) {
+std::pair<std::vector<float>, std::vector<float>> CentroidsExtract::interpolateMaxima(
+	const std::vector<float> &maxima) {
 	// 简化：直接返回原数据 + 索引（nu = 0,1,2,...）
 	std::vector<float> nu(maxima.size());
 	std::iota(nu.begin(), nu.end(), 0.0f);
@@ -499,8 +464,7 @@ int CentroidsExtract::findScaleMax(bool useRelativeMax) {
 	return _estimatedM;
 }
 
-std::vector<cv::Point2f> CentroidsExtract::log_nms(const cv::Mat &img,
-												   double M) {
+std::vector<cv::Point2f> CentroidsExtract::log_nms(const cv::Mat &img, double M) {
 	if (img.empty())
 		return {};
 
@@ -640,8 +604,7 @@ std::vector<cv::Point2f> CentroidsExtract::log_nms(const cv::Mat &img,
 	return centroids;
 }
 
-std::vector<float> CentroidsExtract::estimatePitchFromPoints(
-	const std::vector<cv::Point2f> &points, double diameter) {
+std::vector<float> CentroidsExtract::estimatePitchFromPoints(const std::vector<cv::Point2f> &points, double diameter) {
 	if (points.size() < 2)
 		return {0.0f, 0.0f};
 
@@ -660,18 +623,16 @@ std::vector<float> CentroidsExtract::estimatePitchFromPoints(
 	// ≈ diameter)
 	float min_dist = static_cast<float>(diameter) * 0.8f;
 	float max_dist = static_cast<float>(diameter) * 1.5f;
-	float align_thresh =
-		static_cast<float>(diameter) * 0.5f; // 用于判定行/列对齐的容差
+	float align_thresh = static_cast<float>(diameter) * 0.5f; // 用于判定行/列对齐的容差
 
 	// --- 1. 计算 Pitch X ---
 	// 策略：按 Y 排序，Y 相近的点即为同一行，计算它们的 X 差值
 	std::vector<cv::Point2f> sorted_by_y = points;
-	std::sort(sorted_by_y.begin(), sorted_by_y.end(),
-			  [](const auto &a, const auto &b) {
-				  if (std::abs(a.y - b.y) < 1e-3)
-					  return a.x < b.x; // Y 相同时按 X 排
-				  return a.y < b.y;
-			  });
+	std::sort(sorted_by_y.begin(), sorted_by_y.end(), [](const auto &a, const auto &b) {
+		if (std::abs(a.y - b.y) < 1e-3)
+			return a.x < b.x; // Y 相同时按 X 排
+		return a.y < b.y;
+	});
 
 	std::vector<float> diffs_x;
 	diffs_x.reserve(points.size());
@@ -693,12 +654,11 @@ std::vector<float> CentroidsExtract::estimatePitchFromPoints(
 	// --- 2. 计算 Pitch Y ---
 	// 策略：按 X 排序，X 相近的点即为同一列，计算它们的 Y 差值
 	std::vector<cv::Point2f> sorted_by_x = points;
-	std::sort(sorted_by_x.begin(), sorted_by_x.end(),
-			  [](const auto &a, const auto &b) {
-				  if (std::abs(a.x - b.x) < 1e-3)
-					  return a.y < b.y; // X 相同时按 Y 排
-				  return a.x < b.x;
-			  });
+	std::sort(sorted_by_x.begin(), sorted_by_x.end(), [](const auto &a, const auto &b) {
+		if (std::abs(a.x - b.x) < 1e-3)
+			return a.y < b.y; // X 相同时按 Y 排
+		return a.x < b.x;
+	});
 
 	std::vector<float> diffs_y;
 	diffs_y.reserve(points.size());

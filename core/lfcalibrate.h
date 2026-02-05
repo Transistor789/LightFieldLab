@@ -26,12 +26,16 @@ enum class Orientation { HORZ, VERT };
 
 struct CalibrateConfig {
 	bool hexgridfit = false;
-	bool genLUT = false;
 	bool autoEstimate = false;
+	bool genLUT = false;
+	bool saveLUT = false;
+	bool showPoints = true;
 	int diameter = 0;
 	int bitDepth = 8;
 	int views = 9;
+	int crop = 0;
 	float space = 1.0;
+	float rot = 0.0;
 	BayerPattern bayer = BayerPattern::NONE;
 	ExtractMethod ceMethod = ExtractMethod::Contour;
 	Orientation orientation = Orientation::HORZ;
@@ -62,7 +66,8 @@ public:
 
 	std::pair<cv::Mat, cv::Mat> getPoints() const { return _maps; }
 
-	const std::vector<cv::Mat> &computeExtractMaps(int winSize, float space = 1.0f);
+	const std::vector<cv::Mat> &computeExtractMaps(int winSize, float space = 1.0f, float rad = 0.0f);
+	const std::vector<cv::Mat> &computeExtractMapsStepByStep(int winSize, float space, float rad);
 	const std::vector<cv::Mat> &computeDehexMaps();
 
 	// 获取 Dehex Maps

@@ -4,7 +4,6 @@
 #include "lfcalibrate.h"
 #include "lfcapture.h"
 #include "lfde.h"
-#include "lfio.h"
 #include "lfisp.h"
 #include "lfparams.h"
 #include "lfrefocus.h"
@@ -55,7 +54,8 @@ public slots:
 	void fast_preview();
 	void detectCamera();
 	void updateSAI(int row, int col);
-	void play();
+	void play(int playSize);
+	void colorEqualize();
 	void refocus();
 	void processAllInFocus();
 	void upsample();
@@ -109,7 +109,6 @@ private:
 	mutable std::mutex m_dataMtx; // 保护上述数据
 
 	// --- 模块实例 ---
-	std::unique_ptr<LFIO> io;
 	std::unique_ptr<LFCalibrate> cal;
 	std::unique_ptr<LFIsp> isp;
 	std::unique_ptr<LFRefocus> ref;

@@ -244,25 +244,43 @@ std::tuple<cv::Point2f, int> CentroidsSort::count_points_vert(const cv::Point2f 
 	return std::make_tuple(current, count);
 }
 
-std::pair<cv::Mat, cv::Mat> CentroidsSort::getPointsAsMats() const {
-	// 检查尺寸是否有效
+std::pair<cv::Mat, cv::Mat> CentroidsSort::getPointsAsMats(int crop) const {
+	// 1. 基础有效性检查
 	if (_size.size() < 2 || _size[0] <= 0 || _size[1] <= 0 || _centroids_list.empty()) {
 		return {cv::Mat(), cv::Mat()};
 	}
 
-	int cols = _size[0]; // 网格宽度
-	int rows = _size[1]; // 网格高度
+	int old_cols = _size[0]; // 原始网格宽度
+	int old_rows = _size[1]; // 原始网格高度
 
-	// 创建 CV_32F 类型的矩阵，对应 float 坐标精度
-	cv::Mat x_mat(rows, cols, CV_32F);
-	cv::Mat y_mat(rows, cols, CV_32F);
+	// 2. 计算裁剪后的新尺寸
+	// crop 表示从上下左右各剔除几层
+	int new_cols = old_cols - 2 * crop;
+	int new_rows = old_rows - 2 * crop;
 
-	// 遍历 _centroids_list (行优先存储) 并填充数据
-	for (int r = 0; r < rows; ++r) {
-		for (int c = 0; c < cols; ++c) {
-			const cv::Point2f &pt = _centroids_list[r * cols + c];
-			x_mat.at<float>(r, c) = pt.x;
-			y_mat.at<float>(r, c) = pt.y;
+	// 如果裁剪过多导致没有剩余点，返回空矩阵
+	if (new_cols <= 0 || new_rows <= 0) {
+		return {cv::Mat(), cv::Mat()};
+	}
+
+	// 3. 创建目标矩阵
+	cv::Mat x_mat(new_rows, new_cols, CV_32F);
+	cv::Mat y_mat(new_rows, new_cols, CV_32F);
+
+	// 4. 执行带偏移的拷贝
+	// 从第 crop 行/列开始，到倒数第 crop 行/列结束
+	for (int r = crop; r < old_rows - crop; ++r) {
+		// 计算原图行指针及目标行指针提高效率
+		float *dst_x = x_mat.ptr<float>(r - crop);
+		float *dst_y = y_mat.ptr<float>(r - crop);
+
+		for (int c = crop; c < old_cols - crop; ++c) {
+			// 从 row-major 的原始列表中提取点
+			const cv::Point2f &pt = _centroids_list[r * old_cols + c];
+
+			// 写入裁剪后的新矩阵位置
+			dst_x[c - crop] = pt.x;
+			dst_y[c - crop] = pt.y;
 		}
 	}
 
@@ -539,23 +557,18 @@ void CentroidsSort::assign_index() {
 // 新增: run2() 及其辅助函数 (基于泛洪填充的鲁棒排序算法)
 // =========================================================================
 
-void CentroidsSort::run2() {
-	// 使用鲁棒的中心扩散算法
-	flood_fill_from_center();
+void CentroidsSort::run2(float rotation_deg) {
+	// 使用基于全局刚性模型的中心扩散算法
+	flood_fill_from_center(rotation_deg);
 
 	// --- 输出调试信息 ---
-	std::cout << "[CentroidsSort::run2] Results (FloodFill):" << std::endl;
-	std::cout << "  > Hex Odd: " << (_hex_odd ? "true" : "false") << std::endl;
-	std::cout << "  > Centroids Count (Valid): "
+	std::cout << "[CentroidsSort::run2] Rigid Model Results:" << std::endl;
+	std::cout << "  > Rotation: " << rotation_deg << " deg" << std::endl;
+	std::cout << "  > Grid Size: [" << _size[0] << ", " << _size[1] << "]" << std::endl;
+	std::cout << "  > Valid Centroids: "
 			  << std::count_if(_centroids_list.begin(), _centroids_list.end(),
 							   [](const cv::Point2f &p) { return p.x >= 0; })
-			  << " / " << _centroids_list.size() << std::endl;
-
-	std::cout << "  > Grid Size: [";
-	for (size_t i = 0; i < _size.size(); ++i) {
-		std::cout << _size[i] << (i < _size.size() - 1 ? ", " : "");
-	}
-	std::cout << "]" << std::endl;
+			  << std::endl;
 }
 
 cv::Point2f CentroidsSort::find_nearest_existing(const cv::Point2f &target, float radius) const {
@@ -585,12 +598,20 @@ cv::Point2f CentroidsSort::find_nearest_existing(const cv::Point2f &target, floa
 	return best_pt;
 }
 
-void CentroidsSort::flood_fill_from_center() {
-	// 1. 寻找图像中心的种子点
-	// 简单估算图像中心坐标（通过平均值）
+void CentroidsSort::flood_fill_from_center(float rotation_deg) {
+	// 1. 初始化角度和旋转矩阵
+	float rad = rotation_deg * (CV_PI / 180.0f);
+	float cos_r = std::cos(rad);
+	float sin_r = std::sin(rad);
+
+	// 辅助 Lambda：旋转一个 Point2f 向量
+	auto rotate_vec = [&](const cv::Point2f &v) {
+		return cv::Point2f(v.x * cos_r - v.y * sin_r, v.x * sin_r + v.y * cos_r);
+	};
+
+	// 2. 寻找种子点 (保持原有逻辑)
 	float img_cx = 0, img_cy = 0;
 	int count = 0;
-	// 采样部分点估算中心 (避免遍历所有点，虽然遍历也不慢)
 	for (const auto &pair : _idx2pt) {
 		img_cx += pair.second.x;
 		img_cy += pair.second.y;
@@ -602,127 +623,85 @@ void CentroidsSort::flood_fill_from_center() {
 		img_cy /= count;
 	}
 
-	// 完整 Pitch (x, y) = _pitch_unit * 2.0
 	cv::Point2f full_pitch = _pitch_unit * 2.0f;
-
 	cv::Point2f seed_pt = find_nearest_existing(cv::Point2f(img_cx, img_cy), std::max(full_pitch.x, full_pitch.y));
-
-	if (seed_pt.x < 0 && !_idx2pt.empty()) {
-		// Fallback: 如果中心没点，随便取一个
+	if (seed_pt.x < 0 && !_idx2pt.empty())
 		seed_pt = _idx2pt.begin()->second;
-	}
-
-	if (seed_pt.x < 0) {
-		// 极端情况：无点
-		_size = {0, 0};
-		_centroids_list.clear();
+	if (seed_pt.x < 0)
 		return;
-	}
 
-	// 2. 初始化 BFS
-	// 使用 unordered_map 记录访问过的网格坐标 (u, v) -> 实际坐标 Point2f
-	// 这里 (u, v) 是逻辑网格坐标，种子点为 (0, 0)
-	std::unordered_map<IntIndex, cv::Point2f> visited;
+	// 3. BFS 状态准备
+	std::unordered_map<IntIndex, cv::Point2f> sorted_visited;
 	std::deque<IntIndex> queue;
-
 	IntIndex start_node(0, 0);
-	visited[start_node] = seed_pt;
+	sorted_visited[start_node] = seed_pt;
 	queue.push_back(start_node);
 
-	// 记录网格边界 (用于后续构建矩形数组)
-	int min_u = 0, max_u = 0;
-	int min_v = 0, max_v = 0;
-
-	// 搜索半径容差 (防止跳到隔壁的隔壁)
+	int min_u = 0, max_u = 0, min_v = 0, max_v = 0;
 	float search_radius = std::min(full_pitch.x, full_pitch.y) * 0.45f;
 
 	while (!queue.empty()) {
 		IntIndex curr = queue.front();
 		queue.pop_front();
-		cv::Point2f curr_pt = visited[curr];
+		cv::Point2f curr_pt = sorted_visited[curr];
 
-		// 更新边界
-		if (curr.x < min_u)
-			min_u = curr.x;
-		if (curr.x > max_u)
-			max_u = curr.x;
-		if (curr.y < min_v)
-			min_v = curr.y;
-		if (curr.y > max_v)
-			max_v = curr.y;
+		// 更新逻辑边界
+		min_u = std::min(min_u, curr.x);
+		max_u = std::max(max_u, curr.x);
+		min_v = std::min(min_v, curr.y);
+		max_v = std::max(max_v, curr.y);
 
-		// 定义 4 个搜索方向 (右, 左, 下, 上)
+		// 4. 定义旋转后的 6 个搜索方向 (对于六边形网格，6方向比4方向更稳健)
 		struct Dir {
 			int du, dv;
-			cv::Point2f offset;
+			cv::Point2f local_offset;
 		};
 
-		// 计算当前行的六边形偏移特性
-		// 假设 v=0 是偶数行(shift 0)，v=1 是奇数行(shift +0.5 pitch_x)
-		// 注意处理负数取模: ((v % 2) + 2) % 2
+		// 处理六边形行错位 (Hex Row-Major)
+		// 根据当前逻辑行号 curr.y 确定下/上行的偏移方向
 		int row_parity = ((curr.y % 2) + 2) % 2;
-		float shift_down = (row_parity == 0) ? 0.5f : -0.5f; // 偶->奇(+0.5), 奇->偶(-0.5)
-		float shift_up = (row_parity == 0) ? 0.5f : -0.5f;	 // 同理
+		float h_shift = (row_parity == 0) ? 0.5f : -0.5f;
 
 		std::vector<Dir> directions = {
-			{1, 0, cv::Point2f(full_pitch.x, 0)},						  // Right
-			{-1, 0, cv::Point2f(-full_pitch.x, 0)},						  // Left
-			{0, 1, cv::Point2f(shift_down * full_pitch.x, full_pitch.y)}, // Down
-			{0, -1, cv::Point2f(shift_up * full_pitch.x, -full_pitch.y)}  // Up
+			{1, 0, cv::Point2f(full_pitch.x, 0)},							   // 右
+			{-1, 0, cv::Point2f(-full_pitch.x, 0)},							   // 左
+			{0, 1, cv::Point2f(h_shift * full_pitch.x, full_pitch.y)},		   // 下
+			{-1, 1, cv::Point2f((h_shift - 1) * full_pitch.x, full_pitch.y)},  // 下左(针对偶行) 或 下右(针对奇行)
+			{0, -1, cv::Point2f(h_shift * full_pitch.x, -full_pitch.y)},	   // 上
+			{-1, -1, cv::Point2f((h_shift - 1) * full_pitch.x, -full_pitch.y)} // 上左(针对偶行)
 		};
+
+		// 纠正方向向量：如果 row_parity 为 1，我们需要调整邻居的索引偏移
+		if (row_parity == 1) {
+			directions[3] = {1, 1, cv::Point2f((h_shift + 1) * full_pitch.x, full_pitch.y)};
+			directions[5] = {1, -1, cv::Point2f((h_shift + 1) * full_pitch.x, -full_pitch.y)};
+		}
 
 		for (const auto &d : directions) {
 			IntIndex neighbor_idx(curr.x + d.du, curr.y + d.dv);
+			if (sorted_visited.find(neighbor_idx) == sorted_visited.end()) {
+				// 【关键修复】将预测向量旋转后再累加
+				cv::Point2f rotated_offset = rotate_vec(d.local_offset);
+				cv::Point2f pred_pt = curr_pt + rotated_offset;
 
-			// 如果未访问过
-			if (visited.find(neighbor_idx) == visited.end()) {
-				// 预测位置
-				cv::Point2f pred_pt = curr_pt + d.offset;
-
-				// 在实际点集中查找是否存在该预测点附近的点
 				cv::Point2f found_pt = find_nearest_existing(pred_pt, search_radius);
-
 				if (found_pt.x >= 0) {
-					// 找到了有效邻居
-					visited[neighbor_idx] = found_pt;
+					sorted_visited[neighbor_idx] = found_pt;
 					queue.push_back(neighbor_idx);
 				}
 			}
 		}
 	}
 
-	// 3. 构建最终网格 (Flatten to vector)
+	// 5. 将排序后的结果回填至类成员
 	int cols = max_u - min_u + 1;
 	int rows = max_v - min_v + 1;
 	_size = {cols, rows};
+	_centroids_list.assign(cols * rows, cv::Point2f(-1, -1));
 
-	_centroids_list.clear();
-	_centroids_list.resize(cols * rows, cv::Point2f(-1, -1)); // 默认填充无效值 (-1, -1)
-
-	for (const auto &pair : visited) {
-		int u = pair.first.x - min_u; // 归一化到 0..cols-1
-		int v = pair.first.y - min_v; // 归一化到 0..rows-1
-
-		// 存储为 Row-Major 格式: index = v * cols + u
-		if (u >= 0 && u < cols && v >= 0 && v < rows) {
-			_centroids_list[v * cols + u] = pair.second;
-		}
+	for (const auto &pair : sorted_visited) {
+		int u = pair.first.x - min_u;
+		int v = pair.first.y - min_v;
+		_centroids_list[v * cols + u] = pair.second;
 	}
-
-	// 4. 确定奇偶性
-	// 我们的坐标系是以 seed (v=0) 为基准。
-	// 这里简单约定：min_v (Grid的第0行) 相对于 seed 的奇偶性。
-	// row_parity(seed=0) = 0 (Even).
-	// row_parity(min_v) = ((min_v % 2) + 2) % 2.
-	// 如果 min_v 是偶数，则第0行与seed同相 -> hex_odd = false (假设seed是Even)
-	// 如果 min_v 是奇数，则第0行与seed反相 -> hex_odd = true.
-	int start_row_parity = ((min_v % 2) + 2) % 2;
-	_hex_odd = (start_row_parity != 0);
-
-	// 更新 _start (Top-Left point)
-	// 注意：_centroids_list[0] 可能是 (-1,-1)，如果左上角缺损。
-	// 但 _start
-	// 成员变量通常用于旧算法的逻辑，这里为了兼容性可以赋值第一个有效点
-	// 或者直接指向理论左上角。run2 主要产生 _centroids_list。
-	// 只要 HexGridFitter 能处理 (-1,-1) 的点即可。
 }
