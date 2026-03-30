@@ -80,11 +80,17 @@ add_executable(calibration_evaluator
     "${PROJECT_SOURCE_DIR}/core/centers_sort.cpp"
     "${PROJECT_SOURCE_DIR}/core/hexgrid_fit.cpp"
     "${PROJECT_SOURCE_DIR}/core/utils.cpp"
+    "${PROJECT_SOURCE_DIR}/core/lfio.cpp"
+    "${PROJECT_SOURCE_DIR}/core/raw_decode.cpp"
+    "${PROJECT_SOURCE_DIR}/core/califinder.cpp"
 )
 target_include_directories(calibration_evaluator PRIVATE
     "${PROJECT_SOURCE_DIR}/core"
     "${Eigen_DIR}"
+    "${OPENSSL_ROOT_DIR}\\lib"
 )
 target_link_libraries(calibration_evaluator PRIVATE
     ${OpenCV_LIBS}
+    OpenSSL::SSL OpenSSL::Crypto
+
 )

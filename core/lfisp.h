@@ -149,7 +149,7 @@ public: // gpu
 	LFIsp &lsc_gpu(float exposure);
 	LFIsp &lsc_gpu();
 	LFIsp &awb_gpu(const std::vector<float> &wbgains);
-	LFIsp &lsc_awb_fused_gpu(float exposure, const std::vector<float> &wbgains);
+	// LFIsp &lsc_awb_fused_gpu(float exposure, const std::vector<float> &wbgains);
 	LFIsp &demosaic_gpu(BayerPattern bayer);
 	LFIsp &ccm_gpu(const std::vector<float> &ccm_matrix);
 	LFIsp &gc_gpu(float gamma);
@@ -157,7 +157,7 @@ public: // gpu
 	LFIsp &uvnr_gpu(float h_sigma_s, float h_sigma_r);
 	LFIsp &ce_gpu(float clipLimit = 2.0f, int gridSize = 8);
 	LFIsp &se_gpu(float factor = 1.2f);
-	LFIsp &ccm_gamma_fused_gpu(const std::vector<float> &ccm_matrix, float gamma);
+	// LFIsp &ccm_gamma_fused_gpu(const std::vector<float> &ccm_matrix, float gamma);
 	LFIsp &resample_gpu(bool dehex);
 	LFIsp &process_gpu(const IspConfig &config);
 	LFIsp &global_resample_gpu(std::shared_ptr<HexGridFitter> fitter, bool hex_stretch = true);

@@ -222,13 +222,13 @@ void MainWindow::updateZoomInfo(double scale) {
 	lblZoom->setText(QString("%1%").arg(percent));
 }
 
-void MainWindow::updateFPS(double fps) {
-	lblFPS->setText(QString("FPS: %1").arg(fps, 0, 'f', 1));
+// void MainWindow::updateFPS(double fps) {
+// 	lblFPS->setText(QString("FPS: %1").arg(fps, 0, 'f', 1));
 
-	// 简单的颜色警示：帧率太低变红
-	if (fps < 15.0) {
-		lblFPS->setStyleSheet("color: red; padding: 0 5px;");
-	} else {
-		lblFPS->setStyleSheet("color: green; padding: 0 5px;");
-	}
-}
+// 	// 简单的颜色警示：帧率太低变红
+// 	if (fps < 15.0) {
+// 		lblFPS->setStyleSheet("color: red; padding: 0 5px;");
+// 	} else {
+// 		lblFPS->setStyleSheet("color: green; padding: 0 5px;");
+// 	}
+// }

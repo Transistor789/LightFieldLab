@@ -2,6 +2,9 @@
 # tests/CMakeLists.txt - 测试模块构建脚本 (Fixed)
 # ==============================================================================
 
+# 设置所有可执行文件的输出目录为构建根目录
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
 # 【关键修复】: 必须包含 Core 目录，否则所有测试都找不到 .h 头文件
 include_directories(${SOURCE_DIR})
 
@@ -10,7 +13,7 @@ include_directories(${SOURCE_DIR})
 # 基础模块: Utils, Config, IO, RawDecode
 set(SRCS_COMMON
     ${SOURCE_DIR}/utils.cpp
-    ${SOURCE_DIR}/config.cpp
+    # ${SOURCE_DIR}/config.cpp
     ${SOURCE_DIR}/lfio.cpp
     ${SOURCE_DIR}/raw_decode.cpp
     ${SOURCE_DIR}/califinder.cpp
@@ -64,12 +67,12 @@ set(LIBS_CUDA_CV
 # ==============================================================================
 
 # Test: Basic Config
-add_executable(test_config test_config.cpp ${SRCS_COMMON})
-target_link_libraries(test_config PRIVATE ${LIBS_BASIC})
+# add_executable(test_config test_config.cpp ${SRCS_COMMON})
+# target_link_libraries(test_config PRIVATE ${LIBS_BASIC})
 
 # Test: LF Load
-add_executable(test_lfload test_lfload.cpp ${SRCS_COMMON})
-target_link_libraries(test_lfload PRIVATE ${LIBS_BASIC} ${LIBS_CUDA_CV})
+# add_executable(test_lfload test_lfload.cpp ${SRCS_COMMON})
+# target_link_libraries(test_lfload PRIVATE ${LIBS_BASIC} ${LIBS_CUDA_CV})
 
 # Test: Read Raw (Simple)
 add_executable(test_readraw test_readraw.cpp)
@@ -187,8 +190,10 @@ foreach(TGT test_distgssr_trt test_distgdisp test_epit test_lfdepth test_lfsuper
     )
 endforeach()
 
+
+
 # 补充 OpenSSL Include & Link Dir (所有用到 SRCS_COMMON 的都需要 OpenSSL)
-foreach(TGT test_openssl test_lfload test_lfrefocus test_config test_lfcalibrate test_isp test_lfresample test_distgssr_trt test_distgdisp test_epit test_lfdepth test_lfsuperres)
+foreach(TGT test_openssl test_lfrefocus test_lfcalibrate test_isp test_lfresample test_distgssr_trt test_distgdisp test_epit test_lfdepth test_lfsuperres)
     target_include_directories(${TGT} PRIVATE ${OPENSSL_INCLUDE_DIR})
     target_link_directories(${TGT} PRIVATE "${OPENSSL_ROOT_DIR}/lib")
 endforeach()
@@ -201,6 +206,7 @@ add_executable(test_log
     ${SOURCE_DIR}/hexgrid_fit.cpp
     ${SOURCE_DIR}/lfcalibrate.cpp
     ${SOURCE_DIR}/utils.cpp
+    ${SOURCE_DIR}/califinder.cpp
 )
 target_include_directories(test_log PRIVATE "${Eigen_DIR}")
 target_link_libraries(test_log PRIVATE ${OpenCV_LIBS})

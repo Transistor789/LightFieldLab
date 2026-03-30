@@ -32,6 +32,7 @@ public:
 	// 参数设置 (分辨率和PatchSize通常是全局配置，保留Setter)
 	void setAngRes(int angRes) { m_targetAngRes = angRes; }
 	void setPatchSize(int patchSize) { m_targetPatchSize = patchSize; }
+	bool savePFM();
 
 private:
 	// 检查状态并在必要时加载模型
@@ -45,7 +46,7 @@ private:
 
 	// --- 参数状态管理 ---
 	int m_targetAngRes = 9;		 // 用户设定的目标角度分辨率
-	int m_targetPatchSize = 128; // 用户设定的目标 Patch 大小
+	int m_targetPatchSize = 196; // 用户设定的目标 Patch 大小
 
 	// --- 当前已加载的模型状态 (缓存) ---
 	int m_loadedAngRes = -1;					   // 当前引擎的角度分辨率
@@ -53,4 +54,4 @@ private:
 	DEMethod m_loadedMethod = DEMethod::DistgDisp; // 当前引擎的算法类型
 };
 
-#endif // LFDEPTH_
+#endif // LFDEPTH_H

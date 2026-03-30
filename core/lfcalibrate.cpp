@@ -49,6 +49,7 @@ void LFCalibrate::run(const cv::Mat &img, const CalibrateConfig &config) {
 	// 1. 预处理：消除 Bayer 棋盘格
 	if (config.bayer != BayerPattern::NONE) {
 		// 使用高斯模糊平滑 Bayer 纹理，保留几何质心
+
 		cv::GaussianBlur(temp, temp, cv::Size(9, 9), 0);
 	}
 
@@ -89,11 +90,11 @@ void LFCalibrate::run(const cv::Mat &img, const CalibrateConfig &config) {
 		_fitter->fitFastRobust(2.0f, 1500);
 		_maps = _fitter->predict();
 	}
-	if (config.orientation == Orientation::VERT) {
-		cv::transpose(_maps.first, _maps.first);
-		cv::transpose(_maps.second, _maps.second);
-		std::swap(_maps.first, _maps.second);
-	}
+	// if (config.orientation == Orientation::VERT) {
+	// 	cv::transpose(_maps.first, _maps.first);
+	// 	cv::transpose(_maps.second, _maps.second);
+	// 	std::swap(_maps.first, _maps.second);
+	// }
 	if (config.genLUT) {
 		// computeExtractMaps(config.views, config.space);
 		// computeExtractMaps(config.views, config.space, config.rot);

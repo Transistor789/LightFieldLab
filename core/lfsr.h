@@ -9,15 +9,7 @@
 #include <string>
 #include <vector>
 
-enum class SRMethod {
-	NEAREST,
-	LINEAR,
-	CUBIC,
-	LANCZOS,
-	ESPCN,
-	FSRCNN,
-	DISTGSSR
-};
+enum class SRMethod { NEAREST, LINEAR, CUBIC, LANCZOS, ESPCN, FSRCNN, DISTGSSR };
 
 class LFSuperResolution {
 public:
@@ -31,8 +23,7 @@ public:
 	 * @param method 选择的算法
 	 * @return 处理后的图像列表
 	 */
-	std::vector<cv::Mat> upsample(const std::vector<cv::Mat> &views,
-								  SRMethod method);
+	std::vector<cv::Mat> upsample(const std::vector<cv::Mat> &views, SRMethod method);
 
 	/**
 	 * @brief 单图处理重载 (方便调用)
@@ -47,8 +38,7 @@ public:
 	void setAngRes(int value) { m_targetAngRes = value; }
 
 	// 路径设置
-	void setModelPaths(const std::string &opencvPath,
-					   const std::string &trtPath);
+	void setModelPaths(const std::string &opencvPath, const std::string &trtPath);
 
 	// Getters
 	int getScale() const { return m_targetScale; }
@@ -77,7 +67,7 @@ private:
 
 	// --- 目标参数 (用户设定) ---
 	int m_targetScale = 2;
-	int m_targetPatchSize = 128;
+	int m_targetPatchSize = 196;
 	int m_targetAngRes = 5;
 
 	// --- 当前已加载/生效的状态 (缓存) ---

@@ -33,6 +33,8 @@ bool LFDepthEstimation::depth(const std::vector<cv::Mat> &views, DEMethod method
 	}
 
 	m_rawMap = results;
+	savePFM();
+
 	return true;
 }
 
@@ -150,4 +152,23 @@ std::string LFDepthEstimation::getModelPath(DEMethod method, int angRes, int pat
 	// 使用 format 拼接路径
 	// 格式: data/{DEMethod}_{Ang}x{Ang}_{Patch}_FP16_{OS}.engine
 	return std::format("models/{}_{}x{}_{}_FP16_{}.engine", prefix, angRes, angRes, patchSize, osSuffix);
+}
+
+bool LFDepthEstimation::savePFM() {
+	if (m_rawMap.empty()) {
+		std::cerr << "[LFDepthEstimation] Error: No depth map to save." << std::endl;
+		return false;
+	}
+
+	std::string filename = "depth_map.pfm";
+	try {
+		cv::FileStorage fs(filename, cv::FileStorage::WRITE);
+		fs << "depth" << m_rawMap;
+		fs.release();
+		std::cout << "[LFDepthEstimation] Depth map saved to " << filename << std::endl;
+		return true;
+	} catch (const std::exception &e) {
+		std::cerr << "[LFDepthEstimation] Failed to save PFM: " << e.what() << std::endl;
+		return false;
+	}
 }

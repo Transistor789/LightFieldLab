@@ -6,7 +6,7 @@ chcp 65001 >nul
 
 REM --- 配置 ---
 REM 设置要统计的文件或目录列表
-set TARGETS=CMakeLists.txt core\ main.cpp tests\ ui\
+set TARGETS=CMakeLists.txt core\ main.cpp tests\ ui\ tools\
 
 REM 设置排除列表文件
 set EXCLUDE_FILE=cloc_exclude.txt

@@ -51,6 +51,15 @@ class Net(nn.Module):
         self.regression = Regression(mindisp, maxdisp)
 
     def forward(self, x):
+        # ===================== 打印 BATCHSIZE =====================
+        print("\n===== MODEL FORWARD INFO =====")
+        print(f"Input tensor shape: {x.shape}")
+        print(f"Current batch size: {x.shape[0]}")  # 这里就是 batchsize
+        print(f"channels: {x.shape[1]}")
+        print(f"height: {x.shape[2]}")
+        print(f"width: {x.shape[3]}")
+        # =========================================================
+
         x = SAI2MacPI(x, self.angRes)
         init_feat = self.init_feature(x)
         cost = self.build_costvolume(init_feat)

@@ -34,10 +34,9 @@ private:
 	QLabel *lblFPS;		   // 帧率: FPS: 30.1
 
 private slots:
-	void updateMouseInfo(int x, int y, const QColor &color, double scale, int w,
-						 int h);
+	void updateMouseInfo(int x, int y, const QColor &color, double scale, int w, int h);
 	void updateZoomInfo(double scale);
-	void updateFPS(double fps);
+	// void updateFPS(double fps);
 
 private:
 	Ui::MainWindow *ui;

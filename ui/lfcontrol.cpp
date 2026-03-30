@@ -25,6 +25,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 const std::string CONFIG_FILE = "data/config.json";
 
@@ -163,7 +164,7 @@ void LFControl::processTask() {
 			data_queue.pop();
 
 			isp->set_lf_img(img);
-			LOG_INFO("Processing");
+			// LOG_INFO("Processing");
 			// isp->preview(params.isp).resample(true);
 			// lf = std::make_shared<LFData>(isp->getSAIs());
 			params.dynamic.procFrameCount++;
@@ -334,6 +335,7 @@ void LFControl::calibrate() {
 			// }
 
 			if (params.calibrate.showPoints) {
+				std::cout << "123" << std::endl;
 				cv::Mat draw = draw_points(white, std::make_pair(cal->getPoints().first, cal->getPoints().second), 0,
 										   cv::Scalar(0, 0, 255));
 				// cv::Mat draw = draw_points(white, maps, 0, cv::Scalar(0, 0, 255));
@@ -605,6 +607,52 @@ void LFControl::processAllInFocus() {
 		"processAllInFocus");
 }
 
+// void LFControl::upsample() {
+// 	runAsync(
+// 		[this] {
+// 			// 0. [安全检查] 确保光场数据存在
+// 			if (!lf || lf->data.empty()) {
+// 				LOG_WARN("[Super Resolution] Cancelled: Light field data is empty.");
+// 				return;
+// 			}
+
+// 			if (lf->data[0].depth() != CV_8U) {
+// 				LOG_ERROR(
+// 					"[Super Resolution] Error: Input data is not 8-bit! "
+// 					"Current depth: "
+// 					+ std::to_string(lf->data[0].depth()));
+// 				return;
+// 			}
+
+// 			// ==============================================
+// 			// 在这里加：所有视角 先下采样 4 倍
+// 			// ==============================================
+// 			std::vector<cv::Mat> downsampled_views;
+// 			for (const auto &view : lf->data) {
+// 				cv::Mat small;
+// 				cv::resize(view, small, cv::Size(), 0.25, 0.25, cv::INTER_AREA);
+// 				downsampled_views.push_back(small);
+// 			}
+// 			sr->setScale(params.sr.scale);
+
+// 			if (params.sr.method < SRMethod::ESPCN) {
+// 				auto img = sr->upsample(downsampled_views[downsampled_views.size() / 2], params.sr.method);
+// 				emit imageReady(ImageType::SR, cvMatToQImage(img, 8));
+// 			} else if (params.sr.method < SRMethod::DISTGSSR) {
+// 				auto img = sr->upsample(downsampled_views[downsampled_views.size() / 2], params.sr.method);
+// 				emit imageReady(ImageType::SR, cvMatToQImage(img, 8));
+// 			} else {
+// 				// 送入 缩小4倍 的图去超分
+// 				auto views = sr->upsample(downsampled_views, params.sr.method);
+
+// 				if (!views.empty()) {
+// 					emit imageReady(ImageType::SR, cvMatToQImage(views[views.size() / 2], 8));
+// 				}
+// 			}
+// 		},
+// 		"Super resolution");
+// }
+
 void LFControl::upsample() {
 	runAsync(
 		[this] {
@@ -655,9 +703,7 @@ void LFControl::depth() {
 				return;
 			}
 
-			bool success = dep->depth(lf->data, params.de.method);
-
-			if (!success) {
+			if (!dep->depth(lf->data, params.de.method)) {
 				LOG_ERROR("[Depth Estimation] Failed: Algorithm returned error.");
 				return;
 			}

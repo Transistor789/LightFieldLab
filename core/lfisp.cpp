@@ -4,6 +4,7 @@
 #include "utils.h"
 
 #include <cmath>
+#include <cstdio>
 #include <immintrin.h>
 #include <iostream>
 #include <memory>
@@ -2470,7 +2471,7 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 		}
 	}
 	{
-		ScopedTimer t("RGB2YUV", profiler_cpu, config.benchmark);
+		ScopedTimer t("RGB2YUV", profiler_fast, config.benchmark);
 		if (config.enableCSC) {
 			csc();
 		} else {
@@ -2480,9 +2481,9 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 		}
 	}
 	{
-		ScopedTimer t("UVNR", profiler_cpu, config.benchmark);
+		ScopedTimer t("UVNR", profiler_fast, config.benchmark);
 		if (config.enableUVNR) {
-			uvnr(config.uvnr_sigma_s, config.uvnr_sigma_r);
+			uvnr_fast(config.uvnr_sigma_s, config.uvnr_sigma_r);
 		} else {
 			std::cout << "[LFISP] Pipeline: 'UVNR' is disabled in "
 						 "settings."
@@ -2490,7 +2491,7 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 		}
 	}
 	{
-		ScopedTimer t("CE", profiler_cpu, config.benchmark);
+		ScopedTimer t("CE", profiler_fast, config.benchmark);
 		if (config.enableCE) {
 			ce_fast(config.ceClipLimit, config.ceGridSize);
 		} else {
@@ -2500,7 +2501,7 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 		}
 	}
 	{
-		ScopedTimer t("SE", profiler_cpu, config.benchmark);
+		ScopedTimer t("SE", profiler_fast, config.benchmark);
 		if (config.enableSE) {
 			se_fast(config.seFactor);
 		} else {
@@ -2510,7 +2511,7 @@ LFIsp &LFIsp::process_fast(const IspConfig &config) {
 		}
 	}
 	{
-		ScopedTimer t("YUV2RGB", profiler_cpu, config.benchmark);
+		ScopedTimer t("YUV2RGB", profiler_fast, config.benchmark);
 		if (config.enableCSC) {
 			csc();
 		} else {
@@ -2874,22 +2875,22 @@ LFIsp &LFIsp::awb_gpu(const std::vector<float> &wbgains) {
 	return *this;
 } // awb_gpu
 
-LFIsp &LFIsp::lsc_awb_fused_gpu(float exposure, const std::vector<float> &wbgains) {
-	// 1. 基础检查
-	if (lfp_img_gpu.empty() || lsc_map_gpu.empty())
-		return *this;
-	if (lfp_img_gpu.type() != CV_8UC1)
-		lfp_img_gpu.convertTo(lfp_img_gpu, CV_8U); // 确保 8U
-	if (lsc_map_gpu.type() != CV_32FC1)
-		return *this; // Map 必须是 Float
-	if (wbgains.size() < 4)
-		return *this;
+// LFIsp &LFIsp::lsc_awb_fused_gpu(float exposure, const std::vector<float> &wbgains) {
+// 	// 1. 基础检查
+// 	if (lfp_img_gpu.empty() || lsc_map_gpu.empty())
+// 		return *this;
+// 	if (lfp_img_gpu.type() != CV_8UC1)
+// 		lfp_img_gpu.convertTo(lfp_img_gpu, CV_8U); // 确保 8U
+// 	if (lsc_map_gpu.type() != CV_32FC1)
+// 		return *this; // Map 必须是 Float
+// 	if (wbgains.size() < 4)
+// 		return *this;
 
-	// 3. 调用融合 Kernel
-	launch_fused_lsc_awb(lfp_img_gpu, lsc_map_gpu, exposure, wbgains[0], wbgains[1], wbgains[2], wbgains[3], stream);
+// 	// 3. 调用融合 Kernel
+// 	launch_fused_lsc_awb(lfp_img_gpu, lsc_map_gpu, exposure, wbgains[0], wbgains[1], wbgains[2], wbgains[3], stream);
 
-	return *this;
-} // lsc_awb_fused_gpu
+// 	return *this;
+// } // lsc_awb_fused_gpu
 
 LFIsp &LFIsp::demosaic_gpu(BayerPattern bayer) {
 	if (lfp_img_gpu.empty())
@@ -3008,31 +3009,31 @@ LFIsp &LFIsp::gc_gpu(float gamma) {
 	return *this;
 } // gc_gpu
 
-LFIsp &LFIsp::ccm_gamma_fused_gpu(const std::vector<float> &ccm_matrix, float gamma) {
-	// 1. 检查输入：必须是 8UC3 (Demosaic 之后的图)
-	if (lfp_img_gpu.empty() || lfp_img_gpu.type() != CV_8UC3) {
-		return *this;
-	}
+// LFIsp &LFIsp::ccm_gamma_fused_gpu(const std::vector<float> &ccm_matrix, float gamma) {
+// 	// 1. 检查输入：必须是 8UC3 (Demosaic 之后的图)
+// 	if (lfp_img_gpu.empty() || lfp_img_gpu.type() != CV_8UC3) {
+// 		return *this;
+// 	}
 
-	// 2. 检查矩阵维度
-	if (ccm_matrix.size() < 9) {
-		return *this;
-	}
+// 	// 2. 检查矩阵维度
+// 	if (ccm_matrix.size() < 9) {
+// 		return *this;
+// 	}
 
-	// 3. 处理 Gamma 值
-	// 如果你想变亮 (标准 Gamma 2.2)，这里应该传入 1.0/2.2 ≈ 0.45
-	// 如果你在 Config 里存的是 2.2，就在这里取倒数
-	// 如果你在 Config 里存的是 0.45，就直接传
-	float gamma_val = (std::abs(gamma) > 1e-5) ? gamma : 1.0f;
+// 	// 3. 处理 Gamma 值
+// 	// 如果你想变亮 (标准 Gamma 2.2)，这里应该传入 1.0/2.2 ≈ 0.45
+// 	// 如果你在 Config 里存的是 2.2，就在这里取倒数
+// 	// 如果你在 Config 里存的是 0.45，就直接传
+// 	float gamma_val = (std::abs(gamma) > 1e-5) ? gamma : 1.0f;
 
-	// 如果你的 config.gamma 是 2.2，建议用下面这行：
-	// float gamma_val = 1.0f / gamma;
+// 	// 如果你的 config.gamma 是 2.2，建议用下面这行：
+// 	// float gamma_val = 1.0f / gamma;
 
-	// 4. 调用融合 Kernel
-	launch_ccm_gamma_fused(lfp_img_gpu, ccm_matrix.data(), gamma_val, stream);
+// 	// 4. 调用融合 Kernel
+// 	launch_ccm_gamma_fused(lfp_img_gpu, ccm_matrix.data(), gamma_val, stream);
 
-	return *this;
-} // ccm_gamma_fused_gpu
+// 	return *this;
+// } // ccm_gamma_fused_gpu
 
 LFIsp &LFIsp::csc_gpu() {
 	if (sais_gpu.empty())

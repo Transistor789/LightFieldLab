@@ -19,21 +19,21 @@ CentroidsExtract::CentroidsExtract(const cv::Mat &img, int precision, int cr)
 
 void CentroidsExtract::run(ExtractMethod method) {
 	// 1. 尺度空间分析，确定 _estimatedM
-	createScaleSpace(); // 内部调用 cropImage()
+	createScaleSpace();
 	findScaleMax(true);
 
 	// 2. 全图检测
 	std::vector<cv::Point2f> crop_centers;
 	if (method != ExtractMethod::LOG_NMS) {
 		_points = detectMlaCenters(_img, _estimatedM, method);
-		crop_centers = detectMlaCenters(_cropImg, _estimatedM, method);
-		_pitch = estimatePitchXY(crop_centers);
+		// crop_centers = detectMlaCenters(_cropImg, _estimatedM, method);
+		// _pitch = estimatePitchXY(crop_centers);
+		// _pitch = estimatePitchFromPoints(_points, static_cast<double>(_estimatedM));
 	} else {
 		_points = log_nms(_img, static_cast<double>(_estimatedM));
 		// crop_centers = log_nms(_cropImg, static_cast<double>(_estimatedM));
-		_pitch = estimatePitchFromPoints(_points, static_cast<double>(_estimatedM));
 	}
-
+	_pitch = estimatePitchFromPoints(_points, static_cast<double>(_estimatedM));
 	// 3. 裁剪图检测
 	// auto crop_centers = detectMlaCenters(_cropImg, _estimatedM, method);
 
@@ -50,14 +50,15 @@ void CentroidsExtract::run(ExtractMethod method, int diameter) {
 	std::vector<cv::Point2f> crop_centers;
 	if (method != ExtractMethod::LOG_NMS) {
 		_points = detectMlaCenters(_img, diameter, method);
-		crop_centers = detectMlaCenters(_cropImg, diameter, method);
-		_pitch = estimatePitchXY(crop_centers);
+		// crop_centers = detectMlaCenters(_cropImg, diameter, method);
+		// _pitch = estimatePitchXY(crop_centers);
+		// _pitch = estimatePitchFromPoints(_points, static_cast<double>(diameter));
+
 	} else {
 		_points = log_nms(_img, static_cast<double>(diameter));
 		// crop_centers = log_nms(_cropImg, static_cast<double>(diameter));
-		_pitch = estimatePitchFromPoints(_points, static_cast<double>(diameter));
 	}
-
+	_pitch = estimatePitchFromPoints(_points, static_cast<double>(diameter));
 	// --- 输出调试信息 ---
 	std::cout << std::format("[CentroidsExtract] ExtractMethod: {}, Results:", getMethodString(method)) << std::endl;
 	std::cout << "  > Diameter: " << _estimatedM << std::endl;

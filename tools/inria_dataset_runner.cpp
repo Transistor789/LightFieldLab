@@ -33,7 +33,7 @@ int main(int argc, char *argv[]) {
 	caliConfig.space = 1.0f;
 	caliConfig.rot = 0.0;
 	caliConfig.bayer = BayerPattern::GRBG;
-	caliConfig.ceMethod = ExtractMethod::LOG_NMS;
+	caliConfig.ceMethod = ExtractMethod::GrayGravity;
 	caliConfig.orientation = Orientation::HORZ;
 
 	IspConfig ispConfig;
@@ -50,15 +50,16 @@ int main(int argc, char *argv[]) {
 	ispConfig.enableLSC = true;
 	ispConfig.enableWB = true;
 	ispConfig.enableDemosaic = true;
-	ispConfig.enableCCM = true;
-	ispConfig.enableGamma = true;
-	ispConfig.enableCSC = true;
-	ispConfig.enableUVNR = true;
-	ispConfig.enableCE = false;
-	ispConfig.enableSE = false;
 	ispConfig.enableExtract = true;
 	ispConfig.enableDehex = true;
+	ispConfig.enableCCM = true;
+	ispConfig.enableGamma = true;
+	ispConfig.enableCSC = false;
+	ispConfig.enableUVNR = false;
+	ispConfig.enableCE = false;
+	ispConfig.enableSE = false;
 	ispConfig.device = Device::GPU;
+	ispConfig.benchmark = true;
 
 	// ---------------------------------------------------------
 	// 3. 循环遍历数据集
@@ -67,6 +68,7 @@ int main(int argc, char *argv[]) {
 		fs::create_directories(output_dir);
 
 	std::ofstream csvFile(log_csv);
+	bool header_written = false; // [新增] 用于标记是否已写入动态表头
 	if (csvFile.is_open()) {
 		csvFile << "Filename,Calibration_ms,Processing_ms,ColorEq_ms,Total_Step_ms\n";
 	}
@@ -116,17 +118,22 @@ int main(int argc, char *argv[]) {
 						isp->update_resample_maps();
 					}
 				}
+
+				isp->profiler_gpu.reset(); // 重置计数器与状态
 				Timer ispTimer;
 
+				// isp->set_lf_img(raw_img).process(ispConfig);
 				// isp->set_lf_img(raw_img).process_fast(ispConfig);
 				isp->set_lf_gpu(raw_img).process_gpu(ispConfig);
 
 				ispTimer.stop();
 				time_isp = ispTimer.elapsed_ms();
+				isp->profiler_gpu.run_count = 1; // 确保单次运行逻辑正确
 
 				Timer colorEqTimer;
 
 				auto sai_data = isp->getSAIsGpu();
+				// auto sai_data = isp->getSAIs();
 				ColorEqualize::equalize(sai_data, ColorEqualizeMethod::HM_MKL_HM);
 				colorEqTimer.stop();
 				time_color_eq = colorEqTimer.elapsed_ms();
@@ -134,11 +141,43 @@ int main(int argc, char *argv[]) {
 				totalStepTimer.stop();
 				time_total_step = totalStepTimer.elapsed_ms();
 
+				// if (csvFile.is_open()) {
+				// 	csvFile << std::format("{},{:.2f},{:.2f},{:.2f},{:.2f}\n", file_name, time_cali, time_isp,
+				// 						   time_color_eq, time_total_step);
+				// 	csvFile.flush(); // 确保每一行处理完都实时写入硬盘
+				// }
+				// === [修改] 动态写入包含细化 ISP 模块的 CSV ===
 				if (csvFile.is_open()) {
-					csvFile << std::format("{},{:.2f},{:.2f},{:.2f},{:.2f}\n", file_name, time_cali, time_isp,
-										   time_color_eq, time_total_step);
-					csvFile.flush(); // 确保每一行处理完都实时写入硬盘
+					// 1. 如果是第一张图，根据 Profiler 的项动态生成并写入表头
+					if (!header_written) {
+						csvFile << "Filename,Calibration_ms,ColorEq_ms,Total_Step_ms,ISP_Total_ms";
+						for (const auto &item : isp->profiler_gpu.stats) {
+							if (item.first != " Total Process") { // 剔除重复的总时间
+								// 移除字符串首尾的空格以作标准列名
+								std::string col_name = item.first;
+								col_name.erase(0, col_name.find_first_not_of(" "));
+								col_name.erase(col_name.find_last_not_of(" ") + 1);
+								csvFile << ",ISP_" << col_name << "_ms";
+							}
+						}
+						csvFile << "\n";
+						header_written = true;
+					}
+
+					// 2. 写入基础宏观数据
+					csvFile << std::format("{},{:.2f},{:.2f},{:.2f},{:.2f}", file_name, time_cali, time_color_eq,
+										   time_total_step, time_isp);
+
+					// 3. 遍历并写入细化的 ISP 模块耗时
+					for (const auto &item : isp->profiler_gpu.stats) {
+						if (item.first != " Total Process") {
+							csvFile << std::format(",{:.3f}", item.second);
+						}
+					}
+					csvFile << "\n";
+					csvFile.flush();
 				}
+				// ==============================================
 
 				// 后续保存逻辑
 

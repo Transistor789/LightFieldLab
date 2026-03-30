@@ -52,22 +52,17 @@ private:
 	void createScaleSpace();
 	std::string getMethodString(ExtractMethod method) const;
 	int findScaleMax(bool useRelativeMax);
-	std::pair<std::vector<float>, std::vector<float>> interpolateMaxima(
-		const std::vector<float> &maxima);
+	std::pair<std::vector<float>, std::vector<float>> interpolateMaxima(const std::vector<float> &maxima);
 
 	cv::Mat createGaussKernel(int length, float sigma);
 	std::vector<int> findRelativeMaximaIndices(const std::vector<float> &y);
-	std::vector<float> computeSignedGradient(const std::vector<float> &x,
-											 int precision);
-	std::vector<cv::Point2f> detectMlaCenters(const cv::Mat &img, int blockSize,
-											  ExtractMethod method);
+	std::vector<float> computeSignedGradient(const std::vector<float> &x, int precision);
+	std::vector<cv::Point2f> detectMlaCenters(const cv::Mat &img, int blockSize, ExtractMethod method);
 	cv::Mat ensureGrayUint8(const cv::Mat &img);
-	std::vector<float> estimatePitchXY(const std::vector<cv::Point2f> &points,
-									   int K = -1, float tol = 3.0f);
+	std::vector<float> estimatePitchXY(const std::vector<cv::Point2f> &points, int K = -1, float tol = 3.0f);
 
 	std::vector<cv::Point2f> log_nms(const cv::Mat &img, double M);
-	std::vector<float> estimatePitchFromPoints(
-		const std::vector<cv::Point2f> &points, double diameter);
+	std::vector<float> estimatePitchFromPoints(const std::vector<cv::Point2f> &points, double diameter);
 };
 
 #endif
